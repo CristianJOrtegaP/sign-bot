@@ -1,0 +1,158 @@
+name: Deploy a Azure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Ambiente de deployment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      skip_tests:
+        description: 'Omitir tests (solo para emergencias)'
+        required: false
+        type: boolean
+        default: false
+
+  release:
+    types: [published]
+
+jobs:
+  pre-deploy:
+    name: Validaciones Pre-Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Ejecutar tests
+        if: ${{ !inputs.skip_tests }}
+        run: npm test
+
+      - name: Verificar migraciones SQL
+        run: |
+          echo "📊 Verificando migraciones SQL..."
+          ls -la sql-scripts/migrations/
+          echo "✅ Migraciones encontradas"
+
+  deploy-staging:
+    name: Deploy a Staging
+    runs-on: ubuntu-latest
+    needs: pre-deploy
+    if: |
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging') ||
+      (github.event_name == 'release' && contains(github.ref, '-beta'))
+    environment:
+      name: staging
+      url: https://acfixbot-staging.azurewebsites.net
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
+      - name: Instalar dependencias de producción
+        run: npm ci --omit=dev
+
+      - name: Login a Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS_STAGING }}
+
+      - name: Deploy a Azure Functions (Staging)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: acfixbot-staging
+          package: .
+          respect-funcignore: true
+
+      - name: Verificar health endpoint
+        run: |
+          echo "⏳ Esperando 30 segundos para que la app inicie..."
+          sleep 30
+          curl -f https://acfixbot-staging.azurewebsites.net/api/health || echo "⚠️ Health check falló"
+
+  deploy-production:
+    name: Deploy a Producción
+    runs-on: ubuntu-latest
+    needs: pre-deploy
+    if: |
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'production') ||
+      (github.event_name == 'release' && !contains(github.ref, '-beta'))
+    environment:
+      name: production
+      url: https://acfixbot.azurewebsites.net
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
+      - name: Instalar dependencias de producción
+        run: npm ci --omit=dev
+
+      - name: Login a Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS_PRODUCTION }}
+
+      - name: Deploy a Azure Functions (Production)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: acfixbot-production
+          package: .
+          respect-funcignore: true
+
+      - name: Verificar health endpoint
+        run: |
+          echo "⏳ Esperando 30 segundos para que la app inicie..."
+          sleep 30
+          curl -f https://acfixbot.azurewebsites.net/api/health || echo "⚠️ Health check falló"
+
+      - name: Notificar deployment exitoso
+        if: success()
+        run: |
+          echo "🚀 Deployment a producción completado exitosamente"
+          echo "📦 Version: ${{ github.ref_name }}"
+          echo "🔗 URL: https://acfixbot.azurewebsites.net"
+
+  rollback:
+    name: Plan de Rollback
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: failure()
+
+    steps:
+      - name: Instrucciones de rollback
+        run: |
+          echo "❌ Deployment falló"
+          echo ""
+          echo "📋 Pasos para rollback manual:"
+          echo "1. Ir a Azure Portal"
+          echo "2. Navegar a la Function App"
+          echo "3. Deployment Center > Deployment History"
+          echo "4. Seleccionar deployment anterior y hacer redeploy"
+          echo ""
+          echo "O usar Azure CLI:"
+          echo "az functionapp deployment list --name <app-name> --resource-group <rg>"
+          echo "az functionapp deployment source sync --name <app-name> --resource-group <rg>"

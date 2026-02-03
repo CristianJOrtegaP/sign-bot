@@ -1,0 +1,138 @@
+name: CI - Tests y Validación
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    name: Tests Unitarios e Integración
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [20.x]
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Ejecutar tests
+        run: npm test
+        env:
+          # Variables de entorno necesarias para tests
+          NODE_ENV: test
+
+      - name: Generar reporte de coverage
+        if: always()
+        run: npm run test:coverage || true
+
+      - name: Subir coverage a artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
+
+  lint:
+    name: Linting y Formato
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Ejecutar ESLint
+        run: npm run lint || echo "⚠️ ESLint encontró warnings"
+        continue-on-error: true
+
+      - name: Verificar formato con Prettier
+        run: npx prettier --check "**/*.{js,json,md}" || echo "⚠️ Prettier encontró archivos sin formatear"
+        continue-on-error: true
+
+  security:
+    name: Análisis de Seguridad
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Auditoría de seguridad npm
+        run: npm audit --audit-level=moderate || true
+        continue-on-error: true
+
+      - name: Verificar vulnerabilidades críticas
+        run: npm audit --audit-level=critical
+
+  build:
+    name: Verificar Build
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Verificar que no hay errores de sintaxis
+        run: node -c api-whatsapp-webhook/index.js
+
+      - name: Listar archivos para deployment
+        run: |
+          echo "📦 Archivos que serían deployados:"
+          ls -la api-*/ timer-*/ core/ bot/
+
+  summary:
+    name: Resumen de CI
+    runs-on: ubuntu-latest
+    needs: [test, lint, security, build]
+    if: always()
+
+    steps:
+      - name: Resumen
+        run: |
+          echo "✅ Pipeline de CI completado"
+          echo "📊 Resultados:"
+          echo "  - Tests: ${{ needs.test.result }}"
+          echo "  - Linting: ${{ needs.lint.result }}"
+          echo "  - Seguridad: ${{ needs.security.result }}"
+          echo "  - Build: ${{ needs.build.result }}"
