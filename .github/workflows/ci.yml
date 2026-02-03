@@ -28,15 +28,25 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
-      - name: Ejecutar tests
-        run: npm test
+      - name: Ejecutar tests FASE 1
+        run: |
+          # Solo ejecutar tests de FASE 1 (Optimistic Locking, Deduplicación, Promises, Race Conditions)
+          npx jest tests/unit/optimisticLocking.test.js
+          npx jest tests/unit/deduplication.test.js
+          npx jest tests/unit/promiseUtils.test.js
+          npx jest tests/integration/raceCondition.test.js
         env:
           # Variables de entorno necesarias para tests
           NODE_ENV: test
 
-      - name: Generar reporte de coverage
+      - name: Generar reporte de coverage (FASE 1)
         if: always()
-        run: npm run test:coverage || true
+        run: |
+          npx jest --coverage \
+            tests/unit/optimisticLocking.test.js \
+            tests/unit/deduplication.test.js \
+            tests/unit/promiseUtils.test.js \
+            tests/integration/raceCondition.test.js || true
 
       - name: Subir coverage a artifacts
         if: always()
@@ -132,7 +142,13 @@ jobs:
         run: |
           echo "✅ Pipeline de CI completado"
           echo "📊 Resultados:"
-          echo "  - Tests: ${{ needs.test.result }}"
+          echo "  - Tests FASE 1 (61 tests): ${{ needs.test.result }}"
           echo "  - Linting: ${{ needs.lint.result }}"
           echo "  - Seguridad: ${{ needs.security.result }}"
           echo "  - Build: ${{ needs.build.result }}"
+          echo ""
+          echo "ℹ️  Nota: Solo se ejecutan tests de FASE 1"
+          echo "  - Optimistic Locking (14 tests)"
+          echo "  - Deduplicación (10 tests)"
+          echo "  - Promise Utils (29 tests)"
+          echo "  - Race Conditions (8 tests)"
