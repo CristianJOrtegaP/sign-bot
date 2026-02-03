@@ -1,0 +1,52 @@
+{
+    "IsEncrypted": false,
+    "Values": {
+        "FUNCTIONS_WORKER_RUNTIME": "node",
+        "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+
+        "SQL_CONNECTION_STRING": "Server=localhost;Database=acfixbot;User Id=sa;Password=YourPassword123;TrustServerCertificate=true",
+
+        "WHATSAPP_TOKEN": "EAAGm...",
+        "WHATSAPP_PHONE_ID": "123456789012345",
+        "WHATSAPP_VERIFY_TOKEN": "mi_token_secreto_123",
+        "WHATSAPP_APP_SECRET": "abc123def456...",
+
+        "USE_AI": "true",
+        "AI_PROVIDER": "gemini",
+        "GEMINI_API_KEY": "AIza...",
+
+        "AZURE_OPENAI_ENDPOINT": "",
+        "AZURE_OPENAI_KEY": "",
+        "AZURE_OPENAI_DEPLOYMENT": "gpt-4o-mini",
+        "AZURE_AUDIO_DEPLOYMENT": "gpt-4o-mini-audio",
+
+        "AUDIO_TRANSCRIPTION_ENABLED": "false",
+
+        "VISION_ENDPOINT": "https://cv-acfixbot.cognitiveservices.azure.com/",
+        "VISION_KEY": "abc123...",
+
+        "BLOB_CONNECTION_STRING": "",
+
+        "SESSION_TIMEOUT_MINUTES": "30",
+        "SESSION_WARNING_MINUTES": "25",
+        "TIMER_SCHEDULE": "0 */5 * * * *",
+
+        "SURVEY_TIMER_SCHEDULE": "0 0 9 * * *",
+        "SURVEY_HORAS_ESPERA": "24",
+        "SURVEY_HORAS_EXPIRACION": "72",
+
+        "ADMIN_API_KEY": "mi_api_key_admin_dev",
+
+        "IP_RATE_LIMIT": "100",
+        "IP_RATE_WINDOW_MS": "60000",
+
+        "AZURE_MAPS_KEY": "",
+        "ROUTE_BUFFER_MINUTES": "20",
+
+        "NODE_ENV": "development"
+    },
+    "Host": {
+        "CORS": "*",
+        "CORSCredentials": false
+    }
+}

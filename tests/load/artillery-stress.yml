@@ -1,0 +1,74 @@
+# Artillery Stress Test
+# Prueba de estres para identificar limites del sistema
+#
+# ADVERTENCIA: Este test puede causar degradacion del servicio
+# Solo ejecutar en ambientes de prueba
+#
+# Ejecutar con: npx artillery run tests/load/artillery-stress.yml
+
+config:
+  target: "http://localhost:7071"
+  phases:
+    # Fase 1: Carga inicial moderada
+    - duration: 30
+      arrivalRate: 10
+      name: "Initial load"
+
+    # Fase 2: Incremento gradual agresivo
+    - duration: 60
+      arrivalRate: 10
+      rampTo: 100
+      name: "Aggressive ramp"
+
+    # Fase 3: Carga extrema sostenida
+    - duration: 120
+      arrivalRate: 100
+      name: "Sustained stress"
+
+    # Fase 4: Spike extremo
+    - duration: 30
+      arrivalRate: 200
+      name: "Breaking point test"
+
+    # Fase 5: Recuperacion
+    - duration: 60
+      arrivalRate: 10
+      name: "Recovery phase"
+
+  defaults:
+    headers:
+      Content-Type: "application/json"
+
+  # Metricas extendidas
+  plugins:
+    expect: {}
+    metrics-by-endpoint: {}
+
+scenarios:
+  # Solo health check para stress test (ligero)
+  - name: "Stress Health"
+    weight: 60
+    flow:
+      - get:
+          url: "/api/health"
+
+  # Webhook con mensajes aleatorios
+  - name: "Stress Webhook"
+    weight: 40
+    flow:
+      - post:
+          url: "/api/whatsapp-webhook"
+          json:
+            object: "whatsapp_business_account"
+            entry:
+              - id: "stress{{ $randomNumber(1, 100000) }}"
+                changes:
+                  - value:
+                      messages:
+                        - from: "521{{ $randomNumber(1000000000, 9999999999) }}"
+                          id: "wamid.stress{{ $randomString(20) }}"
+                          timestamp: "{{ $timestamp() }}"
+                          type: "text"
+                          text:
+                            body: "Stress test message {{ $randomNumber(1, 1000) }}"
+                    field: "messages"

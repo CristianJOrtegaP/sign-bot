@@ -1,0 +1,12 @@
+# Azure Functions ignore file
+
+node_modules.nosync
+coverage
+.git
+.vscode
+local.settings.json
+tests
+docs
+*.md
+.gitignore
+.DS_Store

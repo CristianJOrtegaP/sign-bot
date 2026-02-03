@@ -1,0 +1,10 @@
+{
+  "bindings": [
+    {
+      "name": "myTimer",
+      "type": "timerTrigger",
+      "direction": "in",
+      "schedule": "%SURVEY_TIMER_SCHEDULE%"
+    }
+  ]
+}

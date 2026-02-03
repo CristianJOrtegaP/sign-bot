@@ -1,0 +1,809 @@
+{
+	"info": {
+		"_postman_id": "ac-fixbot-api-collection",
+		"name": "AC FIXBOT API",
+		"description": "Documentacion completa de la API de AC FIXBOT - Sistema de reportes de fallas para Aires Acondicionados via WhatsApp.\n\n## Endpoints Disponibles\n\n| Endpoint | Metodo | Auth | Descripcion |\n|----------|--------|------|-------------|\n| /api/health | GET | No | Health check del sistema |\n| /api/whatsapp-webhook | GET/POST | Signature | Webhook de Meta/WhatsApp |\n| /api/ticket-resolve | POST | Function Key | Resolver tickets |\n| /api/admin-cache | GET/POST | API Key | Administracion de cache |\n\n## Autenticacion\n\n- **Webhook WhatsApp**: Verificacion con `hub.verify_token` (GET) y firma `X-Hub-Signature-256` (POST)\n- **Ticket Resolve**: Azure Functions Key (header `x-functions-key`)\n- **Admin Cache**: API Key personalizada (header `X-API-Key` o query `apiKey`)\n\n## Variables de Entorno\n\nConfigurar las siguientes variables en Postman:\n\n| Variable | Descripcion | Ejemplo |\n|----------|-------------|--------|\n| `BASE_URL` | URL base de Azure Functions | `https://acfixbot.azurewebsites.net` |\n| `FUNCTIONS_KEY` | Clave de funcion de Azure | `abc123...` |\n| `ADMIN_API_KEY` | API Key para endpoints admin | `secret-key` |\n| `WHATSAPP_VERIFY_TOKEN` | Token de verificacion del webhook | `mi_token_secreto` |",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "BASE_URL",
+			"value": "http://localhost:7071",
+			"description": "URL base del servidor. Cambiar a URL de Azure en produccion."
+		},
+		{
+			"key": "FUNCTIONS_KEY",
+			"value": "",
+			"description": "Azure Functions Key para endpoints protegidos"
+		},
+		{
+			"key": "ADMIN_API_KEY",
+			"value": "",
+			"description": "API Key para endpoints administrativos"
+		},
+		{
+			"key": "WHATSAPP_VERIFY_TOKEN",
+			"value": "",
+			"description": "Token de verificacion del webhook de WhatsApp"
+		}
+	],
+	"item": [
+		{
+			"name": "Health",
+			"description": "Endpoint de verificacion de salud del sistema",
+			"item": [
+				{
+					"name": "Health Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200 or 503', function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([200, 503]);",
+									"});",
+									"",
+									"pm.test('Response has health status', function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('status');",
+									"    pm.expect(jsonData.status).to.be.oneOf(['healthy', 'unhealthy']);",
+									"});",
+									"",
+									"pm.test('Response has all checks', function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.checks).to.have.property('database');",
+									"    pm.expect(jsonData.checks).to.have.property('configuration');",
+									"    pm.expect(jsonData.checks).to.have.property('memory');",
+									"    pm.expect(jsonData.checks).to.have.property('uptime');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/health",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "health"]
+						},
+						"description": "Verifica el estado de salud del sistema.\n\n**Checks incluidos:**\n- Database: Conexion a SQL Server\n- Configuration: Variables de entorno requeridas\n- Memory: Uso de memoria heap\n- Uptime: Tiempo de actividad del proceso\n\n**Rate Limiting:** 100 requests por minuto por IP"
+					},
+					"response": [
+						{
+							"name": "Healthy Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{BASE_URL}}/api/health",
+									"host": ["{{BASE_URL}}"],
+									"path": ["api", "health"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n    \"status\": \"healthy\",\n    \"timestamp\": \"2025-01-26T20:00:00.000Z\",\n    \"version\": \"1.0.0\",\n    \"environment\": \"development\",\n    \"checks\": {\n        \"database\": {\n            \"status\": \"healthy\",\n            \"message\": \"Connection successful\",\n            \"responseTimeMs\": 45\n        },\n        \"configuration\": {\n            \"status\": \"healthy\",\n            \"message\": \"All required environment variables are set\",\n            \"servicesConfigured\": true\n        },\n        \"memory\": {\n            \"status\": \"healthy\",\n            \"heapUsedMB\": 45,\n            \"heapTotalMB\": 128,\n            \"heapPercentage\": 35\n        },\n        \"uptime\": {\n            \"status\": \"healthy\",\n            \"uptimeSeconds\": 3600\n        }\n    },\n    \"responseTimeMs\": 52\n}"
+						},
+						{
+							"name": "Unhealthy Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{BASE_URL}}/api/health",
+									"host": ["{{BASE_URL}}"],
+									"path": ["api", "health"]
+								}
+							},
+							"status": "Service Unavailable",
+							"code": 503,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n    \"status\": \"unhealthy\",\n    \"timestamp\": \"2025-01-26T20:00:00.000Z\",\n    \"version\": \"1.0.0\",\n    \"environment\": \"production\",\n    \"checks\": {\n        \"database\": {\n            \"status\": \"unhealthy\",\n            \"message\": \"Connection timeout expired\",\n            \"responseTimeMs\": 30000\n        },\n        \"configuration\": {\n            \"status\": \"healthy\",\n            \"message\": \"All required environment variables are set\",\n            \"servicesConfigured\": true\n        },\n        \"memory\": {\n            \"status\": \"healthy\",\n            \"heapUsedMB\": 45,\n            \"heapTotalMB\": 128,\n            \"heapPercentage\": 35\n        },\n        \"uptime\": {\n            \"status\": \"healthy\",\n            \"uptimeSeconds\": 3600\n        }\n    },\n    \"responseTimeMs\": 30005\n}"
+						},
+						{
+							"name": "Rate Limited Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{BASE_URL}}/api/health",
+									"host": ["{{BASE_URL}}"],
+									"path": ["api", "health"]
+								}
+							},
+							"status": "Too Many Requests",
+							"code": 429,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								},
+								{
+									"key": "Retry-After",
+									"value": "45"
+								},
+								{
+									"key": "X-RateLimit-Remaining",
+									"value": "0"
+								}
+							],
+							"body": "{\n    \"status\": \"rate_limited\",\n    \"message\": \"Too many requests\",\n    \"retryAfterMs\": 45000\n}"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "WhatsApp Webhook",
+			"description": "Endpoints del webhook de Meta/WhatsApp para recibir y procesar mensajes",
+			"item": [
+				{
+					"name": "Verificar Webhook (Meta Challenge)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.expect(pm.response.code).to.equal(200);",
+									"});",
+									"",
+									"pm.test('Response is the challenge value', function () {",
+									"    var challenge = pm.request.url.query.get('hub.challenge');",
+									"    pm.expect(pm.response.text()).to.equal(challenge);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/whatsapp-webhook?hub.mode=subscribe&hub.verify_token={{WHATSAPP_VERIFY_TOKEN}}&hub.challenge=1234567890",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "whatsapp-webhook"],
+							"query": [
+								{
+									"key": "hub.mode",
+									"value": "subscribe",
+									"description": "Siempre 'subscribe' para verificacion"
+								},
+								{
+									"key": "hub.verify_token",
+									"value": "{{WHATSAPP_VERIFY_TOKEN}}",
+									"description": "Token configurado en Meta Developer"
+								},
+								{
+									"key": "hub.challenge",
+									"value": "1234567890",
+									"description": "Challenge aleatorio enviado por Meta"
+								}
+							]
+						},
+						"description": "Endpoint de verificacion del webhook de Meta.\n\nMeta envia este request al configurar el webhook para verificar que el servidor responda correctamente.\n\n**Parametros Query:**\n- `hub.mode`: Siempre 'subscribe'\n- `hub.verify_token`: Token configurado en la app de Meta\n- `hub.challenge`: Numero aleatorio que debe ser retornado\n\n**Respuesta esperada:**\n- Status 200 con el valor de `hub.challenge` como body"
+					},
+					"response": [
+						{
+							"name": "Verification Success",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{BASE_URL}}/api/whatsapp-webhook?hub.mode=subscribe&hub.verify_token=mi_token&hub.challenge=1234567890",
+									"host": ["{{BASE_URL}}"],
+									"path": ["api", "whatsapp-webhook"],
+									"query": [
+										{"key": "hub.mode", "value": "subscribe"},
+										{"key": "hub.verify_token", "value": "mi_token"},
+										{"key": "hub.challenge", "value": "1234567890"}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"body": "1234567890"
+						},
+						{
+							"name": "Verification Failed - Wrong Token",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{BASE_URL}}/api/whatsapp-webhook?hub.mode=subscribe&hub.verify_token=wrong_token&hub.challenge=1234567890",
+									"host": ["{{BASE_URL}}"],
+									"path": ["api", "whatsapp-webhook"],
+									"query": [
+										{"key": "hub.mode", "value": "subscribe"},
+										{"key": "hub.verify_token", "value": "wrong_token"},
+										{"key": "hub.challenge", "value": "1234567890"}
+									]
+								}
+							},
+							"status": "Forbidden",
+							"code": 403,
+							"body": "Forbidden"
+						}
+					]
+				},
+				{
+					"name": "Recibir Mensaje de Texto",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"// Nota: En produccion, Meta firma el body con X-Hub-Signature-256",
+									"// usando el App Secret de la aplicacion"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.expect(pm.response.code).to.equal(200);",
+									"});",
+									"",
+									"pm.test('Response is OK', function () {",
+									"    pm.expect(pm.response.text()).to.equal('OK');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-Hub-Signature-256",
+								"value": "sha256=<calculated_signature>",
+								"description": "Firma HMAC-SHA256 del body usando App Secret",
+								"disabled": true
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"object\": \"whatsapp_business_account\",\n    \"entry\": [\n        {\n            \"id\": \"123456789012345\",\n            \"changes\": [\n                {\n                    \"value\": {\n                        \"messaging_product\": \"whatsapp\",\n                        \"metadata\": {\n                            \"display_phone_number\": \"5218112345678\",\n                            \"phone_number_id\": \"123456789012345\"\n                        },\n                        \"contacts\": [\n                            {\n                                \"profile\": {\n                                    \"name\": \"Usuario Prueba\"\n                                },\n                                \"wa_id\": \"5218112345001\"\n                            }\n                        ],\n                        \"messages\": [\n                            {\n                                \"from\": \"5218112345001\",\n                                \"id\": \"wamid.HBgNNTIxOD...\",\n                                \"timestamp\": \"1706300000\",\n                                \"type\": \"text\",\n                                \"text\": {\n                                    \"body\": \"Hola, tengo un problema con mi refrigerador\"\n                                }\n                            }\n                        ]\n                    },\n                    \"field\": \"messages\"\n                }\n            ]\n        }\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/whatsapp-webhook",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "whatsapp-webhook"]
+						},
+						"description": "Recibe mensajes de texto enviados por usuarios de WhatsApp.\n\n**Seguridad:**\n- Requiere header `X-Hub-Signature-256` con firma HMAC-SHA256 del body\n- La firma se calcula usando el App Secret de Meta\n\n**Tipos de mensaje soportados:**\n- `text`: Mensajes de texto\n- `image`: Imagenes (para OCR de codigos SAP)\n- `interactive`: Respuestas a botones\n- `location`: Ubicacion GPS\n\n**Nota:** El webhook siempre responde 200 OK para evitar reintentos de Meta."
+					},
+					"response": [
+						{
+							"name": "Message Received",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{BASE_URL}}/api/whatsapp-webhook",
+									"host": ["{{BASE_URL}}"],
+									"path": ["api", "whatsapp-webhook"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "text",
+							"header": [
+								{
+									"key": "x-correlation-id",
+									"value": "corr-abc123-def456"
+								}
+							],
+							"body": "OK"
+						}
+					]
+				},
+				{
+					"name": "Recibir Imagen (OCR)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"object\": \"whatsapp_business_account\",\n    \"entry\": [\n        {\n            \"id\": \"123456789012345\",\n            \"changes\": [\n                {\n                    \"value\": {\n                        \"messaging_product\": \"whatsapp\",\n                        \"metadata\": {\n                            \"display_phone_number\": \"5218112345678\",\n                            \"phone_number_id\": \"123456789012345\"\n                        },\n                        \"messages\": [\n                            {\n                                \"from\": \"5218112345001\",\n                                \"id\": \"wamid.HBgNNTIxOD...\",\n                                \"timestamp\": \"1706300000\",\n                                \"type\": \"image\",\n                                \"image\": {\n                                    \"id\": \"media_id_123456789\",\n                                    \"mime_type\": \"image/jpeg\",\n                                    \"sha256\": \"abc123...\"\n                                }\n                            }\n                        ]\n                    },\n                    \"field\": \"messages\"\n                }\n            ]\n        }\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/whatsapp-webhook",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "whatsapp-webhook"]
+						},
+						"description": "Recibe imagenes enviadas por usuarios.\n\n**Procesamiento:**\n1. Se descarga la imagen desde la API de WhatsApp\n2. Se envia a Azure Computer Vision para OCR\n3. Se busca el codigo SAP (7 digitos) en el texto extraido\n\n**Uso tipico:**\nEl usuario envia una foto de la placa del equipo para extraer automaticamente el codigo SAP."
+					},
+					"response": [
+						{
+							"name": "Image Processed",
+							"status": "OK",
+							"code": 200,
+							"body": "OK"
+						}
+					]
+				},
+				{
+					"name": "Recibir Respuesta de Boton",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"object\": \"whatsapp_business_account\",\n    \"entry\": [\n        {\n            \"id\": \"123456789012345\",\n            \"changes\": [\n                {\n                    \"value\": {\n                        \"messaging_product\": \"whatsapp\",\n                        \"metadata\": {\n                            \"display_phone_number\": \"5218112345678\",\n                            \"phone_number_id\": \"123456789012345\"\n                        },\n                        \"messages\": [\n                            {\n                                \"from\": \"5218112345001\",\n                                \"id\": \"wamid.HBgNNTIxOD...\",\n                                \"timestamp\": \"1706300000\",\n                                \"type\": \"interactive\",\n                                \"interactive\": {\n                                    \"type\": \"button_reply\",\n                                    \"button_reply\": {\n                                        \"id\": \"btn_confirm_yes\",\n                                        \"title\": \"Si, confirmar\"\n                                    }\n                                }\n                            }\n                        ]\n                    },\n                    \"field\": \"messages\"\n                }\n            ]\n        }\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/whatsapp-webhook",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "whatsapp-webhook"]
+						},
+						"description": "Recibe respuestas a botones interactivos.\n\n**IDs de botones comunes:**\n- `btn_confirm_yes` / `btn_confirm_no`: Confirmacion de equipo\n- `btn_refrigerador` / `btn_vehiculo`: Seleccion de tipo de equipo\n- `btn_rating_1` a `btn_rating_5`: Encuesta de satisfaccion"
+					},
+					"response": [
+						{
+							"name": "Button Response Processed",
+							"status": "OK",
+							"code": 200,
+							"body": "OK"
+						}
+					]
+				},
+				{
+					"name": "Recibir Ubicacion",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"object\": \"whatsapp_business_account\",\n    \"entry\": [\n        {\n            \"id\": \"123456789012345\",\n            \"changes\": [\n                {\n                    \"value\": {\n                        \"messaging_product\": \"whatsapp\",\n                        \"metadata\": {\n                            \"display_phone_number\": \"5218112345678\",\n                            \"phone_number_id\": \"123456789012345\"\n                        },\n                        \"messages\": [\n                            {\n                                \"from\": \"5218112345001\",\n                                \"id\": \"wamid.HBgNNTIxOD...\",\n                                \"timestamp\": \"1706300000\",\n                                \"type\": \"location\",\n                                \"location\": {\n                                    \"latitude\": 25.6866,\n                                    \"longitude\": -100.3161,\n                                    \"name\": \"Oficinas OXXO\",\n                                    \"address\": \"Monterrey, NL\"\n                                }\n                            }\n                        ]\n                    },\n                    \"field\": \"messages\"\n                }\n            ]\n        }\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/whatsapp-webhook",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "whatsapp-webhook"]
+						},
+						"description": "Recibe ubicacion GPS compartida por el usuario.\n\n**Validacion:**\n- Latitud: -90 a 90\n- Longitud: -180 a 180\n\n**Uso:**\nSe solicita al usuario durante el flujo de reporte de vehiculos para registrar la ubicacion actual."
+					},
+					"response": [
+						{
+							"name": "Location Received",
+							"status": "OK",
+							"code": 200,
+							"body": "OK"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Tickets",
+			"description": "Endpoints para gestion de tickets de soporte",
+			"item": [
+				{
+					"name": "Resolver Ticket",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.expect(pm.response.code).to.equal(200);",
+									"});",
+									"",
+									"pm.test('Response indicates success', function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.equal(true);",
+									"    pm.expect(jsonData.estadoNuevo).to.equal('RESUELTO');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "x-functions-key",
+								"value": "{{FUNCTIONS_KEY}}",
+								"description": "Azure Functions Key"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"ticketId\": \"TKT-2EF04F2C\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/ticket-resolve",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "ticket-resolve"]
+						},
+						"description": "Marca un ticket como RESUELTO.\n\n**Formato de ticketId:**\n- Prefijo: `TKT-`\n- Sufijo: 8 caracteres hexadecimales\n- Ejemplo: `TKT-2EF04F2C`\n\n**Efectos:**\n1. Cambia el estado del reporte a RESUELTO\n2. Registra la fecha de resolucion\n3. Habilita el envio de encuesta de satisfaccion (via timer)\n\n**Autenticacion:**\nRequiere `x-functions-key` header con la clave de funcion de Azure."
+					},
+					"response": [
+						{
+							"name": "Ticket Resolved Successfully",
+							"originalRequest": {
+								"method": "POST",
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"ticketId\": \"TKT-2EF04F2C\"\n}"
+								},
+								"url": {
+									"raw": "{{BASE_URL}}/api/ticket-resolve",
+									"host": ["{{BASE_URL}}"],
+									"path": ["api", "ticket-resolve"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n    \"success\": true,\n    \"message\": \"Ticket TKT-2EF04F2C marcado como resuelto exitosamente\",\n    \"ticketId\": \"TKT-2EF04F2C\",\n    \"estadoAnterior\": \"PENDIENTE\",\n    \"estadoNuevo\": \"RESUELTO\",\n    \"timestamp\": \"2025-01-26T20:00:00.000Z\"\n}"
+						},
+						{
+							"name": "Missing ticketId",
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": false,\n    \"error\": \"El campo ticketId es requerido\",\n    \"timestamp\": \"2025-01-26T20:00:00.000Z\"\n}"
+						},
+						{
+							"name": "Invalid ticketId Format",
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": false,\n    \"error\": \"Formato de ticketId invalido. Formato esperado: TKT-XXXXXXXX (8 caracteres hex)\",\n    \"timestamp\": \"2025-01-26T20:00:00.000Z\"\n}"
+						},
+						{
+							"name": "Ticket Not Found",
+							"status": "Not Found",
+							"code": 404,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": false,\n    \"error\": \"No se encontro el ticket: TKT-2EF04F2C\",\n    \"timestamp\": \"2025-01-26T20:00:00.000Z\"\n}"
+						},
+						{
+							"name": "Ticket Already Resolved",
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": false,\n    \"error\": \"El ticket TKT-2EF04F2C ya esta resuelto\",\n    \"ticketId\": \"TKT-2EF04F2C\",\n    \"estadoActual\": \"RESUELTO\",\n    \"timestamp\": \"2025-01-26T20:00:00.000Z\"\n}"
+						},
+						{
+							"name": "Ticket Cancelled",
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": false,\n    \"error\": \"El ticket TKT-2EF04F2C esta cancelado y no puede ser resuelto\",\n    \"ticketId\": \"TKT-2EF04F2C\",\n    \"estadoActual\": \"CANCELADO\",\n    \"timestamp\": \"2025-01-26T20:00:00.000Z\"\n}"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Admin - Cache",
+			"description": "Endpoints administrativos para gestion de cache.\n\n**Autenticacion requerida:** Header `X-API-Key` o query param `apiKey`",
+			"item": [
+				{
+					"name": "Ver Estadisticas de Cache",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.expect(pm.response.code).to.equal(200);",
+									"});",
+									"",
+									"pm.test('Response has cache stats', function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.equal(true);",
+									"    pm.expect(jsonData.action).to.equal('get_stats');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{ADMIN_API_KEY}}",
+								"description": "API Key administrativa"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin-cache?type=stats",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin-cache"],
+							"query": [
+								{
+									"key": "type",
+									"value": "stats"
+								}
+							]
+						},
+						"description": "Obtiene estadisticas del cache en memoria.\n\n**Informacion incluida:**\n- Total de equipos en cache\n- Total de sesiones en cache\n- Hits y misses de cache"
+					},
+					"response": [
+						{
+							"name": "Cache Stats",
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"timestamp\": \"2025-01-26T20:00:00.000Z\",\n    \"action\": \"get_stats\",\n    \"details\": {\n        \"equipos\": {\n            \"size\": 15,\n            \"hits\": 245,\n            \"misses\": 12\n        },\n        \"sesiones\": {\n            \"size\": 8,\n            \"hits\": 156,\n            \"misses\": 23\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Limpiar Cache de Equipo Especifico",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{ADMIN_API_KEY}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin-cache?type=equipos&codigo=4045101",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin-cache"],
+							"query": [
+								{
+									"key": "type",
+									"value": "equipos"
+								},
+								{
+									"key": "codigo",
+									"value": "4045101",
+									"description": "Codigo SAP del equipo a limpiar"
+								}
+							]
+						},
+						"description": "Elimina un equipo especifico del cache.\n\n**Uso:**\nCuando se actualiza informacion de un equipo en la BD y se quiere forzar una recarga."
+					},
+					"response": [
+						{
+							"name": "Equipment Cache Cleared",
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"timestamp\": \"2025-01-26T20:00:00.000Z\",\n    \"action\": \"clear_single_equipo\",\n    \"details\": {\n        \"codigo\": \"4045101\",\n        \"found_and_deleted\": true,\n        \"message\": \"Cache del equipo 4045101 limpiado exitosamente\"\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Limpiar Todo el Cache de Equipos",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{ADMIN_API_KEY}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin-cache?type=equipos",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin-cache"],
+							"query": [
+								{
+									"key": "type",
+									"value": "equipos"
+								}
+							]
+						},
+						"description": "Elimina todos los equipos del cache.\n\n**Precaucion:** Puede afectar temporalmente el rendimiento mientras se recarga el cache."
+					},
+					"response": [
+						{
+							"name": "All Equipment Cache Cleared",
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"timestamp\": \"2025-01-26T20:00:00.000Z\",\n    \"action\": \"clear_all_equipos\",\n    \"details\": {\n        \"entries_deleted\": 15,\n        \"message\": \"15 equipos eliminados del cache\"\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Limpiar Sesion Especifica",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{ADMIN_API_KEY}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin-cache?type=sesiones&telefono=5218112345001",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin-cache"],
+							"query": [
+								{
+									"key": "type",
+									"value": "sesiones"
+								},
+								{
+									"key": "telefono",
+									"value": "5218112345001",
+									"description": "Numero de telefono de la sesion"
+								}
+							]
+						},
+						"description": "Elimina la sesion de un usuario especifico del cache.\n\n**Uso:**\nPara forzar que un usuario reinicie su conversacion."
+					},
+					"response": [
+						{
+							"name": "Session Cache Cleared",
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"timestamp\": \"2025-01-26T20:00:00.000Z\",\n    \"action\": \"clear_single_session\",\n    \"details\": {\n        \"telefono\": \"5218112345001\",\n        \"found_and_deleted\": true,\n        \"message\": \"Cache de la sesion 5218112345001 limpiado exitosamente\"\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Limpiar Todas las Sesiones",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{ADMIN_API_KEY}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin-cache?type=sesiones",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin-cache"],
+							"query": [
+								{
+									"key": "type",
+									"value": "sesiones"
+								}
+							]
+						},
+						"description": "Elimina todas las sesiones del cache."
+					},
+					"response": [
+						{
+							"name": "All Sessions Cleared",
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"timestamp\": \"2025-01-26T20:00:00.000Z\",\n    \"action\": \"clear_all_sessions\",\n    \"details\": {\n        \"entries_deleted\": 8,\n        \"message\": \"8 sesiones eliminadas del cache\"\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Limpiar Todo el Cache",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{ADMIN_API_KEY}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin-cache?type=all",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin-cache"],
+							"query": [
+								{
+									"key": "type",
+									"value": "all"
+								}
+							]
+						},
+						"description": "Elimina todo el cache (equipos y sesiones).\n\n**Precaucion:** Usar con cuidado en produccion."
+					},
+					"response": [
+						{
+							"name": "All Cache Cleared",
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"timestamp\": \"2025-01-26T20:00:00.000Z\",\n    \"action\": \"clear_all_cache\",\n    \"details\": {\n        \"equipos_deleted\": 15,\n        \"sesiones_deleted\": 8,\n        \"total_deleted\": 23,\n        \"message\": \"Cache completamente limpiado: 15 equipos + 8 sesiones\"\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Ejecutar Limpieza de Sesiones Expiradas",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{ADMIN_API_KEY}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin-cache?type=trigger_timeout",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin-cache"],
+							"query": [
+								{
+									"key": "type",
+									"value": "trigger_timeout"
+								}
+							]
+						},
+						"description": "Ejecuta manualmente el proceso de limpieza de sesiones expiradas.\n\n**Normalmente:**\nEste proceso se ejecuta automaticamente por el timer cada 5 minutos.\n\n**Uso:**\nPara testing o forzar la limpieza inmediata."
+					},
+					"response": [
+						{
+							"name": "Timeout Triggered",
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"timestamp\": \"2025-01-26T20:00:00.000Z\",\n    \"action\": \"trigger_timeout\",\n    \"details\": {\n        \"processed\": 3,\n        \"expired\": 2,\n        \"warned\": 1\n    }\n}"
+						}
+					]
+				}
+			],
+			"auth": {
+				"type": "apikey",
+				"apikey": [
+					{
+						"key": "value",
+						"value": "{{ADMIN_API_KEY}}",
+						"type": "string"
+					},
+					{
+						"key": "key",
+						"value": "X-API-Key",
+						"type": "string"
+					}
+				]
+			}
+		}
+	]
+}

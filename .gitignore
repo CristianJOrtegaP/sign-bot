@@ -1,0 +1,50 @@
+# Dependencias
+node_modules/
+
+# Configuración local con secretos
+local.settings.json
+
+# Logs
+*.log
+logs/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Azure Functions
+bin/
+obj/
+.python_packages/
+__pycache__/
+
+# Variables de entorno
+.env
+.env.local
+.env.*.local
+*.env
+
+# Archivos temporales
+tmp/
+temp/
+*.tmp
+
+# Coverage de tests
+coverage/
+.nyc_output/
+
+# Build
+dist/
+build/
+
+# Azure deployment scripts - archivos sensibles
+scripts/azure/config.env
+scripts/azure/deployment-output.env
+scripts/azure/function-app.zip
+scripts/azure/.deploy/

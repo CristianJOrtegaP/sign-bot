@@ -1,0 +1,508 @@
+openapi: 3.0.3
+info:
+  title: AC FIXBOT API
+  description: |
+    API para el sistema de reportes de fallas de equipos de refrigeracion y vehiculos via WhatsApp.
+
+    ## Autenticacion
+
+    - **Webhook WhatsApp**: Firma X-Hub-Signature-256 (HMAC-SHA256)
+    - **Endpoints Admin**: Header `X-API-Key` o query param `apiKey`
+    - **Azure Functions**: Header `x-functions-key`
+
+    ## Rate Limiting
+
+    - Health Check: 100 requests/minuto por IP
+    - Webhook: Sin limite (procesado por Meta)
+
+  version: 2.0.0
+  contact:
+    name: Arca Continental
+  license:
+    name: ISC
+
+servers:
+  - url: https://{environment}.azurewebsites.net/api
+    description: Azure Functions
+    variables:
+      environment:
+        default: acfixbot-dev
+        enum:
+          - acfixbot-dev
+          - acfixbot-prod
+
+tags:
+  - name: Health
+    description: Monitoreo y estado del sistema
+  - name: Webhook
+    description: Integracion con WhatsApp Business API
+  - name: Tickets
+    description: Gestion de tickets de soporte
+  - name: Admin
+    description: Operaciones administrativas
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health Check
+      description: |
+        Verifica el estado de salud del sistema incluyendo:
+        - Conexion a base de datos
+        - Variables de entorno
+        - Uso de memoria
+        - Circuit breakers
+        - Servicios externos
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Sistema saludable
+          headers:
+            X-RateLimit-Remaining:
+              description: Requests restantes en la ventana actual
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '429':
+          description: Rate limit excedido
+          headers:
+            Retry-After:
+              description: Segundos hasta poder reintentar
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+        '503':
+          description: Sistema no saludable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /whatsapp-webhook:
+    get:
+      tags:
+        - Webhook
+      summary: Verificacion del Webhook
+      description: |
+        Endpoint de verificacion requerido por Meta para registrar el webhook.
+        Meta envia un challenge que debe ser devuelto si el token es valido.
+      operationId: verifyWebhook
+      parameters:
+        - name: hub.mode
+          in: query
+          required: true
+          description: Debe ser 'subscribe'
+          schema:
+            type: string
+            enum: [subscribe]
+        - name: hub.verify_token
+          in: query
+          required: true
+          description: Token de verificacion configurado en Meta
+          schema:
+            type: string
+        - name: hub.challenge
+          in: query
+          required: true
+          description: Numero aleatorio a devolver si la verificacion es exitosa
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Verificacion exitosa
+          content:
+            text/plain:
+              schema:
+                type: integer
+                description: El valor de hub.challenge
+        '403':
+          description: Token de verificacion invalido
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Forbidden
+
+    post:
+      tags:
+        - Webhook
+      summary: Recibir mensajes de WhatsApp
+      description: |
+        Recibe y procesa mensajes entrantes de WhatsApp Business API.
+
+        **Tipos de mensaje soportados:**
+        - `text`: Mensajes de texto
+        - `image`: Imagenes (con OCR para codigos SAP)
+        - `interactive`: Respuestas a botones
+        - `location`: Ubicacion GPS
+
+        **Nota:** Siempre responde 200 para evitar reintentos de Meta.
+      operationId: receiveMessage
+      security:
+        - webhookSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookPayload'
+      responses:
+        '200':
+          description: Mensaje recibido (siempre 200)
+          headers:
+            x-correlation-id:
+              description: ID de correlacion para tracing
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: received
+        '401':
+          description: Firma invalida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /ticket-resolve:
+    post:
+      tags:
+        - Tickets
+      summary: Resolver ticket
+      description: Marca un ticket de soporte como RESUELTO
+      operationId: resolveTicket
+      security:
+        - functionKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ticketId
+              properties:
+                ticketId:
+                  type: string
+                  pattern: '^TKT-[A-F0-9]{8}$'
+                  description: ID del ticket (TKT- + 8 caracteres hex)
+                  example: TKT-2EF04F2C
+      responses:
+        '200':
+          description: Ticket resuelto exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResolveResponse'
+        '400':
+          description: Request invalido o ticket ya resuelto/cancelado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Ticket no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin-cache:
+    get:
+      tags:
+        - Admin
+      summary: Administrar cache
+      description: |
+        Gestiona el cache en memoria del sistema.
+
+        **Operaciones disponibles:**
+        - `stats`: Ver estadisticas
+        - `equipos`: Limpiar cache de equipos
+        - `sesiones`: Limpiar cache de sesiones
+        - `all`: Limpiar todo
+        - `trigger_timeout`: Ejecutar limpieza de sesiones expiradas
+      operationId: manageCache
+      security:
+        - apiKey: []
+      parameters:
+        - name: type
+          in: query
+          required: true
+          description: Tipo de operacion
+          schema:
+            type: string
+            enum: [stats, equipos, sesiones, all, trigger_timeout]
+        - name: codigo
+          in: query
+          description: Codigo SAP del equipo (solo para type=equipos)
+          schema:
+            type: string
+        - name: telefono
+          in: query
+          description: Telefono de la sesion (solo para type=sesiones)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Operacion exitosa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CacheResponse'
+        '400':
+          description: Tipo de operacion invalido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: API key invalida o faltante
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    webhookSignature:
+      type: apiKey
+      in: header
+      name: X-Hub-Signature-256
+      description: Firma HMAC-SHA256 del body con formato 'sha256=<hash>'
+
+    functionKey:
+      type: apiKey
+      in: header
+      name: x-functions-key
+      description: Azure Functions key
+
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key administrativa
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy, degraded]
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+        environment:
+          type: string
+        responseTimeMs:
+          type: integer
+        checks:
+          type: object
+          properties:
+            database:
+              $ref: '#/components/schemas/HealthCheck'
+            configuration:
+              $ref: '#/components/schemas/HealthCheck'
+            memory:
+              type: object
+              properties:
+                status:
+                  type: string
+                heapUsedMB:
+                  type: integer
+                heapTotalMB:
+                  type: integer
+                heapPercentage:
+                  type: integer
+            uptime:
+              type: object
+              properties:
+                status:
+                  type: string
+                uptimeSeconds:
+                  type: integer
+            circuitBreakers:
+              type: object
+              properties:
+                status:
+                  type: string
+                services:
+                  type: object
+            deadLetter:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [healthy, warning, unknown]
+                total:
+                  type: integer
+                pending:
+                  type: integer
+                failed:
+                  type: integer
+                message:
+                  type: string
+            externalServices:
+              type: object
+              properties:
+                status:
+                  type: string
+                services:
+                  type: object
+
+    HealthCheck:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy, warning, degraded, unknown]
+        message:
+          type: string
+        responseTimeMs:
+          type: integer
+
+    WebhookPayload:
+      type: object
+      properties:
+        object:
+          type: string
+          example: whatsapp_business_account
+        entry:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              changes:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    value:
+                      type: object
+                      properties:
+                        messages:
+                          type: array
+                          items:
+                            $ref: '#/components/schemas/WhatsAppMessage'
+                        statuses:
+                          type: array
+                          items:
+                            type: object
+
+    WhatsAppMessage:
+      type: object
+      properties:
+        from:
+          type: string
+          description: Numero de telefono del remitente
+        id:
+          type: string
+          description: ID unico del mensaje
+        type:
+          type: string
+          enum: [text, image, interactive, location, sticker, audio, video, document]
+        text:
+          type: object
+          properties:
+            body:
+              type: string
+        image:
+          type: object
+          properties:
+            id:
+              type: string
+        interactive:
+          type: object
+          properties:
+            button_reply:
+              type: object
+              properties:
+                id:
+                  type: string
+        location:
+          type: object
+          properties:
+            latitude:
+              type: number
+            longitude:
+              type: number
+            address:
+              type: string
+
+    TicketResolveResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        ticketId:
+          type: string
+        estadoAnterior:
+          type: string
+        estadoNuevo:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    CacheResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        action:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+        timestamp:
+          type: string
+          format: date-time
+
+    RateLimitError:
+      type: object
+      properties:
+        status:
+          type: string
+          example: rate_limited
+        message:
+          type: string
+          example: Too many requests
+        retryAfterMs:
+          type: integer
+
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+        timestamp:
+          type: string
+          format: date-time

@@ -1,0 +1,132 @@
+# Artillery Load Test Configuration
+# AC FixBot - WhatsApp Chatbot
+#
+# Ejecutar con: npx artillery run tests/load/artillery.yml
+# Reporte HTML: npx artillery run tests/load/artillery.yml --output report.json && npx artillery report report.json
+
+config:
+  target: "http://localhost:7071"
+  phases:
+    # Fase 1: Warm-up (30 segundos, 5 usuarios/segundo)
+    - duration: 30
+      arrivalRate: 5
+      name: "Warm up"
+
+    # Fase 2: Rampa (60 segundos, de 5 a 20 usuarios/segundo)
+    - duration: 60
+      arrivalRate: 5
+      rampTo: 20
+      name: "Ramp up load"
+
+    # Fase 3: Carga sostenida (120 segundos, 20 usuarios/segundo)
+    - duration: 120
+      arrivalRate: 20
+      name: "Sustained load"
+
+    # Fase 4: Spike (30 segundos, 50 usuarios/segundo)
+    - duration: 30
+      arrivalRate: 50
+      name: "Spike test"
+
+    # Fase 5: Cool-down (30 segundos, 5 usuarios/segundo)
+    - duration: 30
+      arrivalRate: 5
+      name: "Cool down"
+
+  defaults:
+    headers:
+      Content-Type: "application/json"
+      Accept: "application/json"
+
+  plugins:
+    expect: {}
+
+  # Umbrales de aceptacion
+  ensure:
+    # 99% de requests deben responder en menos de 2 segundos
+    p99: 2000
+    # Maximo 1% de errores
+    maxErrorRate: 1
+
+scenarios:
+  # Escenario 1: Health Check (peso: 30%)
+  - name: "Health Check"
+    weight: 30
+    flow:
+      - get:
+          url: "/api/health"
+          expect:
+            - statusCode: 200
+            - contentType: json
+            - hasProperty: status
+
+  # Escenario 2: Webhook - Mensaje de texto (peso: 40%)
+  - name: "Webhook Text Message"
+    weight: 40
+    flow:
+      - post:
+          url: "/api/whatsapp-webhook"
+          json:
+            object: "whatsapp_business_account"
+            entry:
+              - id: "{{ $randomString(10) }}"
+                changes:
+                  - value:
+                      messaging_product: "whatsapp"
+                      metadata:
+                        display_phone_number: "15551234567"
+                        phone_number_id: "123456789"
+                      contacts:
+                        - profile:
+                            name: "Test User"
+                          wa_id: "521551{{ $randomNumber(1000000, 9999999) }}"
+                      messages:
+                        - from: "521551{{ $randomNumber(1000000, 9999999) }}"
+                          id: "wamid.{{ $randomString(20) }}"
+                          timestamp: "{{ $timestamp() }}"
+                          type: "text"
+                          text:
+                            body: "Hola, necesito reportar una falla"
+                    field: "messages"
+          expect:
+            - statusCode: 200
+
+  # Escenario 3: Webhook - Button Response (peso: 20%)
+  - name: "Webhook Button Response"
+    weight: 20
+    flow:
+      - post:
+          url: "/api/whatsapp-webhook"
+          json:
+            object: "whatsapp_business_account"
+            entry:
+              - id: "{{ $randomString(10) }}"
+                changes:
+                  - value:
+                      messaging_product: "whatsapp"
+                      messages:
+                        - from: "521551{{ $randomNumber(1000000, 9999999) }}"
+                          id: "wamid.{{ $randomString(20) }}"
+                          timestamp: "{{ $timestamp() }}"
+                          type: "interactive"
+                          interactive:
+                            type: "button_reply"
+                            button_reply:
+                              id: "btn_tipo_refrigerador"
+                              title: "Refrigerador"
+                    field: "messages"
+          expect:
+            - statusCode: 200
+
+  # Escenario 4: Cache Stats (peso: 10%)
+  - name: "Cache Stats"
+    weight: 10
+    flow:
+      - get:
+          url: "/api/admin-cache?type=stats"
+          headers:
+            X-API-Key: "{{ $processEnvironment.ADMIN_API_KEY }}"
+          expect:
+            - statusCode:
+                - 200
+                - 401  # Si no hay API key configurada
