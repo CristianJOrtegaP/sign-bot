@@ -19,6 +19,8 @@
     "test:webhook": "jest --testPathPattern=webhook",
     "test:handlers": "jest --testPathPattern='(messageHandler|imageHandler)'",
     "test:services": "jest --testPathPattern='(whatsappService|intentService|errorHandler)'",
+    "test:fase1": "jest --testPathPattern='(optimisticLocking|deduplication|promiseUtils|raceCondition)'",
+    "test:fase2": "jest --testPathPattern='(enhancedMetrics|alertingSystem)'",
     "test:ci": "jest --coverage --ci --reporters=default",
     "test:coverage:report": "jest --coverage && open coverage/lcov-report/index.html",
     "test:debug": "node --inspect-brk node_modules/.bin/jest --runInBand",

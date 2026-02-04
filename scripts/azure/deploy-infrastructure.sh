@@ -325,7 +325,16 @@ create_azure_openai() {
         log_success "Azure OpenAI creado en $AOAI_LOCATION"
     fi
 
-    # Obtener endpoint y key
+    # Configurar custom subdomain (requerido para que la API REST funcione)
+    log_info "Configurando custom subdomain para Azure OpenAI..."
+    az cognitiveservices account update \
+        --name "$AZURE_OPENAI_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --custom-domain "$AZURE_OPENAI_NAME" \
+        --output none 2>/dev/null || true
+    log_success "Custom subdomain configurado: $AZURE_OPENAI_NAME.openai.azure.com"
+
+    # Obtener endpoint (ahora con custom subdomain)
     AZURE_OPENAI_ENDPOINT=$(az cognitiveservices account show \
         --name "$AZURE_OPENAI_NAME" \
         --resource-group "$RESOURCE_GROUP" \
@@ -369,51 +378,101 @@ create_azure_openai() {
     log_info "  Endpoint: $AZURE_OPENAI_ENDPOINT"
     log_info "  Deployment: $AZURE_OPENAI_DEPLOYMENT"
 
-    # Crear deployment de audio si está habilitado
-    if [[ "$AUDIO_TRANSCRIPTION_ENABLED" == "true" ]]; then
-        create_audio_deployment
-    fi
 }
 
 # ----------------------------------------------------------------------------
-# CREAR DEPLOYMENT DE AUDIO (GPT-4o-mini-audio para Transcripcion)
+# CREAR RECURSO WHISPER (Azure OpenAI separado en North Central US)
 # ----------------------------------------------------------------------------
 
-create_audio_deployment() {
-    # Solo proceder si Azure OpenAI está configurado
-    if [ -z "$AZURE_OPENAI_NAME" ] || [ -z "$AZURE_OPENAI_ENDPOINT" ]; then
-        log_warning "Azure OpenAI no configurado, omitiendo deployment de audio"
+create_whisper_resource() {
+    # Solo crear si AUDIO_TRANSCRIPTION_ENABLED está habilitado
+    if [[ "${AUDIO_TRANSCRIPTION_ENABLED:-false}" != "true" ]]; then
+        log_info "Transcripción de audio deshabilitada (AUDIO_TRANSCRIPTION_ENABLED=false)"
         return 0
     fi
 
-    AZURE_AUDIO_DEPLOYMENT="${AZURE_AUDIO_DEPLOYMENT:-gpt-4o-mini-audio}"
+    AZURE_WHISPER_NAME="${AZURE_WHISPER_NAME:-aoai-acfixbot-whisper-${ENVIRONMENT}}"
+    AZURE_WHISPER_LOCATION="${AZURE_WHISPER_LOCATION:-northcentralus}"
+    AZURE_AUDIO_DEPLOYMENT="${AZURE_AUDIO_DEPLOYMENT:-whisper}"
 
-    log_info "Creando deployment de audio: $AZURE_AUDIO_DEPLOYMENT..."
+    log_info "Creando Azure OpenAI para Whisper: $AZURE_WHISPER_NAME en $AZURE_WHISPER_LOCATION..."
 
     # Verificar si ya existe
-    if az cognitiveservices account deployment show \
-        --name "$AZURE_OPENAI_NAME" \
-        --resource-group "$RESOURCE_GROUP" \
-        --deployment-name "$AZURE_AUDIO_DEPLOYMENT" &> /dev/null 2>&1; then
-        log_warning "Deployment de audio ya existe"
-        return 0
+    if az cognitiveservices account show --name "$AZURE_WHISPER_NAME" --resource-group "$RESOURCE_GROUP" &> /dev/null; then
+        log_warning "Azure OpenAI Whisper ya existe, usando existente"
+    else
+        # Verificar si existe soft-deleted y purgarlo
+        if az cognitiveservices account list-deleted --query "[?name=='$AZURE_WHISPER_NAME']" -o tsv 2>/dev/null | grep -q "$AZURE_WHISPER_NAME"; then
+            log_warning "Azure OpenAI Whisper soft-deleted encontrado, purgando..."
+            az cognitiveservices account purge \
+                --name "$AZURE_WHISPER_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --location "$AZURE_WHISPER_LOCATION" 2>/dev/null || true
+            sleep 10
+        fi
+
+        log_info "Creando recurso Whisper en $AZURE_WHISPER_LOCATION..."
+        if ! az cognitiveservices account create \
+            --name "$AZURE_WHISPER_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --kind "OpenAI" \
+            --sku "S0" \
+            --location "$AZURE_WHISPER_LOCATION" \
+            --yes 2>&1; then
+            log_warning "No se pudo crear Azure OpenAI Whisper."
+            log_warning "Continuando sin transcripción de audio..."
+            return 0
+        fi
+        log_success "Azure OpenAI Whisper creado en $AZURE_WHISPER_LOCATION"
     fi
 
-    # Crear deployment de gpt-4o-mini-audio-preview
-    # Ventajas sobre Whisper: mejor cuota (60 req/min vs 3 req/min), misma region
-    if az cognitiveservices account deployment create \
-        --name "$AZURE_OPENAI_NAME" \
+    # Configurar custom subdomain (requerido para que la API REST funcione)
+    log_info "Configurando custom subdomain para Whisper..."
+    az cognitiveservices account update \
+        --name "$AZURE_WHISPER_NAME" \
         --resource-group "$RESOURCE_GROUP" \
-        --deployment-name "$AZURE_AUDIO_DEPLOYMENT" \
-        --model-name "gpt-4o-mini-audio-preview" \
-        --model-version "2024-12-17" \
-        --model-format "OpenAI" \
-        --sku-capacity 10 \
-        --sku-name "GlobalStandard" 2>&1; then
-        log_success "Deployment de audio creado: $AZURE_AUDIO_DEPLOYMENT"
+        --custom-domain "$AZURE_WHISPER_NAME" \
+        --output none 2>/dev/null || true
+    log_success "Custom subdomain configurado: $AZURE_WHISPER_NAME.openai.azure.com"
+
+    # Obtener endpoint y key
+    AZURE_AUDIO_ENDPOINT=$(az cognitiveservices account show \
+        --name "$AZURE_WHISPER_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --query properties.endpoint -o tsv)
+
+    AZURE_AUDIO_KEY=$(az cognitiveservices account keys list \
+        --name "$AZURE_WHISPER_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --query key1 -o tsv)
+
+    # Crear deployment de Whisper
+    log_info "Creando deployment de Whisper: $AZURE_AUDIO_DEPLOYMENT..."
+
+    if az cognitiveservices account deployment show \
+        --name "$AZURE_WHISPER_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --deployment-name "$AZURE_AUDIO_DEPLOYMENT" &> /dev/null 2>&1; then
+        log_warning "Deployment Whisper ya existe"
     else
-        log_warning "No se pudo crear deployment de audio (puede no estar disponible en la region)"
+        if az cognitiveservices account deployment create \
+            --name "$AZURE_WHISPER_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --deployment-name "$AZURE_AUDIO_DEPLOYMENT" \
+            --model-name "whisper" \
+            --model-version "001" \
+            --model-format "OpenAI" \
+            --sku-capacity 1 \
+            --sku-name "Standard" 2>&1; then
+            log_success "Deployment Whisper creado"
+        else
+            log_warning "No se pudo crear deployment de Whisper"
+        fi
     fi
+
+    log_success "Azure OpenAI Whisper configurado"
+    log_info "  Endpoint: $AZURE_AUDIO_ENDPOINT"
+    log_info "  Deployment: $AZURE_AUDIO_DEPLOYMENT"
 }
 
 # ----------------------------------------------------------------------------
@@ -434,6 +493,7 @@ create_azure_maps() {
             --resource-group "$RESOURCE_GROUP" \
             --sku "G2" \
             --kind "Gen2" \
+            --accept-tos \
             --output none
         log_success "Azure Maps creado"
     fi
@@ -593,6 +653,16 @@ store_secrets_in_keyvault() {
         log_success "Azure OpenAI Key guardado en Key Vault"
     fi
 
+    # Azure Whisper Key (si existe - creado por create_whisper_resource)
+    if [ -n "$AZURE_AUDIO_KEY" ]; then
+        az keyvault secret set \
+            --vault-name "$KEY_VAULT_NAME" \
+            --name "AZURE-WHISPER-KEY" \
+            --value "$AZURE_AUDIO_KEY" \
+            --output none 2>/dev/null || log_warning "Secret AZURE-WHISPER-KEY ya existe, actualizando..."
+        log_success "Azure Whisper Key guardado en Key Vault"
+    fi
+
     # Azure Maps Key (si existe)
     if [ -n "$AZURE_MAPS_KEY" ]; then
         az keyvault secret set \
@@ -745,7 +815,12 @@ configure_app_settings() {
     fi
 
     # Agregar AI Provider setting
-    SETTINGS+=("AI_PROVIDER=${AI_PROVIDER:-gemini}")
+    # Si Azure OpenAI está configurado, usarlo como provider por defecto
+    if [ -n "$AZURE_OPENAI_ENDPOINT" ]; then
+        SETTINGS+=("AI_PROVIDER=azure-openai")
+    else
+        SETTINGS+=("AI_PROVIDER=${AI_PROVIDER:-gemini}")
+    fi
     SETTINGS+=("USE_AI=${USE_AI:-true}")
 
     # Agregar Gemini settings - API Key desde Key Vault
@@ -775,10 +850,15 @@ configure_app_settings() {
     fi
     SETTINGS+=("ROUTE_BUFFER_MINUTES=${ROUTE_BUFFER_MINUTES:-20}")
 
-    # Agregar settings de transcripcion de audio (GPT-4o-mini-audio)
-    # Usa el mismo recurso de Azure OpenAI (no requiere endpoint/key separados)
+    # Agregar settings de transcripcion de audio (Whisper en recurso separado)
     SETTINGS+=("AUDIO_TRANSCRIPTION_ENABLED=${AUDIO_TRANSCRIPTION_ENABLED:-false}")
-    SETTINGS+=("AZURE_AUDIO_DEPLOYMENT=${AZURE_AUDIO_DEPLOYMENT:-gpt-4o-mini-audio}")
+    if [ -n "$AZURE_AUDIO_ENDPOINT" ]; then
+        SETTINGS+=("AZURE_AUDIO_ENDPOINT=$AZURE_AUDIO_ENDPOINT")
+    fi
+    if [ -n "$AZURE_AUDIO_KEY" ]; then
+        SETTINGS+=("AZURE_AUDIO_KEY=@Microsoft.KeyVault(SecretUri=${KEY_VAULT_URI}secrets/AZURE-WHISPER-KEY/)")
+    fi
+    SETTINGS+=("AZURE_AUDIO_DEPLOYMENT=${AZURE_AUDIO_DEPLOYMENT:-whisper}")
 
     # Aplicar settings
     az functionapp config appsettings set \
@@ -893,6 +973,7 @@ main() {
     create_storage_account
     create_computer_vision
     create_azure_openai
+    create_whisper_resource
     create_azure_maps
     create_application_insights
     create_key_vault
@@ -915,6 +996,9 @@ main() {
     echo "  - Computer Vision: $COMPUTER_VISION_NAME"
     if [ -n "$AZURE_OPENAI_ENDPOINT" ]; then
         echo "  - Azure OpenAI: $AZURE_OPENAI_NAME (deployment: $AZURE_OPENAI_DEPLOYMENT)"
+    fi
+    if [ -n "$AZURE_AUDIO_ENDPOINT" ]; then
+        echo "  - Azure Whisper: $AZURE_WHISPER_NAME (deployment: $AZURE_AUDIO_DEPLOYMENT)"
     fi
     if [ -n "$AZURE_MAPS_KEY" ]; then
         echo "  - Azure Maps: $AZURE_MAPS_NAME (geocoding + routing)"

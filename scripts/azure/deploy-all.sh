@@ -97,10 +97,15 @@ show_summary() {
     fi
 
     echo ""
-    read -p "Continuar con el deployment? (y/N): " CONFIRM
-    if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
-        log_info "Deployment cancelado"
-        exit 0
+    # Auto-confirm si se pasa --yes o -y como argumento
+    if [[ "$AUTO_CONFIRM" == "true" ]]; then
+        log_info "Auto-confirmado (--yes flag)"
+    else
+        read -p "Continuar con el deployment? (y/N): " CONFIRM
+        if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
+            log_info "Deployment cancelado"
+            exit 0
+        fi
     fi
 }
 
@@ -130,6 +135,16 @@ run_step() {
 # ----------------------------------------------------------------------------
 
 main() {
+    # Procesar argumentos
+    AUTO_CONFIRM="false"
+    for arg in "$@"; do
+        case $arg in
+            --yes|-y)
+                AUTO_CONFIRM="true"
+                ;;
+        esac
+    done
+
     echo ""
     echo "============================================================================"
     echo "    _    ____   _____ _      ____        _   "
