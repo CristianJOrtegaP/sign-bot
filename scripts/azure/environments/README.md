@@ -10,17 +10,32 @@ Esta carpeta contiene las configuraciones base para cada ambiente.
 | `tst.env`  | Testing    | Cliente        | QA y pruebas de usuario |
 | `prod.env` | Produccion | Cliente        | Ambiente productivo     |
 
-## Uso
+## Uso Rapido
 
 ```bash
-# Cargar configuracion de ambiente
-source scripts/azure/environments/dev.env
+# Deploy completo a dev
+./scripts/azure/deploy.sh dev
 
-# Luego cargar secretos (config.env)
-source scripts/azure/config.env
+# Solo infraestructura
+./scripts/azure/deploy.sh tst --infra-only
 
-# Ejecutar deployment
-./scripts/azure/deploy-infrastructure.sh
+# Solo codigo
+./scripts/azure/deploy.sh prod --code-only
+
+# Destruir ambiente
+./scripts/azure/destroy.sh dev
+```
+
+## Antes del Primer Deploy
+
+1. Copiar config.env.example a config.env
+2. Configurar los secretos en config.env
+3. Ejecutar deploy.sh
+
+```bash
+cp scripts/azure/config.env.example scripts/azure/config.env
+# Editar config.env con tus secretos
+./scripts/azure/deploy.sh dev
 ```
 
 ## SKUs por Ambiente
@@ -41,6 +56,6 @@ source scripts/azure/config.env
 
 ## Notas
 
-- Los archivos `.env` en esta carpeta son plantillas
+- Los archivos `.env` en esta carpeta son plantillas de infra
 - Los secretos reales van en `config.env` (ignorado por git)
-- En produccion, usar Key Vault para todos los secretos
+- Despues del deploy, los secretos se guardan en Azure Key Vault
