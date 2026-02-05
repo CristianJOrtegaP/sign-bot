@@ -285,6 +285,19 @@ class PerformanceTimer {
       logger.error('Error persistiendo métrica', err, { operation: this.operationName });
     });
 
+    // FASE 10/10: Enviar a Application Insights
+    try {
+      const appInsights = require('./appInsightsService');
+      if (appInsights.isInitialized()) {
+        appInsights.trackMetric(`${this.operationName}.duration`, duration, {
+          success: !isError,
+          ...metadata,
+        });
+      }
+    } catch (_err) {
+      // Ignorar si appInsights no está disponible
+    }
+
     return duration;
   }
 }
@@ -612,6 +625,22 @@ setInterval(() => {
   }
 }, config.metrics.printIntervalMs).unref();
 
+/**
+ * Reset de métricas (solo para tests)
+ * FASE 2: Necesario para arreglar tests de enhancedMetrics
+ */
+function resetMetrics() {
+  metrics.operations.clear();
+  metrics.timings.clear();
+  metrics.errors.clear();
+  metrics.cache.hits = 0;
+  metrics.cache.misses = 0;
+  metrics.latencyHistograms.clear();
+  metrics.rawTimings.clear();
+  metrics.slaTracking.clear();
+  metrics.errorRates.clear();
+}
+
 module.exports = {
   startTimer,
   recordCacheHit,
@@ -626,4 +655,6 @@ module.exports = {
   // Estado del storage
   isStorageEnabled: () => storageEnabled,
   initializeStorage,
+  // Para tests
+  resetMetrics,
 };

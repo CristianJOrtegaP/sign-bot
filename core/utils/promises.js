@@ -9,13 +9,13 @@ const { logger } = require('../services/infrastructure/errorHandler');
  * Error personalizado para timeout
  */
 class TimeoutError extends Error {
-    constructor(operationName, timeoutMs) {
-        super(`Operation '${operationName}' timed out after ${timeoutMs}ms`);
-        this.name = 'TimeoutError';
-        this.operationName = operationName;
-        this.timeoutMs = timeoutMs;
-        this.isTimeout = true;
-    }
+  constructor(operationName, timeoutMs) {
+    super(`Operation '${operationName}' timed out after ${timeoutMs}ms`);
+    this.name = 'TimeoutError';
+    this.operationName = operationName;
+    this.timeoutMs = timeoutMs;
+    this.isTimeout = true;
+  }
 }
 
 /**
@@ -36,37 +36,38 @@ class TimeoutError extends Error {
  * );
  */
 async function withTimeout(promise, timeoutMs, operationName = 'operation') {
-    // Validar parámetros
-    if (!promise || typeof promise.then !== 'function') {
-        throw new Error('El primer parámetro debe ser una Promise');
-    }
+  // Validar parámetros
+  if (!promise || typeof promise.then !== 'function') {
+    throw new Error('El primer parámetro debe ser una Promise');
+  }
 
-    if (typeof timeoutMs !== 'number' || timeoutMs <= 0) {
-        throw new Error('timeoutMs debe ser un número positivo');
-    }
+  if (typeof timeoutMs !== 'number' || timeoutMs <= 0) {
+    throw new Error('timeoutMs debe ser un número positivo');
+  }
 
-    return new Promise((resolve, reject) => {
-        // Timer de timeout
-        const timer = setTimeout(() => {
-            const error = new TimeoutError(operationName, timeoutMs);
-            logger.warn(`[Timeout] ${operationName} excedió ${timeoutMs}ms`, {
-                operationName,
-                timeoutMs
-            });
-            reject(error);
-        }, timeoutMs);
+  return new Promise((resolve, reject) => {
+    // Timer de timeout
+    const timer = setTimeout(() => {
+      const error = new TimeoutError(operationName, timeoutMs);
+      logger.warn(`[Timeout] ${operationName} excedió ${timeoutMs}ms`, {
+        operationName,
+        timeoutMs,
+      });
+      reject(error);
+    }, timeoutMs);
 
-        // Ejecutar promesa original
-        promise
-            .then((result) => {
-                clearTimeout(timer);
-                resolve(result);
-            })
-            .catch((error) => {
-                clearTimeout(timer);
-                reject(error);
-            });
-    });
+    // Ejecutar promesa original
+    promise
+      .then((result) => {
+        clearTimeout(timer);
+        resolve(result);
+        return result;
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
 }
 
 /**
@@ -90,26 +91,33 @@ async function withTimeout(promise, timeoutMs, operationName = 'operation') {
  *   'detectIntent'
  * );
  */
-async function withTimeoutAndFallback(promise, timeoutMs, fallbackValue, operationName = 'operation') {
-    try {
-        return await withTimeout(promise, timeoutMs, operationName);
-    } catch (error) {
-        // Si es timeout o cualquier otro error, devolver fallback
-        if (error.isTimeout) {
-            logger.warn(`[Timeout] ${operationName} excedió ${timeoutMs}ms, usando fallback`, {
-                operationName,
-                timeoutMs,
-                fallbackValue: typeof fallbackValue === 'object' ? JSON.stringify(fallbackValue) : fallbackValue
-            });
-        } else {
-            logger.error(`[Error] ${operationName} falló, usando fallback`, error, {
-                operationName,
-                fallbackValue: typeof fallbackValue === 'object' ? JSON.stringify(fallbackValue) : fallbackValue
-            });
-        }
-
-        return fallbackValue;
+async function withTimeoutAndFallback(
+  promise,
+  timeoutMs,
+  fallbackValue,
+  operationName = 'operation'
+) {
+  try {
+    return await withTimeout(promise, timeoutMs, operationName);
+  } catch (error) {
+    // Si es timeout o cualquier otro error, devolver fallback
+    if (error.isTimeout) {
+      logger.warn(`[Timeout] ${operationName} excedió ${timeoutMs}ms, usando fallback`, {
+        operationName,
+        timeoutMs,
+        fallbackValue:
+          typeof fallbackValue === 'object' ? JSON.stringify(fallbackValue) : fallbackValue,
+      });
+    } else {
+      logger.error(`[Error] ${operationName} falló, usando fallback`, error, {
+        operationName,
+        fallbackValue:
+          typeof fallbackValue === 'object' ? JSON.stringify(fallbackValue) : fallbackValue,
+      });
     }
+
+    return fallbackValue;
+  }
 }
 
 /**
@@ -133,25 +141,33 @@ async function withTimeoutAndFallback(promise, timeoutMs, fallbackValue, operati
  *   'extractDescription'
  * );
  */
-async function withTimeoutAndFallbackFn(promise, timeoutMs, fallbackFn, operationName = 'operation') {
-    try {
-        return await withTimeout(promise, timeoutMs, operationName);
-    } catch (error) {
-        // Si es timeout o cualquier otro error, ejecutar función de fallback
-        if (error.isTimeout) {
-            logger.warn(`[Timeout] ${operationName} excedió ${timeoutMs}ms, ejecutando fallback function`, {
-                operationName,
-                timeoutMs
-            });
-        } else {
-            logger.error(`[Error] ${operationName} falló, ejecutando fallback function`, error, {
-                operationName
-            });
+async function withTimeoutAndFallbackFn(
+  promise,
+  timeoutMs,
+  fallbackFn,
+  operationName = 'operation'
+) {
+  try {
+    return await withTimeout(promise, timeoutMs, operationName);
+  } catch (error) {
+    // Si es timeout o cualquier otro error, ejecutar función de fallback
+    if (error.isTimeout) {
+      logger.warn(
+        `[Timeout] ${operationName} excedió ${timeoutMs}ms, ejecutando fallback function`,
+        {
+          operationName,
+          timeoutMs,
         }
-
-        // Ejecutar función de fallback (puede ser async)
-        return await fallbackFn(error);
+      );
+    } else {
+      logger.error(`[Error] ${operationName} falló, ejecutando fallback function`, error, {
+        operationName,
+      });
     }
+
+    // Ejecutar función de fallback (puede ser async)
+    return fallbackFn(error);
+  }
 }
 
 /**
@@ -168,11 +184,11 @@ async function withTimeoutAndFallbackFn(promise, timeoutMs, fallbackFn, operatio
  * ]);
  */
 async function allWithTimeout(operations) {
-    const promises = operations.map(({ promise, timeout, name }) =>
-        withTimeout(promise, timeout, name)
-    );
+  const promises = operations.map(({ promise, timeout, name }) =>
+    withTimeout(promise, timeout, name)
+  );
 
-    return Promise.all(promises);
+  return Promise.all(promises);
 }
 
 /**
@@ -199,11 +215,11 @@ async function allWithTimeout(operations) {
  * ]);
  */
 async function allWithTimeoutAndFallback(operations) {
-    const promises = operations.map(({ promise, timeout, fallback, name }) =>
-        withTimeoutAndFallback(promise, timeout, fallback, name)
-    );
+  const promises = operations.map(({ promise, timeout, fallback, name }) =>
+    withTimeoutAndFallback(promise, timeout, fallback, name)
+  );
 
-    return Promise.all(promises);
+  return Promise.all(promises);
 }
 
 /**
@@ -217,15 +233,17 @@ async function allWithTimeoutAndFallback(operations) {
  * await delay(1000); // Espera 1 segundo
  */
 function delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 module.exports = {
-    withTimeout,
-    withTimeoutAndFallback,
-    withTimeoutAndFallbackFn,
-    allWithTimeout,
-    allWithTimeoutAndFallback,
-    delay,
-    TimeoutError
+  withTimeout,
+  withTimeoutAndFallback,
+  withTimeoutAndFallbackFn,
+  allWithTimeout,
+  allWithTimeoutAndFallback,
+  delay,
+  TimeoutError,
 };

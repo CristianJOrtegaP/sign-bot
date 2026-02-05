@@ -6,6 +6,9 @@
  * - Error Rates
  */
 
+// IMPORTANTE: Usar el módulo REAL de metricsService, no el mock automático
+jest.unmock('../../core/services/infrastructure/metricsService');
+
 // Mock dependencies ANTES de require
 jest.mock('../../core/config', () => ({
   metrics: {
@@ -38,15 +41,31 @@ jest.mock('@azure/data-tables', () => ({
   AzureNamedKeyCredential: jest.fn(),
 }));
 
-// Reset modules para test limpio
+// Mock appInsightsService para evitar errores
+jest.mock('../../core/services/infrastructure/appInsightsService', () => ({
+  isInitialized: () => false,
+  trackMetric: jest.fn(),
+  trackException: jest.fn(),
+}));
+
+// Cargar el módulo una vez y usar resetMetrics() entre tests
+let metricsService;
+
+beforeAll(() => {
+  metricsService = require('../../core/services/infrastructure/metricsService');
+});
+
 beforeEach(() => {
-  jest.resetModules();
   jest.clearAllMocks();
+  // Usar resetMetrics() en lugar de jest.resetModules() para mantener el módulo cargado
+  if (metricsService && metricsService.resetMetrics) {
+    metricsService.resetMetrics();
+  }
 });
 
 describe('Enhanced Metrics - Percentiles', () => {
   test('debe calcular percentiles correctamente', () => {
-    const metricsService = require('../../core/services/infrastructure/metricsService');
+    // Usar módulo pre-cargado
 
     // Simular 20 operaciones con latencias variadas
     const operations = [
@@ -76,7 +95,7 @@ describe('Enhanced Metrics - Percentiles', () => {
   });
 
   test('debe mantener solo últimos 1000 timings', () => {
-    const metricsService = require('../../core/services/infrastructure/metricsService');
+    // Usar módulo pre-cargado
 
     // Simular 1500 operaciones
     for (let i = 0; i < 1500; i++) {
@@ -94,7 +113,7 @@ describe('Enhanced Metrics - Percentiles', () => {
 
 describe('Enhanced Metrics - Latency Histograms', () => {
   test('debe crear histogramas de latencia por buckets', () => {
-    const metricsService = require('../../core/services/infrastructure/metricsService');
+    // Usar módulo pre-cargado
 
     // Simular operaciones en diferentes buckets
     const durations = [30, 80, 150, 300, 800, 1500, 3000, 6000];
@@ -120,7 +139,7 @@ describe('Enhanced Metrics - Latency Histograms', () => {
   });
 
   test('debe incrementar el bucket correcto según la latencia', () => {
-    const metricsService = require('../../core/services/infrastructure/metricsService');
+    // Usar módulo pre-cargado
 
     // 45ms -> debe ir a <50ms
     const timer1 = metricsService.startTimer('test.bucket');
@@ -142,7 +161,7 @@ describe('Enhanced Metrics - Latency Histograms', () => {
 
 describe('Enhanced Metrics - SLA Tracking', () => {
   test('debe trackear SLA compliance correctamente', () => {
-    const metricsService = require('../../core/services/infrastructure/metricsService');
+    // Usar módulo pre-cargado
 
     // Operación con SLA de 1000ms (webhook.process)
     // Simular 8 dentro de SLA, 2 fuera
@@ -171,7 +190,7 @@ describe('Enhanced Metrics - SLA Tracking', () => {
   });
 
   test('debe trackear success/error counts', () => {
-    const metricsService = require('../../core/services/infrastructure/metricsService');
+    // Usar módulo pre-cargado
 
     // 7 éxitos, 3 errores
     for (let i = 0; i < 7; i++) {
@@ -195,7 +214,7 @@ describe('Enhanced Metrics - SLA Tracking', () => {
 
 describe('Enhanced Metrics - Error Rates', () => {
   test('debe calcular error rate correctamente', () => {
-    const metricsService = require('../../core/services/infrastructure/metricsService');
+    // Usar módulo pre-cargado
 
     // 90 éxitos, 10 errores
     for (let i = 0; i < 90; i++) {
@@ -220,7 +239,7 @@ describe('Enhanced Metrics - Error Rates', () => {
   });
 
   test('debe manejar 0% error rate', () => {
-    const metricsService = require('../../core/services/infrastructure/metricsService');
+    // Usar módulo pre-cargado
 
     // Solo éxitos
     for (let i = 0; i < 10; i++) {
@@ -238,7 +257,7 @@ describe('Enhanced Metrics - Error Rates', () => {
 
 describe('Enhanced Metrics - Integration', () => {
   test('debe incluir todas las enhanced metrics en summary', () => {
-    const metricsService = require('../../core/services/infrastructure/metricsService');
+    // Usar módulo pre-cargado
 
     // Simular operaciones variadas
     for (let i = 0; i < 10; i++) {

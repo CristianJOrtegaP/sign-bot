@@ -1,17 +1,22 @@
 /**
  * AC FIXBOT - Servicio de Transcripción de Audio
- * Usa Azure OpenAI GPT-4o-mini-audio para transcribir mensajes de voz a texto
- * Compatible con audios de WhatsApp (OGG/Opus)
+ * Soporta múltiples proveedores con fallback automático:
+ * 1. Azure OpenAI Whisper (primario, si está configurado)
+ * 2. Deepgram ($200 gratis, excelente calidad)
+ * 3. Google Speech-to-Text (60 min/mes gratis)
  *
- * NOTA: Se migró de Whisper a GPT-4o-mini-audio por mejor disponibilidad de cuota
- * GPT-4o-mini-audio usa Chat Completions API en lugar del endpoint de transcripciones
- * OGG/Opus se convierte a WAV antes de enviar a la API
+ * Compatible con audios de WhatsApp (OGG/Opus)
  */
 
 const axios = require('axios');
 const config = require('../../config');
 const { logger } = require('../infrastructure/errorHandler');
 const { getBreaker, SERVICES } = require('../infrastructure/circuitBreaker');
+
+// Proveedores de transcripción
+const azureSpeechProvider = require('./transcriptionProviders/azureSpeechProvider');
+const deepgramProvider = require('./transcriptionProviders/deepgramProvider');
+const googleProvider = require('./transcriptionProviders/googleSpeechProvider');
 
 // Circuit breaker para el servicio de transcripción
 const transcriptionBreaker = getBreaker(SERVICES.AZURE_AI || 'azure-ai');
@@ -43,15 +48,78 @@ const TRANSCRIPTION_CONFIG = {
 };
 
 /**
- * Verifica si la transcripción está habilitada y configurada
+ * Obtiene la lista de proveedores disponibles en orden de prioridad
+ * @returns {Array} Lista de proveedores configurados
+ */
+function getAvailableProviders() {
+  const audioConfig = config.audio || {};
+  const providers = [];
+
+  // 1. Azure Whisper (primario si está configurado)
+  if (audioConfig.enabled && audioConfig.endpoint && audioConfig.apiKey) {
+    providers.push({
+      name: 'azure-whisper',
+      priority: 1,
+      description: 'Azure OpenAI Whisper',
+    });
+  }
+
+  // 2. Azure Speech Services (5 hrs/mes gratis) - Recomendado para Azure
+  if (audioConfig.azureSpeechKey && audioConfig.azureSpeechRegion) {
+    providers.push({
+      name: 'azure-speech',
+      priority: 2,
+      description: 'Azure Speech Services (5 hrs/mes gratis)',
+    });
+  }
+
+  // 3. Deepgram ($200 gratis)
+  if (audioConfig.deepgramApiKey) {
+    providers.push({
+      name: 'deepgram',
+      priority: 3,
+      description: 'Deepgram ($200 créditos gratis)',
+    });
+  }
+
+  // 4. Google Speech-to-Text (60 min/mes gratis)
+  if (audioConfig.googleApiKey) {
+    providers.push({
+      name: 'google',
+      priority: 4,
+      description: 'Google Speech (60 min/mes gratis)',
+    });
+  }
+
+  return providers.sort((a, b) => a.priority - b.priority);
+}
+
+/**
+ * Verifica si la transcripción está habilitada (cualquier proveedor)
  * @returns {boolean}
  */
 function isEnabled() {
   const audioConfig = config.audio || {};
-  // Usa endpoint dedicado para audio (puede ser recurso separado de Whisper)
-  const endpoint = audioConfig.endpoint;
-  const apiKey = audioConfig.apiKey;
-  return audioConfig.enabled === true && endpoint && apiKey;
+
+  // Azure Whisper
+  const azureEnabled = audioConfig.enabled === true && audioConfig.endpoint && audioConfig.apiKey;
+
+  // Deepgram
+  const deepgramEnabled = Boolean(audioConfig.deepgramApiKey);
+
+  // Google
+  const googleEnabled = Boolean(audioConfig.googleApiKey);
+
+  return azureEnabled || deepgramEnabled || googleEnabled;
+}
+
+/**
+ * Verifica si Azure Whisper está habilitado específicamente
+ * @returns {boolean}
+ */
+function isAzureEnabled() {
+  const audioConfig = config.audio || {};
+  return audioConfig.enabled === true && audioConfig.endpoint && audioConfig.apiKey;
 }
 
 /**
@@ -89,8 +157,18 @@ function _resample(samples, fromRate, toRate) {
  * @returns {Float32Array} - Audio mono
  */
 function stereoToMono(channelData) {
+  // Validar que hay datos de audio
+  if (!channelData || channelData.length === 0) {
+    throw new Error('Error al decodificar audio: no se encontraron canales de audio');
+  }
+
   if (channelData.length === 1) {
     return channelData[0];
+  }
+
+  // Validar que el primer canal tiene datos
+  if (!channelData[0] || channelData[0].length === 0) {
+    throw new Error('Error al decodificar audio: canal de audio sin muestras');
   }
 
   const samples = channelData[0].length;
@@ -206,13 +284,53 @@ async function convertOggToWav(oggBuffer) {
 
   try {
     // Decodificar OGG/Opus a PCM
-    const { channelData, sampleRate } = await decoder.decode(new Uint8Array(oggBuffer));
+    const decodeResult = await decoder.decode(new Uint8Array(oggBuffer));
+
+    // IMPORTANTE: Llamar a flush() para obtener los últimos samples de audio
+    // Sin esto, las últimas palabras del audio se pierden
+    const flushResult = await decoder.flush();
+
+    // Combinar los samples de decode y flush
+    let channelData = decodeResult.channelData;
+    const sampleRate = decodeResult.sampleRate;
+
+    // Si flush devolvió samples adicionales, concatenarlos
+    if (flushResult && flushResult.channelData && flushResult.channelData.length > 0) {
+      const flushSamples = flushResult.channelData[0]?.length || 0;
+      if (flushSamples > 0) {
+        logger.debug('Flush recuperó samples adicionales', { flushSamples });
+
+        // Concatenar los canales
+        const combinedChannels = [];
+        for (let ch = 0; ch < channelData.length; ch++) {
+          const originalSamples = channelData[ch] || new Float32Array(0);
+          const additionalSamples = flushResult.channelData[ch] || new Float32Array(0);
+
+          const combined = new Float32Array(originalSamples.length + additionalSamples.length);
+          combined.set(originalSamples, 0);
+          combined.set(additionalSamples, originalSamples.length);
+          combinedChannels.push(combined);
+        }
+        channelData = combinedChannels;
+      }
+    }
+
+    // Validar que la decodificación fue exitosa
+    const channels = channelData?.length || 0;
+    const samplesPerChannel = channelData?.[0]?.length || 0;
 
     logger.debug('Audio decodificado', {
       originalSampleRate: sampleRate,
-      channels: channelData.length,
-      samplesPerChannel: channelData[0]?.length || 0,
+      channels,
+      samplesPerChannel,
+      decodeSamples: decodeResult.channelData?.[0]?.length || 0,
+      flushSamples: flushResult?.channelData?.[0]?.length || 0,
     });
+
+    // Si no hay datos de audio, lanzar error para intentar con proveedor alternativo
+    if (channels === 0 || samplesPerChannel === 0) {
+      throw new Error('DECODE_EMPTY: El decodificador OGG/Opus no encontró datos de audio válidos');
+    }
 
     // 1. Convertir a mono si es stereo
     let monoSamples = stereoToMono(channelData);
@@ -243,35 +361,133 @@ async function convertOggToWav(oggBuffer) {
 }
 
 /**
- * Transcribe un buffer de audio a texto usando Azure OpenAI GPT-4o-mini-audio
- * Usa Chat Completions API con audio input en lugar del endpoint de transcripciones
+ * Transcribe audio usando proveedores alternativos (Azure Speech, Deepgram o Google)
+ * @param {Buffer} audioBuffer - Buffer con el audio
+ * @param {Object} options - Opciones de transcripción
+ * @returns {Promise<Object>} - Resultado de transcripción
+ */
+async function transcribeWithAlternativeProvider(audioBuffer, options = {}) {
+  const audioConfig = config.audio || {};
+  const mimeType = options.mimeType || 'audio/ogg';
+  const errors = [];
+
+  // 1. Intentar Azure Speech Services primero (5 hrs/mes gratis, mismo ecosistema)
+  if (audioConfig.azureSpeechKey && audioConfig.azureSpeechRegion) {
+    logger.debug('Intentando transcripción con Azure Speech Services...');
+    const result = await azureSpeechProvider.transcribe(audioBuffer, {
+      apiKey: audioConfig.azureSpeechKey,
+      region: audioConfig.azureSpeechRegion,
+      mimeType,
+    });
+
+    if (result.success) {
+      logger.info('Transcripción exitosa con Azure Speech', {
+        textLength: result.text?.length,
+        duration: result.duration,
+      });
+      return result;
+    }
+
+    errors.push({ provider: 'azure-speech', error: result.error, errorCode: result.errorCode });
+    logger.warn('Azure Speech falló, intentando siguiente proveedor', { error: result.error });
+  }
+
+  // 2. Intentar Deepgram ($200 en créditos gratis)
+  if (audioConfig.deepgramApiKey) {
+    logger.debug('Intentando transcripción con Deepgram...');
+    const result = await deepgramProvider.transcribe(audioBuffer, {
+      apiKey: audioConfig.deepgramApiKey,
+      mimeType,
+    });
+
+    if (result.success) {
+      logger.info('Transcripción exitosa con Deepgram', {
+        textLength: result.text?.length,
+        duration: result.duration,
+      });
+      return result;
+    }
+
+    errors.push({ provider: 'deepgram', error: result.error, errorCode: result.errorCode });
+    logger.warn('Deepgram falló, intentando siguiente proveedor', { error: result.error });
+  }
+
+  // 3. Intentar Google Speech como último recurso (60 min/mes gratis)
+  if (audioConfig.googleApiKey) {
+    logger.debug('Intentando transcripción con Google Speech...');
+    const result = await googleProvider.transcribe(audioBuffer, {
+      apiKey: audioConfig.googleApiKey,
+      mimeType,
+    });
+
+    if (result.success) {
+      logger.info('Transcripción exitosa con Google Speech', {
+        textLength: result.text?.length,
+        duration: result.duration,
+      });
+      return result;
+    }
+
+    errors.push({ provider: 'google', error: result.error, errorCode: result.errorCode });
+  }
+
+  // Ningún proveedor alternativo disponible o todos fallaron
+  return {
+    success: false,
+    text: null,
+    error:
+      errors.length > 0
+        ? `Todos los proveedores fallaron: ${errors.map((e) => e.error).join(', ')}`
+        : 'No hay proveedores alternativos configurados',
+    errors,
+    duration: 0,
+  };
+}
+
+/**
+ * Transcribe un buffer de audio a texto
+ * Usa múltiples proveedores con fallback automático:
+ * 1. Azure OpenAI Whisper (si configurado)
+ * 2. Deepgram ($200 gratis)
+ * 3. Google Speech (60 min/mes gratis)
+ *
  * @param {Buffer} audioBuffer - Buffer con el contenido del audio
  * @param {Object} options - Opciones adicionales
  * @param {string} options.mimeType - Tipo MIME del audio (default: audio/ogg)
  * @param {string} options.filename - Nombre del archivo (default: audio.ogg)
+ * @param {boolean} options.preferAlternative - Usar proveedor alternativo primero
  * @returns {Promise<Object>} - Objeto con texto transcrito y metadata
  */
 async function transcribeAudio(audioBuffer, options = {}) {
-  if (!isEnabled()) {
-    logger.warn('Transcripción de audio deshabilitada o no configurada');
+  const availableProviders = getAvailableProviders();
+
+  if (availableProviders.length === 0) {
+    logger.warn('Transcripción de audio: ningún proveedor configurado');
     return {
       success: false,
       text: null,
-      error: 'Transcripción no habilitada',
+      error:
+        'No hay proveedores de transcripción configurados. Configura DEEPGRAM_API_KEY o GOOGLE_SPEECH_API_KEY.',
       duration: 0,
     };
   }
 
-  // Verificar circuit breaker
+  logger.debug('Proveedores de transcripción disponibles', {
+    providers: availableProviders.map((p) => p.name),
+  });
+
+  // Si se prefiere proveedor alternativo o Azure no está disponible, usar alternativo directamente
+  if (options.preferAlternative || !isAzureEnabled()) {
+    return transcribeWithAlternativeProvider(audioBuffer, options);
+  }
+
+  // Verificar circuit breaker para Azure
   const check = transcriptionBreaker.canExecute();
   if (!check.allowed) {
-    logger.warn('Circuit breaker abierto para transcripción', { reason: check.reason });
-    return {
-      success: false,
-      text: null,
-      error: 'Servicio temporalmente no disponible',
-      duration: 0,
-    };
+    logger.warn('Circuit breaker abierto para Azure, usando proveedor alternativo', {
+      reason: check.reason,
+    });
+    return transcribeWithAlternativeProvider(audioBuffer, options);
   }
 
   const startTime = Date.now();
@@ -405,6 +621,7 @@ async function transcribeAudio(audioBuffer, options = {}) {
     // Clasificar el error
     let errorMessage = 'Error al transcribir audio';
     let errorCode = 'TRANSCRIPTION_ERROR';
+    let shouldFallback = false;
 
     if (error.response) {
       const status = error.response.status;
@@ -416,32 +633,75 @@ async function transcribeAudio(audioBuffer, options = {}) {
       } else if (status === 401 || status === 403) {
         errorMessage = 'Error de autenticación con Azure OpenAI';
         errorCode = 'AUTH_ERROR';
+        shouldFallback = true;
       } else if (status === 404) {
         errorMessage = 'Deployment de audio no encontrado';
         errorCode = 'DEPLOYMENT_NOT_FOUND';
+        shouldFallback = true;
       } else if (status === 429) {
-        errorMessage = 'Límite de tasa excedido, intenta más tarde';
+        errorMessage = 'Límite de tasa excedido en Azure';
         errorCode = 'RATE_LIMIT';
+        shouldFallback = true; // Importante: hacer fallback en rate limit
       } else if (status >= 500) {
         errorMessage = 'Error del servidor de Azure OpenAI';
         errorCode = 'SERVER_ERROR';
+        shouldFallback = true;
       }
 
-      logger.error('Error en transcripción de audio', error, {
+      logger.warn('Error en Azure Whisper', {
         status,
         data: JSON.stringify(data).substring(0, 500),
         errorCode,
+        willFallback: shouldFallback,
       });
     } else if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
       errorMessage = 'Timeout al transcribir audio';
       errorCode = 'TIMEOUT';
-      logger.error('Timeout en transcripción', error, { durationMs: duration });
-    } else if (error.message && error.message.includes('decode')) {
+      shouldFallback = true;
+      logger.warn('Timeout en Azure Whisper', { durationMs: duration });
+    } else if (
+      error.message &&
+      (error.message.includes('decode') || error.message.includes('DECODE'))
+    ) {
       errorMessage = 'Error al decodificar audio OGG/Opus';
       errorCode = 'DECODE_ERROR';
-      logger.error('Error decodificando audio', error);
+      // Intentar fallback porque Deepgram/Azure Speech soportan OGG nativo
+      shouldFallback = true;
+      logger.warn('Error decodificando audio, intentando proveedores alternativos', {
+        error: error.message,
+      });
     } else {
-      logger.error('Error inesperado en transcripción', error);
+      logger.error('Error inesperado en transcripción Azure', error);
+      shouldFallback = true;
+    }
+
+    // Si Azure falló por rate limit u otro error recuperable, intentar con proveedores alternativos
+    if (shouldFallback) {
+      logger.info('Azure Whisper falló, intentando proveedores alternativos', {
+        azureError: errorMessage,
+        errorCode,
+      });
+
+      const alternativeResult = await transcribeWithAlternativeProvider(audioBuffer, options);
+
+      if (alternativeResult.success) {
+        logger.info('Transcripción exitosa con proveedor alternativo después de fallo de Azure', {
+          provider: alternativeResult.provider,
+          textLength: alternativeResult.text?.length,
+        });
+        return alternativeResult;
+      }
+
+      // Si también falló el alternativo, devolver error combinado
+      return {
+        success: false,
+        text: null,
+        error: `Azure: ${errorMessage}. Alternativos: ${alternativeResult.error}`,
+        errorCode: 'ALL_PROVIDERS_FAILED',
+        azureError: { message: errorMessage, code: errorCode },
+        alternativeErrors: alternativeResult.errors,
+        duration,
+      };
     }
 
     return {
@@ -450,6 +710,7 @@ async function transcribeAudio(audioBuffer, options = {}) {
       error: errorMessage,
       errorCode,
       duration,
+      provider: 'azure',
     };
   }
 }
@@ -494,7 +755,9 @@ function getStats() {
 module.exports = {
   transcribeAudio,
   isEnabled,
+  isAzureEnabled,
   isSupportedAudioFormat,
   getStats,
+  getAvailableProviders,
   TRANSCRIPTION_CONFIG,
 };

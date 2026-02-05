@@ -23,6 +23,11 @@ const OPTIONAL_ENV_VARS = [
   'AZURE_OPENAI_DEPLOYMENT', // Nombre del deployment (modelo)
   'AZURE_AUDIO_DEPLOYMENT', // Nombre del deployment de audio (gpt-4o-mini-audio)
   'AUDIO_TRANSCRIPTION_ENABLED', // Habilitar transcripción de audio (true/false)
+  // PROVEEDORES ALTERNATIVOS DE TRANSCRIPCIÓN (GRATIS)
+  'AZURE_SPEECH_KEY', // Azure Speech Services: 5 hrs/mes gratis
+  'AZURE_SPEECH_REGION', // Región de Azure Speech (ej: eastus)
+  'DEEPGRAM_API_KEY', // Deepgram: $200 créditos gratis, excelente calidad
+  'GOOGLE_SPEECH_API_KEY', // Google Speech: 60 min/mes gratis
   'VISION_ENDPOINT',
   'VISION_KEY',
   'BLOB_CONNECTION_STRING',
@@ -326,7 +331,7 @@ if (isNaN(azureMaps.routeBufferMinutes) || azureMaps.routeBufferMinutes < 0) {
 // ============================================================================
 
 const audio = {
-  // Habilitar transcripción de audio (requiere Azure OpenAI con Whisper o gpt-4o-mini-audio)
+  // Habilitar transcripción de audio con Azure (requiere Azure OpenAI con Whisper)
   enabled: process.env.AUDIO_TRANSCRIPTION_ENABLED === 'true',
 
   // Endpoint de Azure OpenAI para audio (puede ser recurso separado para Whisper)
@@ -337,6 +342,24 @@ const audio = {
 
   // Nombre del deployment de audio en Azure OpenAI
   audioDeployment: process.env.AZURE_AUDIO_DEPLOYMENT || 'whisper',
+
+  // ============================================================================
+  // PROVEEDORES ALTERNATIVOS GRATUITOS DE TRANSCRIPCIÓN
+  // Si Azure Whisper no está disponible o falla, se usan estos proveedores
+  // ============================================================================
+
+  // Azure Speech Services: 5 horas gratis por mes (RECOMENDADO si ya usas Azure)
+  // Crear recurso: https://portal.azure.com/#create/Microsoft.CognitiveServicesSpeechServices
+  azureSpeechKey: process.env.AZURE_SPEECH_KEY,
+  azureSpeechRegion: process.env.AZURE_SPEECH_REGION, // ej: eastus, westus2, southcentralus
+
+  // Deepgram: $200 en créditos gratis al registrarse
+  // Obtener API Key: https://console.deepgram.com/signup
+  deepgramApiKey: process.env.DEEPGRAM_API_KEY,
+
+  // Google Speech-to-Text: 60 minutos gratis por mes
+  // Obtener API Key: https://console.cloud.google.com/apis/credentials
+  googleApiKey: process.env.GOOGLE_SPEECH_API_KEY,
 
   // Límites de audio
   limits: {
@@ -351,9 +374,9 @@ const audio = {
   // Idioma principal para transcripción
   language: 'es',
 
-  // Rate limiting para audios (ahora más generoso con gpt-4o-mini-audio)
+  // Rate limiting para audios
   rateLimit: {
-    maxPerMinute: 30, // Mucho más alto que Whisper
+    maxPerMinute: 30,
     maxPerHour: 500,
   },
 };
@@ -429,6 +452,64 @@ const reportTypes = {
 };
 
 // ============================================================================
+// CONFIGURACIÓN DE AZURE CACHE FOR REDIS (FASE 3 - Escalabilidad)
+// ============================================================================
+
+const redis = {
+  // Habilitar Redis (si false, usa cache en memoria local)
+  enabled: process.env.REDIS_ENABLED === 'true',
+
+  // Configuración de conexión Azure Redis
+  host: process.env.REDIS_HOST,
+  port: parseInt(process.env.REDIS_PORT || '6380', 10),
+  password: process.env.REDIS_PASSWORD,
+
+  // Azure Redis requiere TLS
+  tls: process.env.REDIS_TLS !== 'false',
+
+  // TTLs por tipo de dato (en segundos)
+  ttl: {
+    session: 5 * 60, // 5 minutos para sesiones
+    equipo: 15 * 60, // 15 minutos para equipos
+    default: 5 * 60, // Default 5 minutos
+  },
+
+  // Configuración de reconexión
+  reconnect: {
+    maxRetries: 3,
+    retryDelayMs: 1000,
+  },
+
+  // Prefix para keys (evita colisiones si se comparte Redis)
+  keyPrefix: process.env.REDIS_KEY_PREFIX || 'acfixbot:',
+};
+
+// ============================================================================
+// CONFIGURACIÓN DE AZURE SERVICE BUS (FASE 3 - Dead Letter Queue)
+// ============================================================================
+
+const serviceBus = {
+  // Habilitar Service Bus (si false, usa tabla SQL para DLQ)
+  enabled: process.env.SERVICEBUS_ENABLED === 'true',
+
+  // Connection string de Azure Service Bus
+  connectionString: process.env.SERVICEBUS_CONNECTION_STRING,
+
+  // Nombres de colas
+  queueName: process.env.SERVICEBUS_QUEUE_NAME || 'acfixbot-messages',
+  dlqName: process.env.SERVICEBUS_DLQ_NAME || 'acfixbot-dlq',
+
+  // Configuración de mensajes
+  maxDeliveryCount: 3, // Reintentos antes de ir a DLQ
+  lockDurationMs: 60000, // 1 minuto de lock
+  messageTimeToLiveMs: 24 * 60 * 60 * 1000, // 24 horas
+
+  // Configuración de recepción
+  maxConcurrentCalls: 5, // Mensajes procesados en paralelo
+  receiveMode: 'peekLock', // peekLock o receiveAndDelete
+};
+
+// ============================================================================
 // EXPORTAR CONFIGURACIÓN
 // ============================================================================
 
@@ -448,6 +529,8 @@ module.exports = {
   azureMaps,
   metrics,
   validation,
+  redis,
+  serviceBus,
 
   // Enums/Constantes
   equipmentTypes,
@@ -457,4 +540,6 @@ module.exports = {
   // Acceso rápido a valores comunes
   isAIEnabled: ai.enabled,
   sessionTimeoutMinutes: session.timeoutMinutes,
+  isRedisEnabled: redis.enabled,
+  isServiceBusEnabled: serviceBus.enabled,
 };

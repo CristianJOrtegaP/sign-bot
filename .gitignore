@@ -48,3 +48,9 @@ scripts/azure/config.env
 scripts/azure/deployment-output.env
 scripts/azure/function-app.zip
 scripts/azure/.deploy/
+scripts/azure/.swa-deployment-token
+
+# Archivos de deployment grandes
+*.zip
+deploy-*.zip
+function-app-*.zip

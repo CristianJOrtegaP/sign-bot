@@ -4,14 +4,22 @@
  */
 
 const mockBackgroundProcessor = {
-    __reset: () => {
-        mockBackgroundProcessor.processImageInBackground.mockClear();
-    },
+  __reset: () => {
+    mockBackgroundProcessor.processImageInBackground.mockClear();
+    mockBackgroundProcessor.processImageWithAIVision.mockClear();
+  },
 
-    processImageInBackground: jest.fn().mockResolvedValue({
-        success: true,
-        sapCode: '1234567'
-    })
+  // OCR para códigos de barras (refrigeradores)
+  processImageInBackground: jest.fn().mockResolvedValue({
+    success: true,
+    sapCode: '1234567',
+  }),
+
+  // AI Vision para análisis general (vehículos)
+  processImageWithAIVision: jest.fn().mockResolvedValue({
+    success: true,
+    descripcion: 'Imagen analizada correctamente',
+  }),
 };
 
 module.exports = mockBackgroundProcessor;

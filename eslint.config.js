@@ -1,10 +1,12 @@
 const js = require('@eslint/js');
 const eslintConfigPrettier = require('eslint-config-prettier');
 const pluginPromise = require('eslint-plugin-promise');
+const pluginSecurity = require('eslint-plugin-security');
 
 module.exports = [
   js.configs.recommended,
   pluginPromise.configs['flat/recommended'],
+  pluginSecurity.configs.recommended,
   eslintConfigPrettier,
 
   // ===== Configuración principal =====
@@ -90,6 +92,16 @@ module.exports = [
       'max-nested-callbacks': ['warn', 5], // Subido para tests de Jest
       complexity: ['warn', 25], // Subido: handlers de Azure Functions son más complejos
       'no-duplicate-imports': 'error',
+
+      // ===== Reglas de seguridad (FASE 10/10) =====
+      'security/detect-object-injection': 'warn',
+      'security/detect-non-literal-regexp': 'warn',
+      'security/detect-unsafe-regex': 'error',
+      'security/detect-buffer-noassert': 'error',
+      'security/detect-eval-with-expression': 'error',
+      'security/detect-no-csrf-before-method-override': 'error',
+      'security/detect-possible-timing-attacks': 'warn',
+      'security/detect-pseudoRandomBytes': 'warn',
     },
   },
 
@@ -99,11 +111,52 @@ module.exports = [
     rules: {
       'max-nested-callbacks': 'off', // Tests de Jest tienen muchos callbacks anidados
       complexity: 'off', // Tests pueden ser largos
+      'no-promise-executor-return': 'off', // Tests usan patrones con setTimeout
+    },
+  },
+
+  // ===== Configuración específica para frontend (browser) =====
+  {
+    files: ['frontend/**/*.js', 'dashboard/**/*.js'],
+    languageOptions: {
+      globals: {
+        // Browser globals
+        window: 'readonly',
+        document: 'readonly',
+        alert: 'readonly',
+        confirm: 'readonly',
+        fetch: 'readonly',
+        localStorage: 'readonly',
+        sessionStorage: 'readonly',
+        location: 'readonly',
+        navigator: 'readonly',
+        history: 'readonly',
+        URLSearchParams: 'readonly',
+        FormData: 'readonly',
+        // External libraries
+        Chart: 'readonly',
+      },
+    },
+    rules: {
+      // Relajar reglas para código frontend legacy
+      complexity: 'off',
+      eqeqeq: 'warn',
+      'no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
     },
   },
 
   // ===== Ignorar archivos =====
   {
-    ignores: ['node_modules/**', 'coverage/**', '.husky/**', '*.min.js'],
+    ignores: [
+      'node_modules/**',
+      'coverage/**',
+      '.husky/**',
+      '*.min.js',
+      '**/*.zip',
+      'deploy-*.zip',
+    ],
   },
 ];

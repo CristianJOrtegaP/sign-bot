@@ -14,13 +14,13 @@ const { ConcurrencyError } = require('../errors');
  * @returns {number} - Delay en ms con jitter aplicado
  */
 function calculateBackoffDelay(attempt, baseDelayMs = 50, maxDelayMs = 1000) {
-    // Exponential backoff: 2^attempt * baseDelay
-    const exponentialDelay = Math.min(baseDelayMs * Math.pow(2, attempt), maxDelayMs);
+  // Exponential backoff: 2^attempt * baseDelay
+  const exponentialDelay = Math.min(baseDelayMs * Math.pow(2, attempt), maxDelayMs);
 
-    // Jitter: ±25% del delay para evitar thundering herd
-    const jitter = exponentialDelay * 0.25 * (Math.random() * 2 - 1);
+  // Jitter: ±25% del delay para evitar thundering herd
+  const jitter = exponentialDelay * 0.25 * (Math.random() * 2 - 1);
 
-    return Math.floor(exponentialDelay + jitter);
+  return Math.floor(exponentialDelay + jitter);
 }
 
 /**
@@ -29,7 +29,9 @@ function calculateBackoffDelay(attempt, baseDelayMs = 50, maxDelayMs = 1000) {
  * @returns {Promise<void>}
  */
 function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 /**
@@ -60,61 +62,64 @@ function sleep(ms) {
  * );
  */
 async function withRetry(operation, options = {}) {
-    const {
-        maxAttempts = 3,
-        shouldRetry = (error) => error instanceof ConcurrencyError,
-        onRetry = null,
-        baseDelayMs = 50,
-        maxDelayMs = 1000,
-        operationName = 'operation'
-    } = options;
+  const {
+    maxAttempts = 3,
+    shouldRetry = (error) => error instanceof ConcurrencyError,
+    onRetry = null,
+    baseDelayMs = 50,
+    maxDelayMs = 1000,
+    operationName = 'operation',
+  } = options;
 
-    let lastError;
+  let lastError;
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        try {
-            // Ejecutar la operación
-            return await operation();
-        } catch (error) {
-            lastError = error;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      // Ejecutar la operación
+      return await operation();
+    } catch (error) {
+      lastError = error;
 
-            // Verificar si debemos reintentar
-            const shouldRetryThis = shouldRetry(error);
-            const isLastAttempt = attempt === maxAttempts - 1;
+      // Verificar si debemos reintentar
+      const shouldRetryThis = shouldRetry(error);
+      const isLastAttempt = attempt === maxAttempts - 1;
 
-            if (!shouldRetryThis || isLastAttempt) {
-                // No reintentar o fue el último intento
-                logger.warn(`[Retry] ${operationName} failed`, {
-                    attempt: attempt + 1,
-                    maxAttempts,
-                    willRetry: false,
-                    error: error.message
-                });
-                throw error;
-            }
+      if (!shouldRetryThis || isLastAttempt) {
+        // No reintentar o fue el último intento
+        logger.warn(`[Retry] ${operationName} failed`, {
+          attempt: attempt + 1,
+          maxAttempts,
+          willRetry: false,
+          error: error.message,
+        });
+        throw error;
+      }
 
-            // Calcular delay con backoff
-            const delayMs = calculateBackoffDelay(attempt, baseDelayMs, maxDelayMs);
+      // Calcular delay con backoff
+      const delayMs = calculateBackoffDelay(attempt, baseDelayMs, maxDelayMs);
 
-            logger.info(`[ConcurrencyRetry] ${operationName} - Intento ${attempt + 1}/${maxAttempts} falló, reintentando en ${delayMs}ms`, {
-                attempt: attempt + 1,
-                maxAttempts,
-                delayMs,
-                error: error.message
-            });
-
-            // Callback antes de reintentar (opcional)
-            if (onRetry) {
-                await onRetry(attempt, delayMs, error);
-            }
-
-            // Esperar antes de reintentar
-            await sleep(delayMs);
+      logger.info(
+        `[ConcurrencyRetry] ${operationName} - Intento ${attempt + 1}/${maxAttempts} falló, reintentando en ${delayMs}ms`,
+        {
+          attempt: attempt + 1,
+          maxAttempts,
+          delayMs,
+          error: error.message,
         }
-    }
+      );
 
-    // Esto nunca debería ejecutarse, pero por si acaso
-    throw lastError;
+      // Callback antes de reintentar (opcional)
+      if (onRetry) {
+        await onRetry(attempt, delayMs, error);
+      }
+
+      // Esperar antes de reintentar
+      await sleep(delayMs);
+    }
+  }
+
+  // Esto nunca debería ejecutarse, pero por si acaso
+  throw lastError;
 }
 
 /**
@@ -130,27 +135,27 @@ async function withRetry(operation, options = {}) {
  * });
  */
 async function withSessionRetry(telefono, operation, options = {}) {
-    const db = require('../services/storage/databaseService');
+  const db = require('../services/storage/databaseService');
 
-    return withRetry(
-        async () => {
-            // Leer sesión con versión
-            const session = await db.getSessionWithVersion(telefono);
+  return withRetry(
+    async () => {
+      // Leer sesión con versión
+      const session = await db.getSessionWithVersion(telefono);
 
-            // Ejecutar operación con la sesión
-            return await operation(session);
-        },
-        {
-            ...options,
-            operationName: options.operationName || `updateSession(${telefono})`,
-            shouldRetry: (error) => error instanceof ConcurrencyError
-        }
-    );
+      // Ejecutar operación con la sesión
+      return operation(session);
+    },
+    {
+      ...options,
+      operationName: options.operationName || `updateSession(${telefono})`,
+      shouldRetry: (error) => error instanceof ConcurrencyError,
+    }
+  );
 }
 
 module.exports = {
-    withRetry,
-    withSessionRetry,
-    calculateBackoffDelay,
-    sleep
+  withRetry,
+  withSessionRetry,
+  calculateBackoffDelay,
+  sleep,
 };

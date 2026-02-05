@@ -476,6 +476,88 @@ create_whisper_resource() {
 }
 
 # ----------------------------------------------------------------------------
+# CREAR AZURE SPEECH SERVICES (Transcripcion alternativa - 5 hrs/mes GRATIS)
+# ----------------------------------------------------------------------------
+
+create_speech_services() {
+    # Solo crear si ENABLE_AZURE_SPEECH está habilitado y no hay key existente
+    if [[ "${ENABLE_AZURE_SPEECH:-true}" != "true" ]]; then
+        log_info "Azure Speech Services deshabilitado (ENABLE_AZURE_SPEECH=false)"
+        return 0
+    fi
+
+    # Si ya hay una key configurada manualmente, usar esa
+    if [ -n "$AZURE_SPEECH_KEY" ] && [ -n "$AZURE_SPEECH_REGION" ]; then
+        log_info "Azure Speech Services ya configurado manualmente"
+        log_info "  Key: ***${AZURE_SPEECH_KEY: -4}"
+        log_info "  Region: $AZURE_SPEECH_REGION"
+        return 0
+    fi
+
+    AZURE_SPEECH_NAME="${AZURE_SPEECH_NAME:-speech-acfixbot-${ENVIRONMENT}}"
+    AZURE_SPEECH_LOCATION="${AZURE_SPEECH_LOCATION:-eastus}"
+
+    log_info "Creando Azure Speech Services: $AZURE_SPEECH_NAME (F0 - GRATUITO)..."
+
+    # Verificar si ya existe
+    if az cognitiveservices account show --name "$AZURE_SPEECH_NAME" --resource-group "$RESOURCE_GROUP" &> /dev/null; then
+        log_warning "Azure Speech Services ya existe, usando existente"
+    else
+        # Verificar si existe soft-deleted y purgarlo
+        if az cognitiveservices account list-deleted --query "[?name=='$AZURE_SPEECH_NAME']" -o tsv 2>/dev/null | grep -q "$AZURE_SPEECH_NAME"; then
+            log_warning "Azure Speech Services soft-deleted encontrado, purgando..."
+            az cognitiveservices account purge \
+                --name "$AZURE_SPEECH_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --location "$AZURE_SPEECH_LOCATION" 2>/dev/null || true
+            sleep 5
+        fi
+
+        log_info "Creando recurso Speech Services en $AZURE_SPEECH_LOCATION (tier F0 gratuito)..."
+        if ! az cognitiveservices account create \
+            --name "$AZURE_SPEECH_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --kind "SpeechServices" \
+            --sku "F0" \
+            --location "$AZURE_SPEECH_LOCATION" \
+            --yes 2>&1; then
+            log_warning "No se pudo crear Azure Speech Services con tier F0."
+            log_warning "Posibles causas:"
+            log_warning "  - Ya existe un recurso F0 en la suscripcion (solo 1 permitido)"
+            log_warning "Intentando con tier S0 (de pago)..."
+
+            if ! az cognitiveservices account create \
+                --name "$AZURE_SPEECH_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --kind "SpeechServices" \
+                --sku "S0" \
+                --location "$AZURE_SPEECH_LOCATION" \
+                --yes 2>&1; then
+                log_warning "No se pudo crear Azure Speech Services."
+                log_warning "Continuando sin transcripcion alternativa..."
+                return 0
+            fi
+            log_success "Azure Speech Services creado con tier S0 (de pago)"
+        else
+            log_success "Azure Speech Services creado con tier F0 (5 hrs/mes GRATIS)"
+        fi
+    fi
+
+    # Obtener key y region
+    AZURE_SPEECH_KEY=$(az cognitiveservices account keys list \
+        --name "$AZURE_SPEECH_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --query key1 -o tsv)
+
+    AZURE_SPEECH_REGION="$AZURE_SPEECH_LOCATION"
+
+    log_success "Azure Speech Services configurado"
+    log_info "  Nombre: $AZURE_SPEECH_NAME"
+    log_info "  Region: $AZURE_SPEECH_REGION"
+    log_info "  Tier: F0 (5 horas de transcripcion gratis por mes)"
+}
+
+# ----------------------------------------------------------------------------
 # CREAR AZURE MAPS (Geocodificacion y Rutas)
 # ----------------------------------------------------------------------------
 
@@ -673,6 +755,16 @@ store_secrets_in_keyvault() {
         log_success "Azure Maps Key guardado en Key Vault"
     fi
 
+    # Azure Speech Key (si existe - creado por create_speech_services)
+    if [ -n "$AZURE_SPEECH_KEY" ]; then
+        az keyvault secret set \
+            --vault-name "$KEY_VAULT_NAME" \
+            --name "AZURE-SPEECH-KEY" \
+            --value "$AZURE_SPEECH_KEY" \
+            --output none 2>/dev/null || log_warning "Secret AZURE-SPEECH-KEY ya existe, actualizando..."
+        log_success "Azure Speech Key guardado en Key Vault"
+    fi
+
     log_success "Secrets guardados en Key Vault"
 }
 
@@ -860,6 +952,13 @@ configure_app_settings() {
     fi
     SETTINGS+=("AZURE_AUDIO_DEPLOYMENT=${AZURE_AUDIO_DEPLOYMENT:-whisper}")
 
+    # Agregar Azure Speech Services (transcripcion alternativa GRATUITA - 5 hrs/mes)
+    if [ -n "$AZURE_SPEECH_KEY" ]; then
+        SETTINGS+=("AZURE_SPEECH_KEY=@Microsoft.KeyVault(SecretUri=${KEY_VAULT_URI}secrets/AZURE-SPEECH-KEY/)")
+        SETTINGS+=("AZURE_SPEECH_REGION=${AZURE_SPEECH_REGION:-eastus}")
+        log_info "Azure Speech Services configurado como fallback de transcripcion"
+    fi
+
     # Aplicar settings
     az functionapp config appsettings set \
         --name "$FUNCTION_APP_NAME" \
@@ -868,6 +967,152 @@ configure_app_settings() {
         --output none
 
     log_success "Variables de entorno configuradas con Key Vault References"
+}
+
+# ----------------------------------------------------------------------------
+# CONFIGURAR EASY AUTH (Azure AD Authentication)
+# ----------------------------------------------------------------------------
+
+configure_easy_auth() {
+    # Solo configurar si ENABLE_EASY_AUTH está habilitado
+    if [[ "${ENABLE_EASY_AUTH:-false}" != "true" ]]; then
+        log_info "Easy Auth deshabilitado (ENABLE_EASY_AUTH=false)"
+        log_info "Para habilitar, agregar ENABLE_EASY_AUTH=\"true\" en config.env"
+        return 0
+    fi
+
+    log_info "Configurando Azure AD Authentication (Easy Auth)..."
+
+    # Nombre de la App Registration
+    AAD_APP_NAME="${AAD_APP_NAME:-AC FixBot Dashboard - ${ENVIRONMENT}}"
+    FUNCTION_APP_URL="https://${FUNCTION_APP_NAME}.azurewebsites.net"
+    AAD_REDIRECT_URI="${FUNCTION_APP_URL}/.auth/login/aad/callback"
+
+    # Verificar si la App Registration ya existe
+    EXISTING_APP_ID=$(az ad app list --display-name "$AAD_APP_NAME" --query "[0].appId" -o tsv 2>/dev/null)
+
+    if [ -n "$EXISTING_APP_ID" ] && [ "$EXISTING_APP_ID" != "null" ]; then
+        log_warning "App Registration '$AAD_APP_NAME' ya existe, usando existente"
+        AAD_CLIENT_ID="$EXISTING_APP_ID"
+    else
+        # Crear App Registration
+        log_info "Creando App Registration: $AAD_APP_NAME..."
+        AAD_CLIENT_ID=$(az ad app create \
+            --display-name "$AAD_APP_NAME" \
+            --web-redirect-uris "$AAD_REDIRECT_URI" \
+            --sign-in-audience "AzureADMyOrg" \
+            --query appId -o tsv)
+
+        if [ -z "$AAD_CLIENT_ID" ]; then
+            log_error "No se pudo crear App Registration"
+            return 1
+        fi
+        log_success "App Registration creada: $AAD_CLIENT_ID"
+    fi
+
+    # Crear o rotar Client Secret
+    log_info "Generando Client Secret..."
+    AAD_CLIENT_SECRET=$(az ad app credential reset \
+        --id "$AAD_CLIENT_ID" \
+        --append \
+        --display-name "easy-auth-${ENVIRONMENT}" \
+        --years 2 \
+        --query password -o tsv 2>/dev/null)
+
+    if [ -z "$AAD_CLIENT_SECRET" ]; then
+        log_warning "No se pudo generar Client Secret, intentando método alternativo..."
+        AAD_CLIENT_SECRET=$(az ad app credential reset \
+            --id "$AAD_CLIENT_ID" \
+            --query password -o tsv 2>/dev/null)
+    fi
+
+    if [ -z "$AAD_CLIENT_SECRET" ]; then
+        log_error "No se pudo obtener Client Secret"
+        return 1
+    fi
+    log_success "Client Secret generado"
+
+    # Guardar Client Secret en Key Vault
+    log_info "Guardando Client Secret en Key Vault..."
+    az keyvault secret set \
+        --vault-name "$KEY_VAULT_NAME" \
+        --name "AAD-CLIENT-SECRET" \
+        --value "$AAD_CLIENT_SECRET" \
+        --output none 2>/dev/null || log_warning "Secret AAD ya existe, actualizando..."
+
+    # Obtener Tenant ID
+    TENANT_ID=$(az account show --query tenantId -o tsv)
+
+    # Configurar Easy Auth en Function App usando la API REST (más fiable)
+    log_info "Habilitando Easy Auth en Function App..."
+
+    # Obtener token de acceso
+    ACCESS_TOKEN=$(az account get-access-token --query accessToken -o tsv)
+    SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+    # Configurar authsettingsV2
+    AUTH_CONFIG=$(cat <<EOF
+{
+    "properties": {
+        "platform": {
+            "enabled": true
+        },
+        "globalValidation": {
+            "requireAuthentication": true,
+            "unauthenticatedClientAction": "RedirectToLoginPage",
+            "redirectToProvider": "azureactivedirectory"
+        },
+        "identityProviders": {
+            "azureActiveDirectory": {
+                "enabled": true,
+                "registration": {
+                    "openIdIssuer": "https://sts.windows.net/${TENANT_ID}/v2.0",
+                    "clientId": "${AAD_CLIENT_ID}",
+                    "clientSecretSettingName": "MICROSOFT_PROVIDER_AUTHENTICATION_SECRET"
+                },
+                "validation": {
+                    "allowedAudiences": [
+                        "api://${AAD_CLIENT_ID}"
+                    ]
+                },
+                "login": {
+                    "loginParameters": ["scope=openid profile email"]
+                }
+            }
+        },
+        "login": {
+            "tokenStore": {
+                "enabled": true
+            }
+        }
+    }
+}
+EOF
+)
+
+    # Aplicar configuración via REST API
+    curl -s -X PUT \
+        "https://management.azure.com/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Web/sites/${FUNCTION_APP_NAME}/config/authsettingsV2?api-version=2022-03-01" \
+        -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "$AUTH_CONFIG" > /dev/null
+
+    # Configurar el App Setting con el Client Secret
+    log_info "Configurando Client Secret en App Settings..."
+    az functionapp config appsettings set \
+        --name "$FUNCTION_APP_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --settings "MICROSOFT_PROVIDER_AUTHENTICATION_SECRET=@Microsoft.KeyVault(SecretUri=${KEY_VAULT_URI}secrets/AAD-CLIENT-SECRET/)" \
+        --output none
+
+    log_success "Easy Auth configurado correctamente"
+    log_info "  App Registration: $AAD_APP_NAME"
+    log_info "  Client ID: $AAD_CLIENT_ID"
+    log_info "  Tenant ID: $TENANT_ID"
+    log_info "  Redirect URI: $AAD_REDIRECT_URI"
+
+    # Exportar variables para save_outputs
+    export AAD_APP_NAME AAD_CLIENT_ID TENANT_ID AAD_REDIRECT_URI
 }
 
 # ----------------------------------------------------------------------------
@@ -930,6 +1175,17 @@ AZURE_AUDIO_DEPLOYMENT="${AZURE_AUDIO_DEPLOYMENT:-gpt-4o-mini-audio}"
 AZURE_MAPS_NAME="${AZURE_MAPS_NAME:-}"
 ROUTE_BUFFER_MINUTES="${ROUTE_BUFFER_MINUTES:-20}"
 
+# Azure Speech Services (transcripcion alternativa GRATUITA)
+AZURE_SPEECH_NAME="${AZURE_SPEECH_NAME:-}"
+AZURE_SPEECH_KEY="${AZURE_SPEECH_KEY:-}"
+AZURE_SPEECH_REGION="${AZURE_SPEECH_REGION:-}"
+
+# Easy Auth (Azure AD Authentication)
+AAD_APP_NAME="${AAD_APP_NAME:-}"
+AAD_CLIENT_ID="${AAD_CLIENT_ID:-}"
+TENANT_ID="${TENANT_ID:-}"
+AAD_REDIRECT_URI="${AAD_REDIRECT_URI:-}"
+
 # ============================================================================
 # PROXIMOS PASOS:
 # ============================================================================
@@ -974,6 +1230,7 @@ main() {
     create_computer_vision
     create_azure_openai
     create_whisper_resource
+    create_speech_services    # Transcripcion alternativa GRATUITA (5 hrs/mes)
     create_azure_maps
     create_application_insights
     create_key_vault
@@ -981,6 +1238,7 @@ main() {
     enable_managed_identity
     store_secrets_in_keyvault
     configure_app_settings
+    configure_easy_auth
     save_outputs
 
     echo ""
@@ -1003,16 +1261,28 @@ main() {
     if [ -n "$AZURE_MAPS_KEY" ]; then
         echo "  - Azure Maps: $AZURE_MAPS_NAME (geocoding + routing)"
     fi
+    if [ -n "$AZURE_SPEECH_KEY" ]; then
+        echo "  - Azure Speech: $AZURE_SPEECH_NAME (5 hrs/mes GRATIS)"
+    fi
+    if [ -n "$AAD_CLIENT_ID" ]; then
+        echo "  - Easy Auth: $AAD_APP_NAME (Azure AD)"
+    fi
     echo "  - Application Insights: $APP_INSIGHTS_NAME"
     echo "  - Key Vault: $KEY_VAULT_NAME"
     echo "  - Function App: $FUNCTION_APP_NAME (con Managed Identity)"
     echo ""
     echo "Key Vault URI: $KEY_VAULT_URI"
+    if [ -n "$AAD_CLIENT_ID" ]; then
+        echo "Easy Auth: Habilitado (Client ID: $AAD_CLIENT_ID)"
+    fi
     if [ -n "$AZURE_OPENAI_ENDPOINT" ]; then
         echo "Azure OpenAI Endpoint: $AZURE_OPENAI_ENDPOINT"
     fi
     if [ -n "$AZURE_MAPS_KEY" ]; then
         echo "Azure Maps: Habilitado (buffer: ${ROUTE_BUFFER_MINUTES:-20} min)"
+    fi
+    if [ -n "$AZURE_SPEECH_KEY" ]; then
+        echo "Azure Speech: Habilitado (fallback de transcripcion, 5 hrs/mes gratis)"
     fi
     echo "URL del Webhook: https://${FUNCTION_APP_NAME}.azurewebsites.net/api/whatsapp-webhook"
     echo ""

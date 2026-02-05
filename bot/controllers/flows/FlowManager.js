@@ -1,75 +1,52 @@
 /**
- * AC FIXBOT - FlowManager V2
+ * AC FIXBOT - FlowManager V3 (FASE 2b)
  * Orquestador central de flujos de conversación
- * Compatible con nuevos estados normalizados
+ * Usa arquitectura flexible con estados simplificados
  *
  * @module controllers/flows/FlowManager
  *
- * ## Arquitectura de Flujos
+ * ## Arquitectura de Flujos (FASE 2b)
  *
- * El FlowManager implementa una máquina de estados finita (FSM) para
- * manejar las conversaciones de WhatsApp. Cada usuario tiene una sesión
- * con un estado actual, y el FlowManager enruta los mensajes al handler
- * apropiado según ese estado.
+ * El FlowManager usa una arquitectura flexible que permite llenar campos
+ * en cualquier orden. Solo 2 estados activos por tipo de reporte.
  *
  * ## Diagrama de Estados
  *
  * ```
  * INICIO
- *   ├─> REFRI_ESPERA_SAP ─> REFRI_CONFIRMAR_EQUIPO ─> REFRI_ESPERA_DESCRIPCION ─> [REPORTE CREADO]
+ *   ├─> REFRIGERADOR_ACTIVO ─> [campos en cualquier orden] ─> [REPORTE CREADO]
  *   │
- *   ├─> VEHICULO_ESPERA_EMPLEADO ─> VEHICULO_ESPERA_SAP ─> VEHICULO_ESPERA_DESCRIPCION
- *   │                                                            ↓
- *   │                                              VEHICULO_ESPERA_UBICACION ─> [REPORTE CREADO]
+ *   ├─> VEHICULO_ACTIVO ─> [campos en cualquier orden] ─> [REPORTE CREADO]
  *   │
- *   └─> ENCUESTA_INVITACION ─> ENCUESTA_PREGUNTA_1 ─> ... ─> ENCUESTA_PREGUNTA_6
- *                                                                    ↓
- *                                              ENCUESTA_COMENTARIO ─> [ENCUESTA COMPLETADA]
+ *   ├─> ENCUESTA_INVITACION ─> ... ─> [ENCUESTA COMPLETADA]
+ *   │
+ *   └─> CONSULTA_ESPERA_TICKET ─> [CONSULTA COMPLETADA]
  * ```
  *
  * ## Flujos Disponibles
  *
- * - **refrigeradorFlow**: Reportes de equipos de refrigeración
- * - **vehiculoFlow**: Reportes de vehículos de distribución
+ * - **flexibleFlowManager**: Reportes de refrigeración y vehículos (FASE 2b)
  * - **encuestaFlow**: Encuestas de satisfacción post-resolución
- *
- * @example
- * // Procesar mensaje según estado actual
- * const handled = await FlowManager.processSessionState(
- *     '5218112345678',
- *     'Mi refrigerador no enfría',
- *     session,
- *     context
- * );
- *
- * // Procesar botón interactivo
- * const handled = await FlowManager.processButton(
- *     '5218112345678',
- *     'btn_tipo_refrigerador',
- *     session,
- *     context
- * );
+ * - **consultaEstadoFlow**: Consulta de estado de tickets
  */
 
-const refrigeradorFlow = require('./refrigeradorFlow');
-const vehiculoFlow = require('./vehiculoFlow');
+const flexibleFlowManager = require('./flexibleFlowManager');
 const encuestaFlow = require('./encuestaFlow');
 const consultaEstadoFlow = require('./consultaEstadoFlow');
 const whatsapp = require('../../../core/services/external/whatsappService');
 const db = require('../../../core/services/storage/databaseService');
 const MSG = require('../../constants/messages');
-const { safeParseJSON } = require('../../../core/utils/helpers');
+const { safeParseJSON: _safeParseJSON } = require('../../../core/utils/helpers');
 const { logger } = require('../../../core/services/infrastructure/errorHandler');
 const {
-    ESTADO,
-    TIPO_REPORTE,
-    ORIGEN_ACCION,
-    TIPO_MENSAJE,
-    TIPO_CONTENIDO,
-    esEstadoRefrigerador,
-    esEstadoVehiculo,
-    esEstadoEncuesta,
-    esEstadoConsulta
+  ESTADO,
+  TIPO_REPORTE,
+  ORIGEN_ACCION,
+  TIPO_MENSAJE,
+  TIPO_CONTENIDO,
+  esEstadoEncuesta,
+  esEstadoConsulta,
+  esEstadoFlexible,
 } = require('../../constants/sessionStates');
 
 /**
@@ -98,93 +75,98 @@ const TIPO_CONSULTA = 'CONSULTA';
 
 /**
  * Mapeo de estados a flujos y handlers
- * Usando nuevos estados con prefijos
+ * FASE 2b: Solo estados de encuesta y consulta (los reportes usan flexibleFlowManager)
  *
  * @type {Object.<string, StateHandlerConfig>}
  */
 const STATE_HANDLERS = {
-    // Refrigerador
-    [ESTADO.REFRI_ESPERA_SAP]: { flow: TIPO_REPORTE.REFRIGERADOR, handler: 'handleSAPInput' },
-    [ESTADO.REFRI_CONFIRMAR_EQUIPO]: { flow: TIPO_REPORTE.REFRIGERADOR, handler: 'handleConfirmacion' },
-    [ESTADO.REFRI_ESPERA_DESCRIPCION]: { flow: TIPO_REPORTE.REFRIGERADOR, handler: 'crearReporte' },
+  // Encuesta de satisfacción
+  [ESTADO.ENCUESTA_INVITACION]: { flow: TIPO_ENCUESTA, handler: 'handleInvitacion' },
+  [ESTADO.ENCUESTA_PREGUNTA_1]: { flow: TIPO_ENCUESTA, handler: 'handleRespuestaPregunta' },
+  [ESTADO.ENCUESTA_PREGUNTA_2]: { flow: TIPO_ENCUESTA, handler: 'handleRespuestaPregunta' },
+  [ESTADO.ENCUESTA_PREGUNTA_3]: { flow: TIPO_ENCUESTA, handler: 'handleRespuestaPregunta' },
+  [ESTADO.ENCUESTA_PREGUNTA_4]: { flow: TIPO_ENCUESTA, handler: 'handleRespuestaPregunta' },
+  [ESTADO.ENCUESTA_PREGUNTA_5]: { flow: TIPO_ENCUESTA, handler: 'handleRespuestaPregunta' },
+  [ESTADO.ENCUESTA_PREGUNTA_6]: { flow: TIPO_ENCUESTA, handler: 'handleRespuestaPregunta' },
+  [ESTADO.ENCUESTA_COMENTARIO]: { flow: TIPO_ENCUESTA, handler: 'handleComentarioDecision' },
+  [ESTADO.ENCUESTA_ESPERA_COMENTARIO]: { flow: TIPO_ENCUESTA, handler: 'handleComentario' },
 
-    // Vehículo
-    [ESTADO.VEHICULO_ESPERA_EMPLEADO]: { flow: TIPO_REPORTE.VEHICULO, handler: 'handleNumeroEmpleado' },
-    [ESTADO.VEHICULO_ESPERA_SAP]: { flow: TIPO_REPORTE.VEHICULO, handler: 'handleSAPVehiculo' },
-    [ESTADO.VEHICULO_ESPERA_DESCRIPCION]: { flow: TIPO_REPORTE.VEHICULO, handler: 'handleDescripcion' },
-    [ESTADO.VEHICULO_ESPERA_UBICACION]: { flow: TIPO_REPORTE.VEHICULO, handler: 'handleUbicacion' },
-    [ESTADO.VEHICULO_CONFIRMAR_DATOS_AI]: { flow: TIPO_REPORTE.VEHICULO, handler: 'handleConfirmacionDatosAI' },
-
-    // Estados legacy (compatibilidad durante transición)
-    'ESPERA_SAP': { flow: TIPO_REPORTE.REFRIGERADOR, handler: 'handleSAPInput' },
-    'CONFIRMAR_EQUIPO': { flow: TIPO_REPORTE.REFRIGERADOR, handler: 'handleConfirmacion' },
-    'ESPERA_DESCRIPCION': { flow: null, handler: 'crearReporte' },
-    'ESPERA_NUMERO_EMPLEADO': { flow: TIPO_REPORTE.VEHICULO, handler: 'handleNumeroEmpleado' },
-    'ESPERA_SAP_VEHICULO': { flow: TIPO_REPORTE.VEHICULO, handler: 'handleSAPVehiculo' },
-
-    // Encuesta de satisfacción
-    [ESTADO.ENCUESTA_INVITACION]: { flow: TIPO_ENCUESTA, handler: 'handleInvitacion' },
-    [ESTADO.ENCUESTA_PREGUNTA_1]: { flow: TIPO_ENCUESTA, handler: 'handleRespuestaPregunta' },
-    [ESTADO.ENCUESTA_PREGUNTA_2]: { flow: TIPO_ENCUESTA, handler: 'handleRespuestaPregunta' },
-    [ESTADO.ENCUESTA_PREGUNTA_3]: { flow: TIPO_ENCUESTA, handler: 'handleRespuestaPregunta' },
-    [ESTADO.ENCUESTA_PREGUNTA_4]: { flow: TIPO_ENCUESTA, handler: 'handleRespuestaPregunta' },
-    [ESTADO.ENCUESTA_PREGUNTA_5]: { flow: TIPO_ENCUESTA, handler: 'handleRespuestaPregunta' },
-    [ESTADO.ENCUESTA_PREGUNTA_6]: { flow: TIPO_ENCUESTA, handler: 'handleRespuestaPregunta' },
-    [ESTADO.ENCUESTA_COMENTARIO]: { flow: TIPO_ENCUESTA, handler: 'handleComentarioDecision' },
-    [ESTADO.ENCUESTA_ESPERA_COMENTARIO]: { flow: TIPO_ENCUESTA, handler: 'handleComentario' },
-
-    // Consulta de tickets
-    [ESTADO.CONSULTA_ESPERA_TICKET]: { flow: TIPO_CONSULTA, handler: 'handleTicketInput' }
+  // Consulta de tickets
+  [ESTADO.CONSULTA_ESPERA_TICKET]: { flow: TIPO_CONSULTA, handler: 'handleTicketInput' },
 };
 
 /**
  * Mapeo de botones a acciones
+ * FASE 2b: Reportes usan flexibleFlowManager
  */
 const BUTTON_HANDLERS = {
-    'btn_tipo_refrigerador': { flow: TIPO_REPORTE.REFRIGERADOR, action: 'iniciarFlujo' },
-    'btn_tipo_vehiculo': { flow: TIPO_REPORTE.VEHICULO, action: 'iniciarFlujo' },
-    'btn_consultar_ticket': { flow: TIPO_CONSULTA, action: 'iniciarFlujo' },
-    'btn_confirmar_equipo': { flow: TIPO_REPORTE.REFRIGERADOR, action: 'confirmarEquipo' },
-    'btn_corregir_equipo': { flow: TIPO_REPORTE.REFRIGERADOR, action: 'corregirEquipo' },
-    'btn_cancelar': { flow: null, action: 'cancelarFlujo' },
+  // Reportes - usan flexibleFlowManager
+  btn_tipo_refrigerador: { flow: TIPO_REPORTE.REFRIGERADOR, action: 'iniciarFlujoFlexible' },
+  btn_tipo_vehiculo: { flow: TIPO_REPORTE.VEHICULO, action: 'iniciarFlujoFlexible' },
 
-    // Encuesta
-    'btn_encuesta_aceptar': { flow: TIPO_ENCUESTA, action: 'handleBotonAceptar' },
-    'btn_encuesta_salir': { flow: TIPO_ENCUESTA, action: 'handleBotonSalir' },
-    'btn_rating_1': { flow: TIPO_ENCUESTA, action: 'handleBotonRating', params: 1 },
-    'btn_rating_2': { flow: TIPO_ENCUESTA, action: 'handleBotonRating', params: 2 },
-    'btn_rating_3': { flow: TIPO_ENCUESTA, action: 'handleBotonRating', params: 3 },
-    'btn_rating_4': { flow: TIPO_ENCUESTA, action: 'handleBotonRating', params: 4 },
-    'btn_rating_5': { flow: TIPO_ENCUESTA, action: 'handleBotonRating', params: 5 },
-    'btn_si_comentario': { flow: TIPO_ENCUESTA, action: 'handleBotonSiComentario' },
-    'btn_no_comentario': { flow: TIPO_ENCUESTA, action: 'handleBotonNoComentario' }
+  // Consulta de tickets
+  btn_consultar_ticket: { flow: TIPO_CONSULTA, action: 'iniciarFlujo' },
+
+  // Botones de flujo flexible
+  btn_confirmar_datos: { flow: 'FLEXIBLE', action: 'confirmarDatos' },
+  btn_modificar_datos: { flow: 'FLEXIBLE', action: 'modificarDatos' },
+  btn_cancelar: { flow: null, action: 'cancelarFlujo' },
+
+  // Botones de confirmación de equipo (OCR)
+  btn_confirmar_equipo: { flow: 'FLEXIBLE', action: 'confirmarEquipo' },
+  btn_rechazar_equipo: { flow: 'FLEXIBLE', action: 'rechazarEquipo' },
+
+  // Botones de confirmación de AI Vision
+  btn_confirmar_ai: { flow: 'FLEXIBLE', action: 'confirmarAI' },
+  btn_rechazar_ai: { flow: 'FLEXIBLE', action: 'rechazarAI' },
+
+  // Encuesta
+  btn_encuesta_aceptar: { flow: TIPO_ENCUESTA, action: 'handleBotonAceptar' },
+  btn_encuesta_salir: { flow: TIPO_ENCUESTA, action: 'handleBotonSalir' },
+  btn_rating_1: { flow: TIPO_ENCUESTA, action: 'handleBotonRating', params: 1 },
+  btn_rating_2: { flow: TIPO_ENCUESTA, action: 'handleBotonRating', params: 2 },
+  btn_rating_3: { flow: TIPO_ENCUESTA, action: 'handleBotonRating', params: 3 },
+  btn_rating_4: { flow: TIPO_ENCUESTA, action: 'handleBotonRating', params: 4 },
+  btn_rating_5: { flow: TIPO_ENCUESTA, action: 'handleBotonRating', params: 5 },
+  btn_si_comentario: { flow: TIPO_ENCUESTA, action: 'handleBotonSiComentario' },
+  btn_no_comentario: { flow: TIPO_ENCUESTA, action: 'handleBotonNoComentario' },
 };
 
 /**
  * Obtiene el flujo según el tipo
+ * FASE 2b: Solo encuesta y consulta tienen flujos separados
  */
 function getFlow(tipoReporte) {
-    if (tipoReporte === TIPO_REPORTE.REFRIGERADOR) {return refrigeradorFlow;}
-    if (tipoReporte === TIPO_REPORTE.VEHICULO) {return vehiculoFlow;}
-    if (tipoReporte === TIPO_ENCUESTA) {return encuestaFlow;}
-    if (tipoReporte === TIPO_CONSULTA) {return consultaEstadoFlow;}
-    return vehiculoFlow; // default
+  if (tipoReporte === TIPO_ENCUESTA) {
+    return encuestaFlow;
+  }
+  if (tipoReporte === TIPO_CONSULTA) {
+    return consultaEstadoFlow;
+  }
+  return null;
 }
 
 /**
  * Determina el tipo de reporte basado en el estado
  */
 function getTipoReportePorEstado(estado) {
-    if (esEstadoRefrigerador(estado)) {return TIPO_REPORTE.REFRIGERADOR;}
-    if (esEstadoVehiculo(estado)) {return TIPO_REPORTE.VEHICULO;}
-    if (esEstadoEncuesta(estado)) {return TIPO_ENCUESTA;}
-    if (esEstadoConsulta(estado)) {return TIPO_CONSULTA;}
-    return null;
+  if (esEstadoFlexible(estado)) {
+    return estado === ESTADO.REFRIGERADOR_ACTIVO
+      ? TIPO_REPORTE.REFRIGERADOR
+      : TIPO_REPORTE.VEHICULO;
+  }
+  if (esEstadoEncuesta(estado)) {
+    return TIPO_ENCUESTA;
+  }
+  if (esEstadoConsulta(estado)) {
+    return TIPO_CONSULTA;
+  }
+  return null;
 }
 
 /**
  * Procesa un mensaje según el estado actual de la sesión del usuario
- * Enruta el mensaje al handler apropiado según el estado de la máquina de estados
+ * FASE 2b: Estados flexibles se manejan en messageHandler, aquí solo encuesta/consulta
  * @param {string} from - Número de teléfono del usuario (formato E.164)
  * @param {string} text - Texto del mensaje o datos de ubicación
  * @param {Object} session - Sesión actual del usuario con Estado y DatosTemp
@@ -192,89 +174,106 @@ function getTipoReportePorEstado(estado) {
  * @returns {Promise<boolean>} - true si el mensaje fue procesado por un handler
  */
 async function processSessionState(from, text, session, context) {
-    const stateConfig = STATE_HANDLERS[session.Estado];
-    if (!stateConfig || !stateConfig.handler) {
-        context.log(`[FlowManager] No hay handler configurado para estado: ${session.Estado}`);
-        return false;
-    }
+  // Estados flexibles se manejan en messageHandler con flexibleFlowManager
+  if (esEstadoFlexible(session.Estado)) {
+    context.log(
+      `[FlowManager] Estado flexible ${session.Estado} - delegando a flexibleFlowManager`
+    );
+    return false;
+  }
 
-    context.log(`[FlowManager] Estado: ${session.Estado}, handler configurado: ${stateConfig.handler}`);
+  const stateConfig = STATE_HANDLERS[session.Estado];
+  if (!stateConfig || !stateConfig.handler) {
+    context.log(`[FlowManager] No hay handler configurado para estado: ${session.Estado}`);
+    return false;
+  }
 
-    // Determinar el flujo
-    let flowType = stateConfig.flow;
+  context.log(
+    `[FlowManager] Estado: ${session.Estado}, handler configurado: ${stateConfig.handler}`
+  );
 
-    // Si no hay flujo definido en el estado, intentar determinar por el estado o datosTemp
-    if (!flowType) {
-        flowType = getTipoReportePorEstado(session.Estado);
+  const flow = getFlow(stateConfig.flow);
+  if (!flow) {
+    context.log(`⚠️ No se encontró flujo para: ${stateConfig.flow}`);
+    return false;
+  }
 
-        if (!flowType && session.DatosTemp) {
-            const datosTemp = safeParseJSON(session.DatosTemp);
-            flowType = datosTemp?.tipoReporte;
-        }
-    }
+  const handler = flow[stateConfig.handler];
 
-    if (!flowType) {
-        context.log(`⚠️ No se pudo determinar el flujo para estado: ${session.Estado}`);
-        return false;
-    }
+  if (typeof handler !== 'function') {
+    context.log(`⚠️ Handler no encontrado: ${stateConfig.handler}`);
+    return false;
+  }
 
-    context.log(`[FlowManager] Flujo determinado: ${flowType}`);
-
-    const flow = getFlow(flowType);
-    const handler = flow[stateConfig.handler];
-
-    if (typeof handler !== 'function') {
-        context.log(`⚠️ Handler no encontrado: ${stateConfig.handler}`);
-        return false;
-    }
-
-    try {
-        context.log(`[FlowManager] Ejecutando handler: ${stateConfig.handler}`);
-        await handler(from, text, session, context);
-        context.log(`[FlowManager] Handler ${stateConfig.handler} completado`);
-        return true;
-    } catch (error) {
-        context.log(`❌ [FlowManager] Error en handler ${stateConfig.handler}: ${error.message}`);
-        logger.error(`Error en handler ${stateConfig.handler}`, error, { handler: stateConfig.handler });
-        throw error;
-    }
+  try {
+    context.log(`[FlowManager] Ejecutando handler: ${stateConfig.handler}`);
+    await handler(from, text, session, context);
+    context.log(`[FlowManager] Handler ${stateConfig.handler} completado`);
+    return true;
+  } catch (error) {
+    context.log(`❌ [FlowManager] Error en handler ${stateConfig.handler}: ${error.message}`);
+    logger.error(`Error en handler ${stateConfig.handler}`, error, {
+      handler: stateConfig.handler,
+    });
+    throw error;
+  }
 }
 
 /**
  * Procesa un botón presionado
+ * FASE 2b: Botones de reporte usan flexibleFlowManager
  * @returns {boolean} true si el botón fue procesado
  */
 async function processButton(from, buttonId, session, context) {
-    const buttonConfig = BUTTON_HANDLERS[buttonId];
-    if (!buttonConfig) {
-        context.log(`⚠️ Botón no registrado: ${buttonId}`);
-        return false;
-    }
+  const buttonConfig = BUTTON_HANDLERS[buttonId];
+  if (!buttonConfig) {
+    context.log(`⚠️ Botón no registrado: ${buttonId}`);
+    return false;
+  }
 
-    // Caso especial: botón cancelar
-    if (buttonConfig.action === 'cancelarFlujo') {
-        await cancelarFlujo(from, context);
-        return true;
-    }
-
-    const flow = getFlow(buttonConfig.flow);
-    const action = flow[buttonConfig.action];
-
-    if (typeof action !== 'function') {
-        context.log(`⚠️ Acción no encontrada: ${buttonConfig.action}`);
-        return false;
-    }
-
-    if (buttonConfig.action === 'iniciarFlujo') {
-        await action(from);
-    } else if (buttonConfig.action === 'handleBotonRating') {
-        // Caso especial: rating con parámetro
-        await action(from, buttonConfig.params, session, context);
-    } else {
-        await action(from, session, context);
-    }
-
+  // Caso especial: botón cancelar
+  if (buttonConfig.action === 'cancelarFlujo') {
+    await cancelarFlujo(from, context);
     return true;
+  }
+
+  // FASE 2b: Iniciar flujo flexible para reportes
+  if (buttonConfig.action === 'iniciarFlujoFlexible') {
+    context.log(`[FlowManager] Iniciando flujo flexible para ${buttonConfig.flow}`);
+    await flexibleFlowManager.iniciarFlujo(from, buttonConfig.flow, {}, context);
+    return true;
+  }
+
+  // Botones de flujo flexible (confirmar/modificar datos)
+  if (buttonConfig.flow === 'FLEXIBLE') {
+    context.log(`[FlowManager] Procesando botón flexible: ${buttonConfig.action}`);
+    return flexibleFlowManager.procesarBoton(from, buttonId, session, context);
+  }
+
+  // Flujos de encuesta y consulta
+  const flow = getFlow(buttonConfig.flow);
+  if (!flow) {
+    context.log(`⚠️ No se encontró flujo para: ${buttonConfig.flow}`);
+    return false;
+  }
+
+  const action = flow[buttonConfig.action];
+
+  if (typeof action !== 'function') {
+    context.log(`⚠️ Acción no encontrada: ${buttonConfig.action}`);
+    return false;
+  }
+
+  if (buttonConfig.action === 'iniciarFlujo') {
+    await action(from, context);
+  } else if (buttonConfig.action === 'handleBotonRating') {
+    // Caso especial: rating con parámetro
+    await action(from, buttonConfig.params, session, context);
+  } else {
+    await action(from, session, context);
+  }
+
+  return true;
 }
 
 /**
@@ -285,25 +284,26 @@ async function processButton(from, buttonId, session, context) {
  * @returns {Promise<void>}
  */
 async function cancelarFlujo(from, context) {
-    context.log(`🚫 Usuario ${from} canceló el flujo`);
+  context.log(`🚫 Usuario ${from} canceló el flujo`);
 
-    // Cambiar a estado CANCELADO (no INICIO)
-    await db.updateSession(
-        from,
-        ESTADO.CANCELADO,
-        null,
-        null,
-        ORIGEN_ACCION.USUARIO,
-        'Flujo cancelado por el usuario'
-    );
+  // Cambiar a estado CANCELADO (no INICIO)
+  await db.updateSession(
+    from,
+    ESTADO.CANCELADO,
+    null,
+    null,
+    ORIGEN_ACCION.USUARIO,
+    'Flujo cancelado por el usuario'
+  );
 
-    // Enviar mensaje de despedida
-    await whatsapp.sendText(from, MSG.GENERAL.CANCELLED);
-    await db.saveMessage(from, TIPO_MENSAJE.BOT, MSG.GENERAL.CANCELLED, TIPO_CONTENIDO.TEXTO);
+  // Enviar mensaje de despedida
+  await whatsapp.sendText(from, MSG.GENERAL.CANCELLED);
+  await db.saveMessage(from, TIPO_MENSAJE.BOT, MSG.GENERAL.CANCELLED, TIPO_CONTENIDO.TEXTO);
 }
 
 /**
  * Inicia un flujo con datos extraídos por IA
+ * FASE 2b: Usa flexibleFlowManager
  * @param {string} from - Número de teléfono
  * @param {string} tipoEquipo - REFRIGERADOR o VEHICULO
  * @param {Object} datosExtraidos - Datos extraídos por IA
@@ -314,15 +314,49 @@ async function cancelarFlujo(from, context) {
  * @param {Object} context - Contexto de la función
  */
 async function iniciarFlujoConDatos(from, tipoEquipo, datosExtraidos, isFirstMessage, context) {
-    const flow = getFlow(tipoEquipo);
-    await flow.iniciarFlujoConDatos(from, datosExtraidos, isFirstMessage, context);
+  // Convertir datos extraídos al formato de campos para flexibleFlowManager
+  const camposIniciales = {};
+
+  if (datosExtraidos.codigo_sap) {
+    camposIniciales.codigoSAP = {
+      valor: datosExtraidos.codigo_sap,
+      confianza: 80,
+      fuente: 'ai',
+    };
+  }
+
+  if (datosExtraidos.numero_empleado) {
+    camposIniciales.numeroEmpleado = {
+      valor: datosExtraidos.numero_empleado,
+      confianza: 80,
+      fuente: 'ai',
+    };
+  }
+
+  if (datosExtraidos.problema) {
+    camposIniciales.problema = {
+      valor: datosExtraidos.problema,
+      confianza: 70,
+      fuente: 'ai',
+    };
+  }
+
+  if (datosExtraidos.ubicacion) {
+    camposIniciales.ubicacion = {
+      valor: datosExtraidos.ubicacion,
+      confianza: 80,
+      fuente: 'ai',
+    };
+  }
+
+  await flexibleFlowManager.iniciarFlujo(from, tipoEquipo, camposIniciales, context);
 }
 
 module.exports = {
-    processSessionState,
-    processButton,
-    iniciarFlujoConDatos,
-    cancelarFlujo,
-    getFlow,
-    getTipoReportePorEstado
+  processSessionState,
+  processButton,
+  iniciarFlujoConDatos,
+  cancelarFlujo,
+  getFlow,
+  getTipoReportePorEstado,
 };

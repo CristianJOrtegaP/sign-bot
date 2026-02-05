@@ -335,38 +335,55 @@ BEGIN
 END
 GO
 
--- 4.2 Estado VEHICULO_CONFIRMAR_DATOS_AI
-IF EXISTS (SELECT 1 FROM [dbo].[CatEstadoSesion] WHERE EstadoId = 22)
+-- 4.2 Estado VEHICULO_CONFIRMAR_DATOS_AI (ID debe ser 26 para coincidir con sessionStates.js)
+IF NOT EXISTS (SELECT 1 FROM [dbo].[CatEstadoSesion] WHERE Codigo = 'VEHICULO_CONFIRMAR_DATOS_AI')
 BEGIN
-    PRINT '   [4.2] Actualizando estado ID 22 (VEHICULO_CONFIRMAR_DATOS_AI)...'
-
-    UPDATE [dbo].[CatEstadoSesion]
-    SET
-        Codigo = 'VEHICULO_CONFIRMAR_DATOS_AI',
-        Nombre = 'Confirmar Datos AI Vehículo',
-        Descripcion = 'Esperando confirmación de datos extraídos por AI Vision'
-    WHERE EstadoId = 22
-
-    PRINT '   ✅ Estado actualizado'
-END
-ELSE
-BEGIN
-    PRINT '   [4.2] Insertando nuevo estado VEHICULO_CONFIRMAR_DATOS_AI...'
+    PRINT '   [4.2] Insertando nuevo estado VEHICULO_CONFIRMAR_DATOS_AI (ID: 26)...'
 
     SET IDENTITY_INSERT [dbo].[CatEstadoSesion] ON
 
-    INSERT INTO [dbo].[CatEstadoSesion] (EstadoId, Codigo, Nombre, Descripcion, FechaCreacion)
+    INSERT INTO [dbo].[CatEstadoSesion] (EstadoId, Codigo, Nombre, Descripcion, EsTerminal, Orden, Activo)
     VALUES (
-        22,
+        26,
         'VEHICULO_CONFIRMAR_DATOS_AI',
         'Confirmar Datos AI Vehículo',
         'Esperando confirmación de datos extraídos por AI Vision',
-        GETDATE()
+        0, 26, 1
     )
 
     SET IDENTITY_INSERT [dbo].[CatEstadoSesion] OFF
 
-    PRINT '   ✅ Estado insertado'
+    PRINT '   ✅ Estado VEHICULO_CONFIRMAR_DATOS_AI insertado con ID: 26'
+END
+ELSE
+BEGIN
+    PRINT '   ⚠️  Estado VEHICULO_CONFIRMAR_DATOS_AI ya existe'
+END
+GO
+
+-- 4.3 Estado REFRIGERADOR_CONFIRMAR_DATOS_AI (ID debe ser 27 para coincidir con sessionStates.js)
+IF NOT EXISTS (SELECT 1 FROM [dbo].[CatEstadoSesion] WHERE Codigo = 'REFRIGERADOR_CONFIRMAR_DATOS_AI')
+BEGIN
+    PRINT '   [4.3] Insertando nuevo estado REFRIGERADOR_CONFIRMAR_DATOS_AI (ID: 27)...'
+
+    SET IDENTITY_INSERT [dbo].[CatEstadoSesion] ON
+
+    INSERT INTO [dbo].[CatEstadoSesion] (EstadoId, Codigo, Nombre, Descripcion, EsTerminal, Orden, Activo)
+    VALUES (
+        27,
+        'REFRIGERADOR_CONFIRMAR_DATOS_AI',
+        'Confirmar Datos AI Refrigerador',
+        'Esperando confirmación de datos extraídos por AI Vision',
+        0, 27, 1
+    )
+
+    SET IDENTITY_INSERT [dbo].[CatEstadoSesion] OFF
+
+    PRINT '   ✅ Estado REFRIGERADOR_CONFIRMAR_DATOS_AI insertado con ID: 27'
+END
+ELSE
+BEGIN
+    PRINT '   ⚠️  Estado REFRIGERADOR_CONFIRMAR_DATOS_AI ya existe'
 END
 GO
 
@@ -432,10 +449,15 @@ IF EXISTS (SELECT 1 FROM CatEstadoSesion WHERE Codigo = 'CONSULTA_ESPERA_TICKET'
 ELSE
     INSERT INTO @Verificaciones VALUES ('Estado CONSULTA_ESPERA_TICKET', '❌ FALTA')
 
-IF EXISTS (SELECT 1 FROM CatEstadoSesion WHERE Codigo = 'VEHICULO_CONFIRMAR_DATOS_AI')
-    INSERT INTO @Verificaciones VALUES ('Estado VEHICULO_CONFIRMAR_DATOS_AI', '✅ OK')
+IF EXISTS (SELECT 1 FROM CatEstadoSesion WHERE Codigo = 'VEHICULO_CONFIRMAR_DATOS_AI' AND EstadoId = 26)
+    INSERT INTO @Verificaciones VALUES ('Estado VEHICULO_CONFIRMAR_DATOS_AI (ID:26)', '✅ OK')
 ELSE
-    INSERT INTO @Verificaciones VALUES ('Estado VEHICULO_CONFIRMAR_DATOS_AI', '❌ FALTA')
+    INSERT INTO @Verificaciones VALUES ('Estado VEHICULO_CONFIRMAR_DATOS_AI (ID:26)', '❌ FALTA')
+
+IF EXISTS (SELECT 1 FROM CatEstadoSesion WHERE Codigo = 'REFRIGERADOR_CONFIRMAR_DATOS_AI' AND EstadoId = 27)
+    INSERT INTO @Verificaciones VALUES ('Estado REFRIGERADOR_CONFIRMAR_DATOS_AI (ID:27)', '✅ OK')
+ELSE
+    INSERT INTO @Verificaciones VALUES ('Estado REFRIGERADOR_CONFIRMAR_DATOS_AI (ID:27)', '❌ FALTA')
 
 -- Mostrar resultados
 PRINT '📊 Resultados de Verificación:'

@@ -13,99 +13,109 @@ const { logger } = require('./errorHandler');
  * @returns {boolean} - true si la firma es valida
  */
 function verifyWebhookSignature(payload, signature) {
-    const appSecret = process.env.WHATSAPP_APP_SECRET;
+  const appSecret = process.env.WHATSAPP_APP_SECRET;
 
-    // Si no hay secret configurado, log warning pero permitir (desarrollo)
-    if (!appSecret) {
-        logger.warn('WHATSAPP_APP_SECRET no configurado - verificacion de firma deshabilitada');
-        return true;
+  // Si no hay secret configurado, solo permitir en desarrollo
+  if (!appSecret) {
+    const isProduction =
+      process.env.NODE_ENV === 'production' ||
+      process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Production';
+
+    if (isProduction) {
+      logger.error('CRÍTICO: WHATSAPP_APP_SECRET requerido en producción - rechazando request');
+      return false;
     }
 
-    // Si no hay firma en el request, rechazar
-    if (!signature) {
-        logger.security('Request sin firma X-Hub-Signature-256');
-        return false;
+    logger.warn(
+      'WHATSAPP_APP_SECRET no configurado - verificacion de firma deshabilitada (solo desarrollo)'
+    );
+    return true;
+  }
+
+  // Si no hay firma en el request, rechazar
+  if (!signature) {
+    logger.security('Request sin firma X-Hub-Signature-256');
+    return false;
+  }
+
+  // Formato esperado: "sha256=<hash>"
+  const expectedPrefix = 'sha256=';
+  if (!signature.startsWith(expectedPrefix)) {
+    logger.security('Formato de firma invalido');
+    return false;
+  }
+
+  const receivedHash = signature.slice(expectedPrefix.length);
+
+  // Calcular hash esperado
+  const expectedHash = crypto.createHmac('sha256', appSecret).update(payload, 'utf8').digest('hex');
+
+  // Comparacion segura contra timing attacks
+  try {
+    const isValid = crypto.timingSafeEqual(
+      Buffer.from(receivedHash, 'hex'),
+      Buffer.from(expectedHash, 'hex')
+    );
+
+    if (!isValid) {
+      logger.security('Firma del webhook no coincide');
     }
 
-    // Formato esperado: "sha256=<hash>"
-    const expectedPrefix = 'sha256=';
-    if (!signature.startsWith(expectedPrefix)) {
-        logger.security('Formato de firma invalido');
-        return false;
-    }
-
-    const receivedHash = signature.slice(expectedPrefix.length);
-
-    // Calcular hash esperado
-    const expectedHash = crypto
-        .createHmac('sha256', appSecret)
-        .update(payload, 'utf8')
-        .digest('hex');
-
-    // Comparacion segura contra timing attacks
-    try {
-        const isValid = crypto.timingSafeEqual(
-            Buffer.from(receivedHash, 'hex'),
-            Buffer.from(expectedHash, 'hex')
-        );
-
-        if (!isValid) {
-            logger.security('Firma del webhook no coincide');
-        }
-
-        return isValid;
-    } catch (error) {
-        // Si los buffers tienen diferente longitud, timingSafeEqual lanza error
-        logger.security('Error comparando firmas', { error: error.message });
-        return false;
-    }
+    return isValid;
+  } catch (error) {
+    // Si los buffers tienen diferente longitud, timingSafeEqual lanza error
+    logger.security('Error comparando firmas', { error: error.message });
+    return false;
+  }
 }
 
 /**
  * Verifica API key para endpoints administrativos
+ * SEGURIDAD: Solo permite bypass sin API key en localhost
  * @param {object} req - Request de Azure Functions
  * @returns {{ valid: boolean, error?: string }}
  */
 function verifyAdminApiKey(req) {
-    const adminApiKey = process.env.ADMIN_API_KEY;
+  const adminApiKey = process.env.ADMIN_API_KEY;
 
-    // Si no hay key configurada, solo permitir si es desarrollo
-    if (!adminApiKey) {
-        const isDevelopment = process.env.NODE_ENV === 'development' ||
-                              process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
-        if (isDevelopment) {
-            logger.warn('ADMIN_API_KEY no configurado - permitido en desarrollo');
-            return { valid: true };
-        }
-        logger.error('ADMIN_API_KEY no configurado en produccion');
-        return { valid: false, error: 'Configuracion de seguridad incompleta' };
+  // Si no hay key configurada, solo permitir en localhost
+  if (!adminApiKey) {
+    const host = req.headers?.host || '';
+    const isLocalhost = host.startsWith('localhost') || host.startsWith('127.0.0.1');
+
+    if (isLocalhost) {
+      logger.warn('ADMIN_API_KEY no configurado - permitido solo en localhost');
+      return { valid: true };
     }
 
-    // Buscar API key en headers o query
-    const providedKey = req.headers['x-api-key'] ||
-                        req.headers['X-API-Key'] ||
-                        req.query.apiKey;
+    // En cualquier otro ambiente (Azure, staging, prod), rechazar
+    logger.error('ADMIN_API_KEY requerido fuera de localhost - rechazando request');
+    return { valid: false, error: 'Configuracion de seguridad incompleta' };
+  }
 
-    if (!providedKey) {
-        return { valid: false, error: 'API key requerida' };
+  // Buscar API key en headers o query
+  const providedKey = req.headers['x-api-key'] || req.headers['X-API-Key'] || req.query.apiKey;
+
+  if (!providedKey) {
+    return { valid: false, error: 'API key requerida' };
+  }
+
+  // Comparacion segura
+  try {
+    const isValid = crypto.timingSafeEqual(
+      Buffer.from(providedKey, 'utf8'),
+      Buffer.from(adminApiKey, 'utf8')
+    );
+
+    if (!isValid) {
+      logger.security('API key invalida proporcionada');
+      return { valid: false, error: 'API key invalida' };
     }
 
-    // Comparacion segura
-    try {
-        const isValid = crypto.timingSafeEqual(
-            Buffer.from(providedKey, 'utf8'),
-            Buffer.from(adminApiKey, 'utf8')
-        );
-
-        if (!isValid) {
-            logger.security('API key invalida proporcionada');
-            return { valid: false, error: 'API key invalida' };
-        }
-
-        return { valid: true };
-    } catch (_error) {
-        return { valid: false, error: 'API key invalida' };
-    }
+    return { valid: true };
+  } catch (_error) {
+    return { valid: false, error: 'API key invalida' };
+  }
 }
 
 /**
@@ -115,21 +125,21 @@ function verifyAdminApiKey(req) {
  * @returns {{ valid: boolean, error?: string }}
  */
 function validateTicketId(ticketId) {
-    if (!ticketId || typeof ticketId !== 'string') {
-        return { valid: false, error: 'ticketId debe ser una cadena de texto' };
-    }
+  if (!ticketId || typeof ticketId !== 'string') {
+    return { valid: false, error: 'ticketId debe ser una cadena de texto' };
+  }
 
-    // Formato: TKT- + 8 caracteres hex (generado por helpers.generateTicketNumber)
-    const ticketPattern = /^TKT-[A-F0-9]{8}$/i;
+  // Formato: TKT- + 8 caracteres hex (generado por helpers.generateTicketNumber)
+  const ticketPattern = /^TKT-[A-F0-9]{8}$/i;
 
-    if (!ticketPattern.test(ticketId)) {
-        return {
-            valid: false,
-            error: 'Formato de ticketId invalido. Formato esperado: TKT-XXXXXXXX (8 caracteres hex)'
-        };
-    }
+  if (!ticketPattern.test(ticketId)) {
+    return {
+      valid: false,
+      error: 'Formato de ticketId invalido. Formato esperado: TKT-XXXXXXXX (8 caracteres hex)',
+    };
+  }
 
-    return { valid: true };
+  return { valid: true };
 }
 
 /**
@@ -138,37 +148,37 @@ function validateTicketId(ticketId) {
  * @returns {{ valid: boolean, error?: string, sanitized?: object }}
  */
 function validateLocation(location) {
-    if (!location || typeof location !== 'object') {
-        return { valid: false, error: 'Ubicacion debe ser un objeto' };
-    }
+  if (!location || typeof location !== 'object') {
+    return { valid: false, error: 'Ubicacion debe ser un objeto' };
+  }
 
-    const { latitude, longitude } = location;
+  const { latitude, longitude } = location;
 
-    // Validar que sean numeros
-    const lat = parseFloat(latitude);
-    const lng = parseFloat(longitude);
+  // Validar que sean numeros
+  const lat = parseFloat(latitude);
+  const lng = parseFloat(longitude);
 
-    if (isNaN(lat) || isNaN(lng)) {
-        return { valid: false, error: 'Latitud y longitud deben ser numeros' };
-    }
+  if (isNaN(lat) || isNaN(lng)) {
+    return { valid: false, error: 'Latitud y longitud deben ser numeros' };
+  }
 
-    // Validar rangos validos
-    if (lat < -90 || lat > 90) {
-        return { valid: false, error: 'Latitud debe estar entre -90 y 90' };
-    }
+  // Validar rangos validos
+  if (lat < -90 || lat > 90) {
+    return { valid: false, error: 'Latitud debe estar entre -90 y 90' };
+  }
 
-    if (lng < -180 || lng > 180) {
-        return { valid: false, error: 'Longitud debe estar entre -180 y 180' };
-    }
+  if (lng < -180 || lng > 180) {
+    return { valid: false, error: 'Longitud debe estar entre -180 y 180' };
+  }
 
-    // Retornar valores sanitizados (precision de 6 decimales)
-    return {
-        valid: true,
-        sanitized: {
-            latitude: Math.round(lat * 1000000) / 1000000,
-            longitude: Math.round(lng * 1000000) / 1000000
-        }
-    };
+  // Retornar valores sanitizados (precision de 6 decimales)
+  return {
+    valid: true,
+    sanitized: {
+      latitude: Math.round(lat * 1000000) / 1000000,
+      longitude: Math.round(lng * 1000000) / 1000000,
+    },
+  };
 }
 
 /**
@@ -177,19 +187,19 @@ function validateLocation(location) {
  * @returns {{ valid: boolean, error?: string, sanitized?: string }}
  */
 function validatePhoneNumber(phoneNumber) {
-    if (!phoneNumber || typeof phoneNumber !== 'string') {
-        return { valid: false, error: 'Numero de telefono requerido' };
-    }
+  if (!phoneNumber || typeof phoneNumber !== 'string') {
+    return { valid: false, error: 'Numero de telefono requerido' };
+  }
 
-    // Remover caracteres no numericos
-    const cleaned = phoneNumber.replace(/\D/g, '');
+  // Remover caracteres no numericos
+  const cleaned = phoneNumber.replace(/\D/g, '');
 
-    // Validar longitud (10-15 digitos para E.164)
-    if (cleaned.length < 10 || cleaned.length > 15) {
-        return { valid: false, error: 'Numero de telefono debe tener entre 10 y 15 digitos' };
-    }
+  // Validar longitud (10-15 digitos para E.164)
+  if (cleaned.length < 10 || cleaned.length > 15) {
+    return { valid: false, error: 'Numero de telefono debe tener entre 10 y 15 digitos' };
+  }
 
-    return { valid: true, sanitized: cleaned };
+  return { valid: true, sanitized: cleaned };
 }
 
 /**
@@ -208,58 +218,58 @@ const IP_MAX_ENTRIES = 10000; // Maximo de IPs a trackear para prevenir memory e
  * @returns {{ allowed: boolean, remaining: number, resetMs: number }}
  */
 function checkIpRateLimit(ip) {
-    const now = Date.now();
-    const windowStart = now - IP_RATE_WINDOW_MS;
+  const now = Date.now();
+  const windowStart = now - IP_RATE_WINDOW_MS;
 
-    // Obtener o crear registro para esta IP
-    let record = ipRequestCounts.get(ip);
+  // Obtener o crear registro para esta IP
+  let record = ipRequestCounts.get(ip);
 
-    if (!record || record.windowStart < windowStart) {
-        // Proteccion contra memory exhaustion: si hay demasiadas entries, limpiar antes de agregar
-        if (ipRequestCounts.size >= IP_MAX_ENTRIES) {
-            logger.warn(`Rate limiter alcanzó límite de ${IP_MAX_ENTRIES} IPs, ejecutando limpieza`);
-            cleanupIpRateLimits();
+  if (!record || record.windowStart < windowStart) {
+    // Proteccion contra memory exhaustion: si hay demasiadas entries, limpiar antes de agregar
+    if (ipRequestCounts.size >= IP_MAX_ENTRIES) {
+      logger.warn(`Rate limiter alcanzó límite de ${IP_MAX_ENTRIES} IPs, ejecutando limpieza`);
+      cleanupIpRateLimits();
 
-            // Si aún está lleno después de limpiar, rechazar nuevas IPs
-            if (ipRequestCounts.size >= IP_MAX_ENTRIES) {
-                logger.warn('Rate limiter aún lleno después de limpieza, rechazando nueva IP');
-                return { allowed: false, remaining: 0, resetMs: IP_RATE_WINDOW_MS };
-            }
-        }
-
-        // Nueva ventana
-        record = { count: 1, windowStart: now };
-        ipRequestCounts.set(ip, record);
-        return { allowed: true, remaining: IP_RATE_LIMIT - 1, resetMs: IP_RATE_WINDOW_MS };
+      // Si aún está lleno después de limpiar, rechazar nuevas IPs
+      if (ipRequestCounts.size >= IP_MAX_ENTRIES) {
+        logger.warn('Rate limiter aún lleno después de limpieza, rechazando nueva IP');
+        return { allowed: false, remaining: 0, resetMs: IP_RATE_WINDOW_MS };
+      }
     }
 
-    // Incrementar contador
-    record.count++;
+    // Nueva ventana
+    record = { count: 1, windowStart: now };
+    ipRequestCounts.set(ip, record);
+    return { allowed: true, remaining: IP_RATE_LIMIT - 1, resetMs: IP_RATE_WINDOW_MS };
+  }
 
-    if (record.count > IP_RATE_LIMIT) {
-        const resetMs = record.windowStart + IP_RATE_WINDOW_MS - now;
-        return { allowed: false, remaining: 0, resetMs };
-    }
+  // Incrementar contador
+  record.count++;
 
-    return {
-        allowed: true,
-        remaining: IP_RATE_LIMIT - record.count,
-        resetMs: record.windowStart + IP_RATE_WINDOW_MS - now
-    };
+  if (record.count > IP_RATE_LIMIT) {
+    const resetMs = record.windowStart + IP_RATE_WINDOW_MS - now;
+    return { allowed: false, remaining: 0, resetMs };
+  }
+
+  return {
+    allowed: true,
+    remaining: IP_RATE_LIMIT - record.count,
+    resetMs: record.windowStart + IP_RATE_WINDOW_MS - now,
+  };
 }
 
 /**
  * Limpia registros antiguos de rate limiting (llamar periodicamente)
  */
 function cleanupIpRateLimits() {
-    const now = Date.now();
-    const windowStart = now - IP_RATE_WINDOW_MS;
+  const now = Date.now();
+  const windowStart = now - IP_RATE_WINDOW_MS;
 
-    for (const [ip, record] of ipRequestCounts.entries()) {
-        if (record.windowStart < windowStart) {
-            ipRequestCounts.delete(ip);
-        }
+  for (const [ip, record] of ipRequestCounts.entries()) {
+    if (record.windowStart < windowStart) {
+      ipRequestCounts.delete(ip);
     }
+  }
 }
 
 // Limpiar cada minuto
@@ -272,20 +282,22 @@ setInterval(cleanupIpRateLimits, 60000).unref();
  * @returns {string}
  */
 function getClientIp(req) {
-    // Azure Functions / proxies ponen la IP real en estos headers
-    return req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-           req.headers['x-real-ip'] ||
-           req.headers['client-ip'] ||
-           'unknown';
+  // Azure Functions / proxies ponen la IP real en estos headers
+  return (
+    req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+    req.headers['x-real-ip'] ||
+    req.headers['client-ip'] ||
+    'unknown'
+  );
 }
 
 module.exports = {
-    verifyWebhookSignature,
-    verifyAdminApiKey,
-    validateTicketId,
-    validateLocation,
-    validatePhoneNumber,
-    checkIpRateLimit,
-    getClientIp,
-    cleanupIpRateLimits
+  verifyWebhookSignature,
+  verifyAdminApiKey,
+  validateTicketId,
+  validateLocation,
+  validatePhoneNumber,
+  checkIpRateLimit,
+  getClientIp,
+  cleanupIpRateLimits,
 };

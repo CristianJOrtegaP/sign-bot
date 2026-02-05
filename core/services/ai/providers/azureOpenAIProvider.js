@@ -18,29 +18,29 @@ const PROMPTS = require('./prompts');
  * @param {Object} config - Configuración del provider
  */
 function initialize(config) {
-    if (!config.endpoint) {
-        throw new Error('AZURE_OPENAI_ENDPOINT es requerida para el provider de Azure OpenAI');
-    }
-    if (!config.apiKey) {
-        throw new Error('AZURE_OPENAI_KEY es requerida para el provider de Azure OpenAI');
-    }
-    if (!config.deploymentName) {
-        throw new Error('AZURE_OPENAI_DEPLOYMENT es requerida para el provider de Azure OpenAI');
-    }
+  if (!config.endpoint) {
+    throw new Error('AZURE_OPENAI_ENDPOINT es requerida para el provider de Azure OpenAI');
+  }
+  if (!config.apiKey) {
+    throw new Error('AZURE_OPENAI_KEY es requerida para el provider de Azure OpenAI');
+  }
+  if (!config.deploymentName) {
+    throw new Error('AZURE_OPENAI_DEPLOYMENT es requerida para el provider de Azure OpenAI');
+  }
 
-    // SDK v2.x usa AzureOpenAI del paquete 'openai'
-    client = new AzureOpenAI({
-        endpoint: config.endpoint,
-        apiKey: config.apiKey,
-        apiVersion: '2024-08-01-preview',
-        deployment: config.deploymentName
-    });
-    deploymentName = config.deploymentName;
+  // SDK v2.x usa AzureOpenAI del paquete 'openai'
+  client = new AzureOpenAI({
+    endpoint: config.endpoint,
+    apiKey: config.apiKey,
+    apiVersion: '2024-08-01-preview',
+    deployment: config.deploymentName,
+  });
+  deploymentName = config.deploymentName;
 
-    logger.info('Azure OpenAI Provider inicializado', {
-        endpoint: config.endpoint,
-        deployment: deploymentName
-    });
+  logger.info('Azure OpenAI Provider inicializado', {
+    endpoint: config.endpoint,
+    deployment: deploymentName,
+  });
 }
 
 /**
@@ -50,19 +50,19 @@ function initialize(config) {
  * @returns {string} - Respuesta del modelo
  */
 async function sendMessage(systemPrompt, userMessage) {
-    const messages = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage }
-    ];
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userMessage },
+  ];
 
-    const response = await client.chat.completions.create({
-        model: deploymentName,
-        messages: messages,
-        temperature: 0.3,  // Baja temperatura para respuestas más consistentes
-        max_tokens: 500
-    });
+  const response = await client.chat.completions.create({
+    model: deploymentName,
+    messages: messages,
+    temperature: 0.3, // Baja temperatura para respuestas más consistentes
+    max_tokens: 500,
+  });
 
-    return response.choices[0]?.message?.content || '';
+  return response.choices[0]?.message?.content || '';
 }
 
 /**
@@ -71,15 +71,15 @@ async function sendMessage(systemPrompt, userMessage) {
  * @returns {Object|null} - Objeto parseado o null
  */
 function parseJsonResponse(response) {
-    const jsonMatch = response.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-        try {
-            return JSON.parse(jsonMatch[0]);
-        } catch (_e) {
-            return null;
-        }
+  const jsonMatch = response.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch (_e) {
+      return null;
     }
-    return null;
+  }
+  return null;
 }
 
 /**
@@ -89,34 +89,38 @@ function parseJsonResponse(response) {
  * @returns {Object} - Objeto con la intención detectada
  */
 async function detectIntent(userMessage, config) {
-    try {
-        const response = await sendMessage(PROMPTS.DETECT_INTENT, userMessage);
+  try {
+    const response = await sendMessage(PROMPTS.DETECT_INTENT, userMessage);
 
-        logger.ai('Azure OpenAI detectIntent - Respuesta recibida', { responseLength: response.length });
+    logger.ai('Azure OpenAI detectIntent - Respuesta recibida', {
+      responseLength: response.length,
+    });
 
-        const parsed = parseJsonResponse(response);
-        if (parsed) {
-            return {
-                intencion: parsed.intencion || 'OTRO',
-                confianza: parsed.confianza || config.confidence.low,
-                datos_extraidos: parsed.datos_extraidos || {}
-            };
-        }
-
-        return {
-            intencion: 'OTRO',
-            confianza: config.confidence.low,
-            datos_extraidos: {}
-        };
-
-    } catch (error) {
-        logger.error('Error en Azure OpenAI detectIntent', error, { service: 'AzureOpenAI', operation: 'detectIntent' });
-        return {
-            intencion: 'OTRO',
-            confianza: 0,
-            datos_extraidos: {}
-        };
+    const parsed = parseJsonResponse(response);
+    if (parsed) {
+      return {
+        intencion: parsed.intencion || 'OTRO',
+        confianza: parsed.confianza || config.confidence.low,
+        datos_extraidos: parsed.datos_extraidos || {},
+      };
     }
+
+    return {
+      intencion: 'OTRO',
+      confianza: config.confidence.low,
+      datos_extraidos: {},
+    };
+  } catch (error) {
+    logger.error('Error en Azure OpenAI detectIntent', error, {
+      service: 'AzureOpenAI',
+      operation: 'detectIntent',
+    });
+    return {
+      intencion: 'OTRO',
+      confianza: 0,
+      datos_extraidos: {},
+    };
+  }
 }
 
 /**
@@ -126,37 +130,41 @@ async function detectIntent(userMessage, config) {
  * @returns {Object} - Intención interpretada con confianza
  */
 async function interpretTerm(userText, config) {
-    try {
-        const response = await sendMessage(
-            PROMPTS.INTERPRET_TERM,
-            `Interpreta este término: "${userText}"`
-        );
+  try {
+    const response = await sendMessage(
+      PROMPTS.INTERPRET_TERM,
+      `Interpreta este término: "${userText}"`
+    );
 
-        logger.ai('Azure OpenAI interpretTerm - Respuesta recibida', { responseLength: response.length });
+    logger.ai('Azure OpenAI interpretTerm - Respuesta recibida', {
+      responseLength: response.length,
+    });
 
-        const parsed = parseJsonResponse(response);
-        if (parsed) {
-            return {
-                intencion: parsed.intencion_interpretada || 'OTRO',
-                confianza: parsed.confianza || config.confidence.low,
-                razon: parsed.razon || 'Sin razón especificada'
-            };
-        }
-
-        return {
-            intencion: 'OTRO',
-            confianza: config.confidence.minimum,
-            razon: 'No se pudo parsear la respuesta de Azure OpenAI'
-        };
-
-    } catch (error) {
-        logger.error('Error interpretando término con Azure OpenAI', error, { service: 'AzureOpenAI', operation: 'interpretTerm' });
-        return {
-            intencion: 'OTRO',
-            confianza: 0,
-            razon: 'Error al llamar a Azure OpenAI'
-        };
+    const parsed = parseJsonResponse(response);
+    if (parsed) {
+      return {
+        intencion: parsed.intencion_interpretada || 'OTRO',
+        confianza: parsed.confianza || config.confidence.low,
+        razon: parsed.razon || 'Sin razón especificada',
+      };
     }
+
+    return {
+      intencion: 'OTRO',
+      confianza: config.confidence.minimum,
+      razon: 'No se pudo parsear la respuesta de Azure OpenAI',
+    };
+  } catch (error) {
+    logger.error('Error interpretando término con Azure OpenAI', error, {
+      service: 'AzureOpenAI',
+      operation: 'interpretTerm',
+    });
+    return {
+      intencion: 'OTRO',
+      confianza: 0,
+      razon: 'Error al llamar a Azure OpenAI',
+    };
+  }
 }
 
 /**
@@ -166,40 +174,44 @@ async function interpretTerm(userText, config) {
  * @returns {Object} - Datos estructurados extraídos
  */
 async function extractStructuredData(userMessage, config) {
-    try {
-        const response = await sendMessage(PROMPTS.EXTRACT_STRUCTURED, userMessage);
+  try {
+    const response = await sendMessage(PROMPTS.EXTRACT_STRUCTURED, userMessage);
 
-        logger.ai('Azure OpenAI extractStructuredData - Respuesta recibida', { responseLength: response.length });
+    logger.ai('Azure OpenAI extractStructuredData - Respuesta recibida', {
+      responseLength: response.length,
+    });
 
-        const parsed = parseJsonResponse(response);
-        if (parsed) {
-            return {
-                intencion: parsed.intencion || 'OTRO',
-                tipo_equipo: parsed.tipo_equipo || 'OTRO',
-                problema: parsed.problema || null,
-                confianza: parsed.confianza || config.confidence.low,
-                razon: parsed.razon || 'Sin razón especificada'
-            };
-        }
-
-        return {
-            intencion: 'OTRO',
-            tipo_equipo: 'OTRO',
-            problema: null,
-            confianza: config.confidence.minimum,
-            razon: 'No se pudo parsear la respuesta de Azure OpenAI'
-        };
-
-    } catch (error) {
-        logger.error('Error extrayendo datos estructurados con Azure OpenAI', error, { service: 'AzureOpenAI', operation: 'extractStructuredData' });
-        return {
-            intencion: 'OTRO',
-            tipo_equipo: 'OTRO',
-            problema: null,
-            confianza: 0,
-            razon: 'Error al llamar a Azure OpenAI'
-        };
+    const parsed = parseJsonResponse(response);
+    if (parsed) {
+      return {
+        intencion: parsed.intencion || 'OTRO',
+        tipo_equipo: parsed.tipo_equipo || 'OTRO',
+        problema: parsed.problema || null,
+        confianza: parsed.confianza || config.confidence.low,
+        razon: parsed.razon || 'Sin razón especificada',
+      };
     }
+
+    return {
+      intencion: 'OTRO',
+      tipo_equipo: 'OTRO',
+      problema: null,
+      confianza: config.confidence.minimum,
+      razon: 'No se pudo parsear la respuesta de Azure OpenAI',
+    };
+  } catch (error) {
+    logger.error('Error extrayendo datos estructurados con Azure OpenAI', error, {
+      service: 'AzureOpenAI',
+      operation: 'extractStructuredData',
+    });
+    return {
+      intencion: 'OTRO',
+      tipo_equipo: 'OTRO',
+      problema: null,
+      confianza: 0,
+      razon: 'Error al llamar a Azure OpenAI',
+    };
+  }
 }
 
 /**
@@ -211,74 +223,78 @@ async function extractStructuredData(userMessage, config) {
  * @returns {Object} - Todos los datos extraídos
  */
 async function extractAllData(userMessage, config, contextoActual = null) {
-    try {
-        let prompt = PROMPTS.EXTRACT_ALL;
-        if (contextoActual) {
-            prompt = prompt.replace(
-                'CONTEXTO: El usuario está reportando fallas',
-                `CONTEXTO: El usuario está reportando fallas. Estado actual del flujo: ${contextoActual}`
-            );
-        }
-
-        const response = await sendMessage(prompt, userMessage);
-
-        logger.ai('Azure OpenAI extractAllData - Respuesta recibida', { responseLength: response.length });
-
-        const parsed = parseJsonResponse(response);
-        if (parsed) {
-            // Validar código SAP (5-10 dígitos)
-            let codigoSap = parsed.codigo_sap;
-            if (codigoSap) {
-                const soloDigitos = String(codigoSap).replace(/\D/g, '');
-                if (soloDigitos.length < 5 || soloDigitos.length > 10) {
-                    codigoSap = null;
-                } else {
-                    codigoSap = soloDigitos;
-                }
-            }
-
-            return {
-                tipo_equipo: parsed.tipo_equipo || null,
-                codigo_sap: codigoSap,
-                numero_empleado: parsed.numero_empleado || null,
-                problema: parsed.problema || null,
-                intencion: parsed.intencion || 'OTRO',
-                confianza: parsed.confianza || config.confidence.low,
-                datos_encontrados: parsed.datos_encontrados || [],
-                es_modificacion: parsed.es_modificacion || false,
-                campo_modificado: parsed.campo_modificado || null,
-                razon: parsed.razon || 'Sin razón especificada'
-            };
-        }
-
-        return {
-            tipo_equipo: null,
-            codigo_sap: null,
-            numero_empleado: null,
-            problema: null,
-            intencion: 'OTRO',
-            confianza: config.confidence.minimum,
-            datos_encontrados: [],
-            es_modificacion: false,
-            campo_modificado: null,
-            razon: 'No se pudo parsear la respuesta de Azure OpenAI'
-        };
-
-    } catch (error) {
-        logger.error('Error en Azure OpenAI extractAllData', error, { service: 'AzureOpenAI', operation: 'extractAllData' });
-        return {
-            tipo_equipo: null,
-            codigo_sap: null,
-            numero_empleado: null,
-            problema: null,
-            intencion: 'OTRO',
-            confianza: 0,
-            datos_encontrados: [],
-            es_modificacion: false,
-            campo_modificado: null,
-            razon: 'Error al llamar a Azure OpenAI'
-        };
+  try {
+    let prompt = PROMPTS.EXTRACT_ALL;
+    if (contextoActual) {
+      prompt = prompt.replace(
+        'CONTEXTO: El usuario está reportando fallas',
+        `CONTEXTO: El usuario está reportando fallas. Estado actual del flujo: ${contextoActual}`
+      );
     }
+
+    const response = await sendMessage(prompt, userMessage);
+
+    logger.ai('Azure OpenAI extractAllData - Respuesta recibida', {
+      responseLength: response.length,
+    });
+
+    const parsed = parseJsonResponse(response);
+    if (parsed) {
+      // Validar código SAP (5-10 dígitos)
+      let codigoSap = parsed.codigo_sap;
+      if (codigoSap) {
+        const soloDigitos = String(codigoSap).replace(/\D/g, '');
+        if (soloDigitos.length < 5 || soloDigitos.length > 10) {
+          codigoSap = null;
+        } else {
+          codigoSap = soloDigitos;
+        }
+      }
+
+      return {
+        tipo_equipo: parsed.tipo_equipo || null,
+        codigo_sap: codigoSap,
+        numero_empleado: parsed.numero_empleado || null,
+        problema: parsed.problema || null,
+        intencion: parsed.intencion || 'OTRO',
+        confianza: parsed.confianza || config.confidence.low,
+        datos_encontrados: parsed.datos_encontrados || [],
+        es_modificacion: parsed.es_modificacion || false,
+        campo_modificado: parsed.campo_modificado || null,
+        razon: parsed.razon || 'Sin razón especificada',
+      };
+    }
+
+    return {
+      tipo_equipo: null,
+      codigo_sap: null,
+      numero_empleado: null,
+      problema: null,
+      intencion: 'OTRO',
+      confianza: config.confidence.minimum,
+      datos_encontrados: [],
+      es_modificacion: false,
+      campo_modificado: null,
+      razon: 'No se pudo parsear la respuesta de Azure OpenAI',
+    };
+  } catch (error) {
+    logger.error('Error en Azure OpenAI extractAllData', error, {
+      service: 'AzureOpenAI',
+      operation: 'extractAllData',
+    });
+    return {
+      tipo_equipo: null,
+      codigo_sap: null,
+      numero_empleado: null,
+      problema: null,
+      intencion: 'OTRO',
+      confianza: 0,
+      datos_encontrados: [],
+      es_modificacion: false,
+      campo_modificado: null,
+      razon: 'Error al llamar a Azure OpenAI',
+    };
+  }
 }
 
 /**
@@ -289,132 +305,145 @@ async function extractAllData(userMessage, config, contextoActual = null) {
  * @returns {Object} - Datos extraídos de la imagen
  */
 async function analyzeImageWithVision(imageBuffer, userText, config) {
-    try {
-        // Convertir buffer a base64
-        const base64Image = imageBuffer.toString('base64');
+  try {
+    // Convertir buffer a base64
+    const base64Image = imageBuffer.toString('base64');
 
-        // Crear el prompt para análisis de imagen
-        const visionPrompt = `Eres un asistente que analiza imágenes de equipos (refrigeradores, vehículos) para extraer información.
+    // Crear el prompt para análisis de imagen (mejorado para detectar problemas visuales)
+    const visionPrompt = `Eres un asistente experto que analiza imágenes de equipos y vehículos para detectar problemas y extraer información.
 
-INSTRUCCIONES:
-1. Analiza la imagen y el texto del usuario
-2. Extrae toda la información relevante que encuentres:
-   - Códigos visibles (SAP, serie, barras)
-   - Tipo de equipo (refrigerador, camión, etc.)
-   - Problemas visibles (daños, fugas, etc.)
-   - Números de empleado si son visibles
-3. Combina la información de la imagen con el texto del usuario
+CONTEXTO: Los usuarios envían fotos de refrigeradores comerciales o vehículos (camiones, camionetas) que presentan fallas o problemas.
+
+INSTRUCCIONES IMPORTANTES:
+1. PRIORIDAD ALTA - Detectar problemas visuales:
+   - Llantas: ponchadas, desinfladas, dañadas, con objetos clavados
+   - Daños físicos: golpes, abolladuras, rasguños, partes rotas
+   - Fugas: aceite, refrigerante, combustible, agua
+   - Motor: humo, cables sueltos, piezas dañadas
+   - Carrocería: vidrios rotos, luces dañadas, espejos rotos
+   - Refrigeradores: fugas de gas, acumulación de hielo, puertas dañadas
+
+2. Extraer códigos si son visibles:
+   - Códigos SAP (5-10 dígitos)
+   - Números de serie
+   - Placas de vehículos
+
+3. Si el usuario menciona un problema en el texto, CONFIRMAR si la imagen muestra ese problema
+
+IMPORTANTE: Si ves CUALQUIER problema visual (llanta ponchada, daño, fuga, etc.), SIEMPRE reportarlo en el campo "problema".
 
 Responde SIEMPRE con JSON en este formato:
 {
   "tipo_equipo": "REFRIGERADOR|VEHICULO|OTRO|null",
   "codigo_sap": "código si es visible o null",
   "numero_empleado": "número si es visible o null",
-  "problema": "descripción del problema (de imagen o texto)",
-  "informacion_visual": "descripción de lo que ves en la imagen",
+  "problema": "descripción específica del problema visto en la imagen o mencionado por el usuario",
+  "informacion_visual": "descripción detallada de lo que ves en la imagen",
   "codigos_visibles": ["lista de códigos encontrados"],
   "confianza": 0-100,
-  "datos_encontrados": ["lista de campos encontrados"]
+  "datos_encontrados": ["lista de campos encontrados: tipo_equipo, problema, codigo_sap, etc."]
 }`;
 
-        const messages = [
-            {
-                role: 'user',
-                content: [
-                    {
-                        type: 'text',
-                        text: visionPrompt
-                    },
-                    {
-                        type: 'image_url',
-                        image_url: {
-                            url: `data:image/jpeg;base64,${base64Image}`
-                        }
-                    },
-                    {
-                        type: 'text',
-                        text: `Texto del usuario: "${userText || 'Sin texto adicional'}"`
-                    }
-                ]
-            }
-        ];
+    const messages = [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: visionPrompt,
+          },
+          {
+            type: 'image_url',
+            image_url: {
+              url: `data:image/jpeg;base64,${base64Image}`,
+            },
+          },
+          {
+            type: 'text',
+            text: `Texto del usuario: "${userText || 'Sin texto adicional'}"`,
+          },
+        ],
+      },
+    ];
 
-        logger.ai('Azure OpenAI Vision - Enviando imagen para análisis');
+    logger.ai('Azure OpenAI Vision - Enviando imagen para análisis');
 
-        const response = await client.chat.completions.create({
-            model: deploymentName,
-            messages: messages,
-            temperature: 0.3,
-            max_tokens: 1000
-        });
+    const response = await client.chat.completions.create({
+      model: deploymentName,
+      messages: messages,
+      temperature: 0.3,
+      max_tokens: 1000,
+    });
 
-        const content = response.choices[0]?.message?.content || '';
-        logger.ai('Azure OpenAI Vision - Respuesta recibida', { responseLength: content.length });
+    const content = response.choices[0]?.message?.content || '';
+    logger.ai('Azure OpenAI Vision - Respuesta recibida', { responseLength: content.length });
 
-        const parsed = parseJsonResponse(content);
-        if (parsed) {
-            // Validar código SAP
-            let codigoSap = parsed.codigo_sap;
-            if (codigoSap) {
-                const soloDigitos = String(codigoSap).replace(/\D/g, '');
-                if (soloDigitos.length >= 5 && soloDigitos.length <= 10) {
-                    codigoSap = soloDigitos;
-                } else {
-                    codigoSap = null;
-                }
-            }
-
-            return {
-                tipo_equipo: parsed.tipo_equipo || null,
-                codigo_sap: codigoSap,
-                numero_empleado: parsed.numero_empleado || null,
-                problema: parsed.problema || null,
-                informacion_visual: parsed.informacion_visual || '',
-                codigos_visibles: parsed.codigos_visibles || [],
-                confianza: parsed.confianza || config.confidence.low,
-                datos_encontrados: parsed.datos_encontrados || []
-            };
+    const parsed = parseJsonResponse(content);
+    if (parsed) {
+      // Validar código SAP
+      let codigoSap = parsed.codigo_sap;
+      if (codigoSap) {
+        const soloDigitos = String(codigoSap).replace(/\D/g, '');
+        if (soloDigitos.length >= 5 && soloDigitos.length <= 10) {
+          codigoSap = soloDigitos;
+        } else {
+          codigoSap = null;
         }
+      }
 
-        return {
-            tipo_equipo: null,
-            codigo_sap: null,
-            numero_empleado: null,
-            problema: null,
-            informacion_visual: '',
-            codigos_visibles: [],
-            confianza: config.confidence.minimum,
-            datos_encontrados: []
-        };
-
-    } catch (error) {
-        logger.error('Error en Azure OpenAI Vision', error, { service: 'AzureOpenAI', operation: 'analyzeImageWithVision' });
-        return {
-            tipo_equipo: null,
-            codigo_sap: null,
-            numero_empleado: null,
-            problema: null,
-            informacion_visual: '',
-            codigos_visibles: [],
-            confianza: 0,
-            datos_encontrados: []
-        };
+      return {
+        tipo_equipo: parsed.tipo_equipo || null,
+        codigo_sap: codigoSap,
+        numero_empleado: parsed.numero_empleado || null,
+        problema: parsed.problema || null,
+        informacion_visual: parsed.informacion_visual || '',
+        codigos_visibles: parsed.codigos_visibles || [],
+        confianza: parsed.confianza || config.confidence.low,
+        datos_encontrados: parsed.datos_encontrados || [],
+      };
     }
+
+    return {
+      tipo_equipo: null,
+      codigo_sap: null,
+      numero_empleado: null,
+      problema: null,
+      informacion_visual: '',
+      codigos_visibles: [],
+      confianza: config.confidence.minimum,
+      datos_encontrados: [],
+    };
+  } catch (error) {
+    logger.error('Error en Azure OpenAI Vision', error, {
+      service: 'AzureOpenAI',
+      operation: 'analyzeImageWithVision',
+    });
+    return {
+      tipo_equipo: null,
+      codigo_sap: null,
+      numero_empleado: null,
+      problema: null,
+      informacion_visual: '',
+      codigos_visibles: [],
+      confianza: 0,
+      datos_encontrados: [],
+    };
+  }
 }
 
 /**
  * Retorna el nombre del provider
  */
 function getName() {
-    return 'azure-openai';
+  return 'azure-openai';
 }
 
 module.exports = {
-    initialize,
-    detectIntent,
-    interpretTerm,
-    extractStructuredData,
-    extractAllData,
-    analyzeImageWithVision,
-    getName
+  initialize,
+  detectIntent,
+  interpretTerm,
+  extractStructuredData,
+  extractAllData,
+  analyzeImageWithVision,
+  getName,
 };

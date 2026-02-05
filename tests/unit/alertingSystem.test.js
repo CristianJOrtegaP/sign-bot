@@ -96,16 +96,17 @@ describe('Alerting System - Alert Aggregation (Cooldown)', () => {
 describe('Alerting System - Webhook Notifications', () => {
   test('debe enviar webhook cuando está configurado', async () => {
     process.env.ALERT_WEBHOOK_URL = 'https://hooks.slack.com/test';
-    axios.post.mockResolvedValue({ status: 200 });
 
-    // Reload module para tomar nueva env var
+    // Reload modules para tomar nueva env var y obtener mock fresco
     jest.resetModules();
+    const axiosMock = require('axios');
+    axiosMock.post.mockResolvedValue({ status: 200 });
     const service = require('../../core/services/infrastructure/alertingService');
 
     const alert = service.createAlert('WARNING', 'test', 'Test webhook');
     await service.sendAlert(alert);
 
-    expect(axios.post).toHaveBeenCalledWith(
+    expect(axiosMock.post).toHaveBeenCalledWith(
       'https://hooks.slack.com/test',
       expect.objectContaining({
         text: expect.stringContaining('WARNING'),
@@ -117,9 +118,11 @@ describe('Alerting System - Webhook Notifications', () => {
 
   test('debe formatear payload compatible con Slack', async () => {
     process.env.ALERT_WEBHOOK_URL = 'https://hooks.slack.com/test';
-    axios.post.mockResolvedValue({ status: 200 });
 
+    // Reload modules para tomar nueva env var y obtener mock fresco
     jest.resetModules();
+    const axiosMock = require('axios');
+    axiosMock.post.mockResolvedValue({ status: 200 });
     const service = require('../../core/services/infrastructure/alertingService');
 
     const alert = service.createAlert('CRITICAL', 'test', 'Critical issue', {
@@ -128,7 +131,7 @@ describe('Alerting System - Webhook Notifications', () => {
     });
     await service.sendAlert(alert);
 
-    const payload = axios.post.mock.calls[0][1];
+    const payload = axiosMock.post.mock.calls[0][1];
 
     expect(payload).toHaveProperty('text');
     expect(payload.text).toContain('🚨');

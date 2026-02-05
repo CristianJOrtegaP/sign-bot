@@ -20,7 +20,7 @@ const { logger } = require('../infrastructure/errorHandler');
  * @returns {Promise<Object|null>}
  */
 async function getEquipoBySAP(codigoSAP, skipCache = false) {
-    return EquipoRepository.getBySAP(codigoSAP, skipCache);
+  return EquipoRepository.getBySAP(codigoSAP, skipCache);
 }
 
 /**
@@ -29,7 +29,7 @@ async function getEquipoBySAP(codigoSAP, skipCache = false) {
  * @returns {Promise<Object|null>}
  */
 async function getEquipoById(equipoId) {
-    return EquipoRepository.getById(equipoId);
+  return EquipoRepository.getById(equipoId);
 }
 
 // ============================================================================
@@ -46,7 +46,13 @@ async function getEquipoById(equipoId) {
  * @returns {Promise<string>} - Número de ticket generado
  */
 async function createReporte(equipoId, clienteId, telefono, descripcion, imagenUrl = null) {
-    return ReporteRepository.createRefrigerador(equipoId, clienteId, telefono, descripcion, imagenUrl);
+  return ReporteRepository.createRefrigerador(
+    equipoId,
+    clienteId,
+    telefono,
+    descripcion,
+    imagenUrl
+  );
 }
 
 /**
@@ -62,8 +68,28 @@ async function createReporte(equipoId, clienteId, telefono, descripcion, imagenU
  * @param {number} distanciaCentroKm - Distancia al centro de servicio en km (opcional)
  * @returns {Promise<string>} - Número de ticket generado
  */
-async function createReporteVehiculo(codigoSAPVehiculo, numeroEmpleado, telefono, descripcion, imagenUrl = null, ubicacion = null, centroServicioId = null, tiempoEstimadoMinutos = null, distanciaCentroKm = null) {
-    return ReporteRepository.createVehiculo(codigoSAPVehiculo, numeroEmpleado, telefono, descripcion, imagenUrl, ubicacion, centroServicioId, tiempoEstimadoMinutos, distanciaCentroKm);
+async function createReporteVehiculo(
+  codigoSAPVehiculo,
+  numeroEmpleado,
+  telefono,
+  descripcion,
+  imagenUrl = null,
+  ubicacion = null,
+  centroServicioId = null,
+  tiempoEstimadoMinutos = null,
+  distanciaCentroKm = null
+) {
+  return ReporteRepository.createVehiculo(
+    codigoSAPVehiculo,
+    numeroEmpleado,
+    telefono,
+    descripcion,
+    imagenUrl,
+    ubicacion,
+    centroServicioId,
+    tiempoEstimadoMinutos,
+    distanciaCentroKm
+  );
 }
 
 // ============================================================================
@@ -76,7 +102,7 @@ async function createReporteVehiculo(codigoSAPVehiculo, numeroEmpleado, telefono
  * @returns {Promise<Object>}
  */
 async function getSession(telefono) {
-    return SesionRepository.getSession(telefono);
+  return SesionRepository.getSession(telefono);
 }
 
 /**
@@ -86,7 +112,7 @@ async function getSession(telefono) {
  * @returns {Promise<Object>}
  */
 async function getSessionFresh(telefono) {
-    return SesionRepository.getSession(telefono, true);
+  return SesionRepository.getSession(telefono, true);
 }
 
 /**
@@ -96,7 +122,7 @@ async function getSessionFresh(telefono) {
  * @returns {Promise<Object>} Sesión con campo Version
  */
 async function getSessionWithVersion(telefono) {
-    return SesionRepository.getSessionWithVersion(telefono);
+  return SesionRepository.getSessionWithVersion(telefono);
 }
 
 /**
@@ -109,8 +135,24 @@ async function getSessionWithVersion(telefono) {
  * @param {string} descripcion - Descripción de la acción (opcional)
  * @param {number} reporteId - ID del reporte si se generó uno (opcional)
  */
-async function updateSession(telefono, estado, datosTemp = null, equipoIdTemp = null, origenAccion = 'BOT', descripcion = null, reporteId = null) {
-    return SesionRepository.updateSession(telefono, estado, datosTemp, equipoIdTemp, origenAccion, descripcion, reporteId);
+async function updateSession(
+  telefono,
+  estado,
+  datosTemp = null,
+  equipoIdTemp = null,
+  origenAccion = 'BOT',
+  descripcion = null,
+  reporteId = null
+) {
+  return SesionRepository.updateSession(
+    telefono,
+    estado,
+    datosTemp,
+    equipoIdTemp,
+    origenAccion,
+    descripcion,
+    reporteId
+  );
 }
 
 /**
@@ -122,8 +164,33 @@ async function updateSession(telefono, estado, datosTemp = null, equipoIdTemp = 
  * @param {string} intencionDetectada - Intención detectada por IA (opcional)
  * @param {number} confianzaIA - Score de confianza (opcional)
  */
-async function saveMessage(telefono, tipo, contenido, tipoContenido = 'TEXTO', intencionDetectada = null, confianzaIA = null) {
-    return SesionRepository.saveMessage(telefono, tipo, contenido, tipoContenido, intencionDetectada, confianzaIA);
+async function saveMessage(
+  telefono,
+  tipo,
+  contenido,
+  tipoContenido = 'TEXTO',
+  intencionDetectada = null,
+  confianzaIA = null
+) {
+  return SesionRepository.saveMessage(
+    telefono,
+    tipo,
+    contenido,
+    tipoContenido,
+    intencionDetectada,
+    confianzaIA
+  );
+}
+
+/**
+ * Actualiza el contenido de un mensaje placeholder de imagen con la URL real
+ * @param {string} telefono - Número de teléfono del usuario
+ * @param {string} imageId - ID de la imagen de WhatsApp (para encontrar el placeholder)
+ * @param {string} imagenUrl - URL real de la imagen subida a blob storage
+ * @returns {Promise<boolean>} - true si se actualizó, false si no se encontró el placeholder
+ */
+async function updateImagePlaceholder(telefono, imageId, imagenUrl) {
+  return SesionRepository.updateImagePlaceholder(telefono, imageId, imagenUrl);
 }
 
 /**
@@ -132,7 +199,7 @@ async function saveMessage(telefono, tipo, contenido, tipoContenido = 'TEXTO', i
  * @returns {Promise<{esSpam: boolean, totalMensajes: number, razon: string}>}
  */
 async function checkSpam(telefono) {
-    return SesionRepository.checkSpam(telefono);
+  return SesionRepository.checkSpam(telefono);
 }
 
 /**
@@ -140,7 +207,7 @@ async function checkSpam(telefono) {
  * @param {string} telefono - Número de teléfono
  */
 async function updateLastActivity(telefono) {
-    return SesionRepository.updateLastActivity(telefono);
+  return SesionRepository.updateLastActivity(telefono);
 }
 
 // ============================================================================
@@ -153,11 +220,11 @@ async function updateLastActivity(telefono) {
  * @returns {boolean|number}
  */
 function clearEquipoCache(codigoSAP = null) {
-    if (codigoSAP) {
-        EquipoRepository.invalidateCache(codigoSAP);
-        return true;
-    }
-    return EquipoRepository.clearCache();
+  if (codigoSAP) {
+    EquipoRepository.invalidateCache(codigoSAP);
+    return true;
+  }
+  return EquipoRepository.clearCache();
 }
 
 /**
@@ -166,11 +233,11 @@ function clearEquipoCache(codigoSAP = null) {
  * @returns {boolean|number}
  */
 function clearSessionCache(telefono = null) {
-    if (telefono) {
-        SesionRepository.invalidateCache(telefono);
-        return true;
-    }
-    return SesionRepository.clearCache();
+  if (telefono) {
+    SesionRepository.invalidateCache(telefono);
+    return true;
+  }
+  return SesionRepository.clearCache();
 }
 
 /**
@@ -178,11 +245,11 @@ function clearSessionCache(telefono = null) {
  * @returns {Object}
  */
 function getCacheStats() {
-    return {
-        equipos: EquipoRepository.getCacheStats(),
-        sesiones: SesionRepository.getCacheStats(),
-        reportes: ReporteRepository.getCacheStats()
-    };
+  return {
+    equipos: EquipoRepository.getCacheStats(),
+    sesiones: SesionRepository.getCacheStats(),
+    reportes: ReporteRepository.getCacheStats(),
+  };
 }
 
 /**
@@ -190,17 +257,17 @@ function getCacheStats() {
  * (Ya se inicia automáticamente en los repositorios)
  */
 function startCacheCleanup() {
-    // Los repositorios ya manejan esto internamente
-    logger.debug('Los repositorios manejan la limpieza de caché internamente');
+  // Los repositorios ya manejan esto internamente
+  logger.debug('Los repositorios manejan la limpieza de caché internamente');
 }
 
 /**
  * Detiene la limpieza automática de cachés
  */
 function stopCacheCleanup() {
-    SesionRepository.stopCacheCleanup();
-    EquipoRepository.stopCacheCleanup();
-    ReporteRepository.stopCacheCleanup();
+  SesionRepository.stopCacheCleanup();
+  EquipoRepository.stopCacheCleanup();
+  ReporteRepository.stopCacheCleanup();
 }
 
 // ============================================================================
@@ -213,7 +280,7 @@ function stopCacheCleanup() {
  * @returns {Promise<Object|null>}
  */
 async function getReporteByTicket(numeroTicket) {
-    return ReporteRepository.getByTicket(numeroTicket);
+  return ReporteRepository.getByTicket(numeroTicket);
 }
 
 /**
@@ -223,7 +290,7 @@ async function getReporteByTicket(numeroTicket) {
  * @returns {Promise<Array>}
  */
 async function getReportesByTelefono(telefono, limit = 10) {
-    return ReporteRepository.getByTelefono(telefono, limit);
+  return ReporteRepository.getByTelefono(telefono, limit);
 }
 
 /**
@@ -233,7 +300,7 @@ async function getReportesByTelefono(telefono, limit = 10) {
  * @returns {Promise<boolean>}
  */
 async function updateReporteEstado(numeroTicket, nuevoEstado) {
-    return ReporteRepository.updateEstado(numeroTicket, nuevoEstado);
+  return ReporteRepository.updateEstado(numeroTicket, nuevoEstado);
 }
 
 /**
@@ -243,7 +310,7 @@ async function updateReporteEstado(numeroTicket, nuevoEstado) {
  * @returns {Promise<Array>}
  */
 async function searchEquiposBySAP(pattern, limit = 10) {
-    return EquipoRepository.searchBySAP(pattern, limit);
+  return EquipoRepository.searchBySAP(pattern, limit);
 }
 
 /**
@@ -252,7 +319,7 @@ async function searchEquiposBySAP(pattern, limit = 10) {
  * @returns {Promise<Array>}
  */
 async function getSessionsNeedingWarning(warningMinutes) {
-    return SesionRepository.getSessionsNeedingWarning(warningMinutes);
+  return SesionRepository.getSessionsNeedingWarning(warningMinutes);
 }
 
 /**
@@ -261,7 +328,7 @@ async function getSessionsNeedingWarning(warningMinutes) {
  * @returns {Promise<Array>}
  */
 async function getSessionsToClose(timeoutMinutes) {
-    return SesionRepository.getSessionsToClose(timeoutMinutes);
+  return SesionRepository.getSessionsToClose(timeoutMinutes);
 }
 
 /**
@@ -269,7 +336,16 @@ async function getSessionsToClose(timeoutMinutes) {
  * @param {string} telefono - Número de teléfono
  */
 async function markSessionWarningSet(telefono) {
-    return SesionRepository.markWarningSet(telefono);
+  return SesionRepository.markWarningSet(telefono);
+}
+
+/**
+ * Actualiza el nombre de usuario de WhatsApp en la sesión
+ * @param {string} telefono - Número de teléfono
+ * @param {string} nombreUsuario - Nombre de perfil de WhatsApp
+ */
+async function updateUserName(telefono, nombreUsuario) {
+  return SesionRepository.updateUserName(telefono, nombreUsuario);
 }
 
 // ============================================================================
@@ -277,46 +353,49 @@ async function markSessionWarningSet(telefono) {
 // ============================================================================
 
 module.exports = {
-    // Funciones de equipo
-    getEquipoBySAP,
-    getEquipoById,
-    searchEquiposBySAP,
+  // Funciones de equipo
+  getEquipoBySAP,
+  getEquipoById,
+  searchEquiposBySAP,
 
-    // Funciones de reporte
-    createReporte,
-    createReporteVehiculo,
-    getReporteByTicket,
-    getReportesByTelefono,
-    updateReporteEstado,
+  // Funciones de reporte
+  createReporte,
+  createReporteVehiculo,
+  getReporteByTicket,
+  getReportesByTelefono,
+  updateReporteEstado,
 
-    // Funciones de sesión
-    getSession,
-    getSessionFresh,
-    getSessionWithVersion,
-    updateSession,
-    updateLastActivity,
-    saveMessage,
-    checkSpam,
-    getSessionsNeedingWarning,
-    getSessionsToClose,
-    markSessionWarningSet,
+  // Funciones de sesión
+  getSession,
+  getSessionFresh,
+  getSessionWithVersion,
+  updateSession,
+  updateLastActivity,
+  saveMessage,
+  updateImagePlaceholder,
+  checkSpam,
+  getSessionsNeedingWarning,
+  getSessionsToClose,
+  markSessionWarningSet,
+  updateUserName,
 
-    // Funciones de deduplicación
-    registerMessageAtomic: (messageId, telefono) => SesionRepository.registerMessageAtomic(messageId, telefono),
-    isMessageProcessed: (messageId) => SesionRepository.isMessageProcessed(messageId), // Deprecated
-    cleanOldProcessedMessages: () => SesionRepository.cleanOldProcessedMessages(),
+  // Funciones de deduplicación
+  registerMessageAtomic: (messageId, telefono) =>
+    SesionRepository.registerMessageAtomic(messageId, telefono),
+  isMessageProcessed: (messageId) => SesionRepository.isMessageProcessed(messageId), // Deprecated
+  cleanOldProcessedMessages: () => SesionRepository.cleanOldProcessedMessages(),
 
-    // Funciones de administración de caché
-    clearEquipoCache,
-    clearSessionCache,
-    getCacheStats,
-    startCacheCleanup,
-    stopCacheCleanup,
+  // Funciones de administración de caché
+  clearEquipoCache,
+  clearSessionCache,
+  getCacheStats,
+  startCacheCleanup,
+  stopCacheCleanup,
 
-    // Acceso directo a repositorios (para uso avanzado)
-    repositories: {
-        sesiones: SesionRepository,
-        equipos: EquipoRepository,
-        reportes: ReporteRepository
-    }
+  // Acceso directo a repositorios (para uso avanzado)
+  repositories: {
+    sesiones: SesionRepository,
+    equipos: EquipoRepository,
+    reportes: ReporteRepository,
+  },
 };

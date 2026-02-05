@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "ES2022",
+    "checkJs": true,
+    "strict": false,
+    "strictNullChecks": false,
+    "noImplicitAny": false,
+    "moduleResolution": "node",
+    "baseUrl": ".",
+    "paths": {
+      "@core/*": ["core/*"],
+      "@bot/*": ["bot/*"]
+    },
+    "lib": ["ES2022"]
+  },
+  "include": ["core/**/*.js", "bot/**/*.js", "api-*/**/*.js", "timer-*/**/*.js"],
+  "exclude": ["node_modules", "coverage", "tests", "dist", "*.config.js"]
+}
