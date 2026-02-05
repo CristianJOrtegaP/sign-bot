@@ -45,6 +45,8 @@ const OPTIONAL_ENV_VARS = [
   // AZURE MAPS
   'AZURE_MAPS_KEY', // API Key de Azure Maps para geocoding y routing
   'ROUTE_BUFFER_MINUTES', // Minutos adicionales a sumar al tiempo de ruta (default: 20)
+  // ALERTAS Y MONITOREO
+  'ALERT_WEBHOOK_URL', // URL de webhook para alertas (Slack/Teams)
 ];
 
 /**

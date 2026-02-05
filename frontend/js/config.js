@@ -1,10 +1,35 @@
 /**
  * AC FIXBOT - Configuration
+ * Configuracion dinamica por ambiente
  */
 
-// API Base URL - points to Azure Function App directly
-// (Linked Backend requires Standard SKU, so we use direct URL)
-const API_BASE = 'https://func-acfixbot-poc.azurewebsites.net/api/conversations';
+// Detectar ambiente basado en hostname
+function detectEnvironment() {
+  const hostname = window.location.hostname;
+
+  if (hostname.includes('localhost') || hostname.includes('127.0.0.1')) {
+    return 'local';
+  }
+  if (hostname.includes('-dev') || hostname.includes('dev.')) {
+    return 'dev';
+  }
+  if (hostname.includes('-tst') || hostname.includes('test.') || hostname.includes('staging')) {
+    return 'tst';
+  }
+  // Default to production
+  return 'prod';
+}
+
+// URLs por ambiente
+const API_URLS = {
+  local: 'http://localhost:7071/api/conversations',
+  dev: 'https://func-acfixbot-dev.azurewebsites.net/api/conversations',
+  tst: 'https://func-acfixbot-tst.azurewebsites.net/api/conversations',
+  prod: 'https://func-acfixbot-prod.azurewebsites.net/api/conversations',
+};
+
+const ENVIRONMENT = detectEnvironment();
+const API_BASE = API_URLS[ENVIRONMENT] || API_URLS.prod;
 
 // Auto-refresh intervals (in milliseconds)
 const REFRESH_INTERVAL_KPIS = 60000; // 60 seconds
@@ -13,8 +38,11 @@ const REFRESH_INTERVAL_CHAT = 5000; // 5 seconds
 
 // Export for use in other modules
 window.CONFIG = {
+  ENVIRONMENT,
   API_BASE,
   REFRESH_INTERVAL_KPIS,
   REFRESH_INTERVAL_CONVERSATIONS,
   REFRESH_INTERVAL_CHAT,
 };
+
+console.log(`[Config] Environment: ${ENVIRONMENT}, API: ${API_BASE}`);

@@ -30,7 +30,7 @@ az account show
 ### Paso 2: Ejecutar Script de Deploy
 
 ```bash
-cd /Users/cristianjortegap/Developer/acfixbot-poc
+cd /Users/cristianjortegap/Developer/acfixbot
 
 # Ejecutar deploy automatizado
 ./scripts/deploy-to-staging.sh
@@ -56,7 +56,7 @@ cd /Users/cristianjortegap/Developer/acfixbot-poc
 ### Paso 1: Configurar Variables de Entorno
 
 ```bash
-cd /Users/cristianjortegap/Developer/acfixbot-poc/scripts/azure
+cd /Users/cristianjortegap/Developer/acfixbot/scripts/azure
 
 # Copiar ejemplo
 cp config.env.example config.env
@@ -95,7 +95,7 @@ ALERT_WEBHOOK_URL="https://hooks.slack.com/services/tu-webhook"
 ### Paso 2: Crear Infraestructura en Azure
 
 ```bash
-cd /Users/cristianjortegap/Developer/acfixbot-poc/scripts/azure
+cd /Users/cristianjortegap/Developer/acfixbot/scripts/azure
 
 # Login a Azure
 az login
@@ -117,7 +117,7 @@ az login
 ### Paso 3: Inicializar Base de Datos
 
 ```bash
-cd /Users/cristianjortegap/Developer/acfixbot-poc/sql-scripts
+cd /Users/cristianjortegap/Developer/acfixbot/sql-scripts
 
 # Ejecutar script de instalación
 ./install.sh
@@ -142,7 +142,7 @@ cd /Users/cristianjortegap/Developer/acfixbot-poc/sql-scripts
 ### Paso 4: Deploy del Código
 
 ```bash
-cd /Users/cristianjortegap/Developer/acfixbot-poc
+cd /Users/cristianjortegap/Developer/acfixbot
 
 # Deploy automatizado
 ./scripts/deploy-to-staging.sh

@@ -1,154 +1,146 @@
-name: CI - Tests y Validación
+name: CI - Tests y Validacion
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, staging, develop]
   pull_request:
-    branches: [main, develop]
+    branches: [main, staging, develop]
+
+env:
+  NODE_VERSION: '22.x'
 
 jobs:
   test:
-    name: Tests Unitarios e Integración
+    name: Tests
     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        node-version: [20.x]
-
     steps:
-      - name: Checkout código
+      - name: Checkout codigo
         uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node-version }}
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
       - name: Instalar dependencias
         run: npm ci
 
-      - name: Ejecutar tests FASE 1
-        run: |
-          # Solo ejecutar tests de FASE 1 (Optimistic Locking, Deduplicación, Promises, Race Conditions)
-          npx jest tests/unit/optimisticLocking.test.js
-          npx jest tests/unit/deduplication.test.js
-          npx jest tests/unit/promiseUtils.test.js
-          npx jest tests/integration/raceCondition.test.js
+      - name: Ejecutar tests unitarios
+        run: npm run test:unit
         env:
-          # Variables de entorno necesarias para tests
           NODE_ENV: test
 
-      - name: Generar reporte de coverage (FASE 1)
-        if: always()
-        run: |
-          npx jest --coverage \
-            tests/unit/optimisticLocking.test.js \
-            tests/unit/deduplication.test.js \
-            tests/unit/promiseUtils.test.js \
-            tests/integration/raceCondition.test.js || true
+      - name: Ejecutar tests de integracion
+        run: npm run test:integration
+        env:
+          NODE_ENV: test
+
+      - name: Ejecutar tests de seguridad
+        run: npm run test:security
+        env:
+          NODE_ENV: test
+
+      - name: Generar reporte de coverage
+        run: npm run test:coverage
+        env:
+          NODE_ENV: test
 
       - name: Subir coverage a artifacts
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage/
-          retention-days: 30
+          retention-days: 14
 
   lint:
-    name: Linting y Formato
+    name: Linting
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout código
+      - name: Checkout codigo
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20.x
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
       - name: Instalar dependencias
         run: npm ci
 
       - name: Ejecutar ESLint
-        run: npm run lint || echo "⚠️ ESLint encontró warnings"
-        continue-on-error: true
+        run: npm run lint
 
       - name: Verificar formato con Prettier
-        run: npx prettier --check "**/*.{js,json,md}" || echo "⚠️ Prettier encontró archivos sin formatear"
-        continue-on-error: true
+        run: npm run format:check
 
   security:
-    name: Análisis de Seguridad
+    name: Seguridad
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout código
+      - name: Checkout codigo
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20.x
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
       - name: Instalar dependencias
         run: npm ci
 
-      - name: Auditoría de seguridad npm
-        run: npm audit --audit-level=moderate || true
-        continue-on-error: true
+      - name: Auditoria de seguridad npm
+        run: npm audit --audit-level=high
 
-      - name: Verificar vulnerabilidades críticas
-        run: npm audit --audit-level=critical
+      - name: Buscar secretos expuestos
+        run: |
+          echo "Buscando posibles secretos..."
+          ! grep -rE "(password|secret|token|api.?key).*[:=].*['\"][A-Za-z0-9+/=]{20,}['\"]" \
+            --include="*.js" --include="*.json" \
+            --exclude-dir=node_modules \
+            --exclude="*.example" \
+            --exclude="local.settings.json" \
+            . || echo "No se encontraron secretos expuestos"
 
   build:
-    name: Verificar Build
+    name: Build
     runs-on: ubuntu-latest
     needs: [test, lint]
 
     steps:
-      - name: Checkout código
+      - name: Checkout codigo
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20.x
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
-      - name: Instalar dependencias
-        run: npm ci
+      - name: Instalar dependencias de produccion
+        run: npm ci --omit=dev
 
-      - name: Verificar que no hay errores de sintaxis
-        run: node -c api-whatsapp-webhook/index.js
-
-      - name: Listar archivos para deployment
+      - name: Verificar sintaxis
         run: |
-          echo "📦 Archivos que serían deployados:"
-          ls -la api-*/ timer-*/ core/ bot/
+          node -c api-whatsapp-webhook/index.js
+          node -c api-admin/index.js
+          node -c api-health/index.js
+          node -c api-conversations/index.js
 
-  summary:
-    name: Resumen de CI
-    runs-on: ubuntu-latest
-    needs: [test, lint, security, build]
-    if: always()
-
-    steps:
-      - name: Resumen
+      - name: Crear artifact de deployment
         run: |
-          echo "✅ Pipeline de CI completado"
-          echo "📊 Resultados:"
-          echo "  - Tests FASE 1 (61 tests): ${{ needs.test.result }}"
-          echo "  - Linting: ${{ needs.lint.result }}"
-          echo "  - Seguridad: ${{ needs.security.result }}"
-          echo "  - Build: ${{ needs.build.result }}"
-          echo ""
-          echo "ℹ️  Nota: Solo se ejecutan tests de FASE 1"
-          echo "  - Optimistic Locking (14 tests)"
-          echo "  - Deduplicación (10 tests)"
-          echo "  - Promise Utils (29 tests)"
-          echo "  - Race Conditions (8 tests)"
+          mkdir -p dist
+          cp -r api-* timer-* core/ bot/ host.json package*.json dist/
+          cd dist && zip -r ../acfixbot-${{ github.sha }}.zip .
+
+      - name: Subir artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-package
+          path: acfixbot-${{ github.sha }}.zip
+          retention-days: 7

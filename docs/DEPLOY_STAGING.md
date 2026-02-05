@@ -71,7 +71,7 @@ nano config.env
 ### Paso 1: Preparar Configuración
 
 ```bash
-cd /Users/cristianjortegap/Developer/acfixbot-poc
+cd /Users/cristianjortegap/Developer/acfixbot
 ```
 
 Crear archivo `scripts/azure/config.env` con esta configuración:
@@ -151,7 +151,7 @@ cd scripts/azure
 
 ```bash
 # Ejecutar SQL scripts en staging
-cd /Users/cristianjortegap/Developer/acfixbot-poc/sql-scripts
+cd /Users/cristianjortegap/Developer/acfixbot/sql-scripts
 
 # Opción A: Script automatizado
 ./install.sh
@@ -184,7 +184,7 @@ sqlcmd -S sql-acfixbot-staging.database.windows.net \
 #### Opción A: Con Azure Functions Core Tools (Recomendado)
 
 ```bash
-cd /Users/cristianjortegap/Developer/acfixbot-poc
+cd /Users/cristianjortegap/Developer/acfixbot
 
 # Instalar dependencias de producción
 npm ci --omit=dev
@@ -196,7 +196,7 @@ func azure functionapp publish func-acfixbot-staging --javascript
 #### Opción B: Con Azure CLI
 
 ```bash
-cd /Users/cristianjortegap/Developer/acfixbot-poc
+cd /Users/cristianjortegap/Developer/acfixbot
 
 # Instalar dependencias
 npm ci --omit=dev
@@ -334,7 +334,7 @@ curl https://func-acfixbot-staging.azurewebsites.net/api/metrics \
 ### 1. Tests de Health
 
 ```bash
-cd /Users/cristianjortegap/Developer/acfixbot-poc
+cd /Users/cristianjortegap/Developer/acfixbot
 
 # Crear archivo de configuración para tests
 cat > tests/staging.env <<EOF
@@ -590,6 +590,6 @@ az functionapp deployment source sync \
 **¿Listo para deploy?** Ejecuta:
 
 ```bash
-cd /Users/cristianjortegap/Developer/acfixbot-poc/scripts/azure
+cd /Users/cristianjortegap/Developer/acfixbot/scripts/azure
 ./deploy-function.sh
 ```

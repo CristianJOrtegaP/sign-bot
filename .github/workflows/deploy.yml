@@ -1,6 +1,10 @@
-name: Deploy a Azure
+name: Deploy
 
 on:
+  push:
+    branches:
+      - develop   # Auto-deploy to DEV
+      - staging   # Auto-deploy to TST
   workflow_dispatch:
     inputs:
       environment:
@@ -8,151 +12,173 @@ on:
         required: true
         type: choice
         options:
-          - staging
-          - production
-      skip_tests:
-        description: 'Omitir tests (solo para emergencias)'
-        required: false
-        type: boolean
-        default: false
+          - dev
+          - tst
+          - prod
 
-  release:
-    types: [published]
+env:
+  NODE_VERSION: '22.x'
 
 jobs:
-  pre-deploy:
-    name: Validaciones Pre-Deploy
+  # ============================================================================
+  # DEPLOY A DEV (Tu Azure) - Automatico en push a develop
+  # ============================================================================
+  deploy-dev:
+    name: Deploy DEV
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'dev')
+    environment:
+      name: dev
+      url: https://func-acfixbot-dev.azurewebsites.net
 
     steps:
-      - name: Checkout código
+      - name: Checkout codigo
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20.x
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
       - name: Instalar dependencias
-        run: npm ci
+        run: npm ci --omit=dev
+
+      - name: Login a Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS_DEV }}
+
+      - name: Deploy a Azure Functions
+        uses: Azure/functions-action@v1
+        with:
+          app-name: func-acfixbot-dev
+          package: .
+          respect-funcignore: true
+
+      - name: Health Check
+        run: |
+          echo "Esperando 30s para que la app inicie..."
+          sleep 30
+          curl -sf https://func-acfixbot-dev.azurewebsites.net/api/health || echo "Health check pendiente"
+
+      - name: Notificar
+        run: |
+          echo "✅ Deploy a DEV completado"
+          echo "🔗 https://func-acfixbot-dev.azurewebsites.net"
+
+  # ============================================================================
+  # DEPLOY A TST (Azure Cliente) - Automatico en push a staging
+  # ============================================================================
+  deploy-tst:
+    name: Deploy TST
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/staging' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'tst')
+    environment:
+      name: tst
+      url: https://func-acfixbot-tst.azurewebsites.net
+
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci --omit=dev
+
+      - name: Login a Azure (Cliente)
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS_TST }}
+
+      - name: Deploy a Azure Functions
+        uses: Azure/functions-action@v1
+        with:
+          app-name: func-acfixbot-tst
+          package: .
+          respect-funcignore: true
+
+      - name: Health Check
+        run: |
+          echo "Esperando 30s para que la app inicie..."
+          sleep 30
+          curl -sf https://func-acfixbot-tst.azurewebsites.net/api/health || echo "Health check pendiente"
+
+      - name: Notificar
+        run: |
+          echo "✅ Deploy a TST completado"
+          echo "🔗 https://func-acfixbot-tst.azurewebsites.net"
+
+  # ============================================================================
+  # DEPLOY A PROD (Azure Cliente) - Solo manual con aprobacion
+  # ============================================================================
+  deploy-prod:
+    name: Deploy PROD
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'prod'
+    environment:
+      name: prod
+      url: https://func-acfixbot-prod.azurewebsites.net
+
+    steps:
+      - name: Verificar rama
+        run: |
+          if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
+            echo "❌ Solo se puede deployar a PROD desde main"
+            exit 1
+          fi
+
+      - name: Checkout codigo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
 
       - name: Ejecutar tests
-        if: ${{ !inputs.skip_tests }}
-        run: npm test
-
-      - name: Verificar migraciones SQL
         run: |
-          echo "📊 Verificando migraciones SQL..."
-          ls -la sql-scripts/migrations/
-          echo "✅ Migraciones encontradas"
+          npm ci
+          npm test
 
-  deploy-staging:
-    name: Deploy a Staging
-    runs-on: ubuntu-latest
-    needs: pre-deploy
-    if: |
-      (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging') ||
-      (github.event_name == 'release' && contains(github.ref, '-beta'))
-    environment:
-      name: staging
-      url: https://acfixbot-staging.azurewebsites.net
-
-    steps:
-      - name: Checkout código
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20.x
-
-      - name: Instalar dependencias de producción
+      - name: Instalar dependencias de produccion
         run: npm ci --omit=dev
 
-      - name: Login a Azure
+      - name: Login a Azure (Cliente - Produccion)
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS_STAGING }}
+          creds: ${{ secrets.AZURE_CREDENTIALS_PROD }}
 
-      - name: Deploy a Azure Functions (Staging)
+      - name: Deploy a Azure Functions
         uses: Azure/functions-action@v1
         with:
-          app-name: acfixbot-staging
+          app-name: func-acfixbot-prod
           package: .
           respect-funcignore: true
 
-      - name: Verificar health endpoint
+      - name: Health Check
         run: |
-          echo "⏳ Esperando 30 segundos para que la app inicie..."
-          sleep 30
-          curl -f https://acfixbot-staging.azurewebsites.net/api/health || echo "⚠️ Health check falló"
-
-  deploy-production:
-    name: Deploy a Producción
-    runs-on: ubuntu-latest
-    needs: pre-deploy
-    if: |
-      (github.event_name == 'workflow_dispatch' && inputs.environment == 'production') ||
-      (github.event_name == 'release' && !contains(github.ref, '-beta'))
-    environment:
-      name: production
-      url: https://acfixbot.azurewebsites.net
-
-    steps:
-      - name: Checkout código
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20.x
-
-      - name: Instalar dependencias de producción
-        run: npm ci --omit=dev
-
-      - name: Login a Azure
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS_PRODUCTION }}
-
-      - name: Deploy a Azure Functions (Production)
-        uses: Azure/functions-action@v1
-        with:
-          app-name: acfixbot-production
-          package: .
-          respect-funcignore: true
-
-      - name: Verificar health endpoint
-        run: |
-          echo "⏳ Esperando 30 segundos para que la app inicie..."
-          sleep 30
-          curl -f https://acfixbot.azurewebsites.net/api/health || echo "⚠️ Health check falló"
+          echo "Esperando 45s para que la app inicie..."
+          sleep 45
+          response=$(curl -sf https://func-acfixbot-prod.azurewebsites.net/api/health)
+          echo "Health response: $response"
+          if [[ "$response" != *"healthy"* ]]; then
+            echo "⚠️ Health check no retorno healthy"
+          fi
 
       - name: Notificar deployment exitoso
-        if: success()
         run: |
-          echo "🚀 Deployment a producción completado exitosamente"
-          echo "📦 Version: ${{ github.ref_name }}"
-          echo "🔗 URL: https://acfixbot.azurewebsites.net"
-
-  rollback:
-    name: Plan de Rollback
-    runs-on: ubuntu-latest
-    needs: [deploy-staging, deploy-production]
-    if: failure()
-
-    steps:
-      - name: Instrucciones de rollback
-        run: |
-          echo "❌ Deployment falló"
+          echo "🚀 Deploy a PRODUCCION completado"
+          echo "📦 Version: ${{ github.sha }}"
+          echo "🔗 https://func-acfixbot-prod.azurewebsites.net"
           echo ""
-          echo "📋 Pasos para rollback manual:"
-          echo "1. Ir a Azure Portal"
-          echo "2. Navegar a la Function App"
-          echo "3. Deployment Center > Deployment History"
-          echo "4. Seleccionar deployment anterior y hacer redeploy"
-          echo ""
-          echo "O usar Azure CLI:"
-          echo "az functionapp deployment list --name <app-name> --resource-group <rg>"
-          echo "az functionapp deployment source sync --name <app-name> --resource-group <rg>"
+          echo "⚠️ Verificar manualmente:"
+          echo "  1. Dashboard funcionando"
+          echo "  2. Webhook de WhatsApp respondiendo"
+          echo "  3. Metricas en App Insights"

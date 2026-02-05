@@ -37,8 +37,8 @@ AC FixBot es un chatbot de WhatsApp desarrollado para Arca Continental que permi
 
 ```bash
 # 1. Clonar repositorio
-git clone https://github.com/arca-continental/acfixbot-poc.git
-cd acfixbot-poc
+git clone https://github.com/arca-continental/acfixbot.git
+cd acfixbot
 
 # 2. Instalar dependencias
 npm install
@@ -106,7 +106,7 @@ Ver [ARQUITECTURA_Y_RECURSOS.md](./docs/ARQUITECTURA_Y_RECURSOS.md) para diagram
 ## Estructura del Proyecto
 
 ```
-acfixbot-poc/
+acfixbot/
 ├── api-whatsapp-webhook/     # Webhook principal de WhatsApp
 ├── api-ticket-resolve/       # API para resolver tickets
 ├── api-admin-cache/          # API de administracion
@@ -194,13 +194,13 @@ Bot: Agradece y cierra
 
 ## API Endpoints
 
-| Endpoint | Metodo | Descripcion |
-|----------|--------|-------------|
-| `/api/whatsapp-webhook` | GET | Verificacion del webhook |
-| `/api/whatsapp-webhook` | POST | Recibe mensajes de WhatsApp |
-| `/api/ticket-resolve` | POST | Marca ticket como resuelto |
-| `/api/admin-cache` | GET/POST | Administracion de cache |
-| `/api/health` | GET | Health check del sistema |
+| Endpoint                | Metodo   | Descripcion                 |
+| ----------------------- | -------- | --------------------------- |
+| `/api/whatsapp-webhook` | GET      | Verificacion del webhook    |
+| `/api/whatsapp-webhook` | POST     | Recibe mensajes de WhatsApp |
+| `/api/ticket-resolve`   | POST     | Marca ticket como resuelto  |
+| `/api/admin-cache`      | GET/POST | Administracion de cache     |
+| `/api/health`           | GET      | Health check del sistema    |
 
 Ver [API_DOCUMENTATION.md](./docs/API_DOCUMENTATION.md) para documentacion completa.
 
@@ -249,46 +249,46 @@ Ver [GUIA_DEPLOYMENT.md](./docs/GUIA_DEPLOYMENT.md) para instrucciones detallada
 
 ## Documentacion
 
-| Documento | Descripcion |
-|-----------|-------------|
-| [ARQUITECTURA_Y_RECURSOS.md](./docs/ARQUITECTURA_Y_RECURSOS.md) | Arquitectura completa y recursos Azure |
+| Documento                                                                       | Descripcion                              |
+| ------------------------------------------------------------------------------- | ---------------------------------------- |
+| [ARQUITECTURA_Y_RECURSOS.md](./docs/ARQUITECTURA_Y_RECURSOS.md)                 | Arquitectura completa y recursos Azure   |
 | [ADR-001-DECISIONES-ARQUITECTURA.md](./docs/ADR-001-DECISIONES-ARQUITECTURA.md) | Decisiones arquitectonicas (Redis, etc.) |
-| [API_DOCUMENTATION.md](./docs/API_DOCUMENTATION.md) | Documentacion de endpoints |
-| [GUIA_CONFIGURACION.md](./docs/GUIA_CONFIGURACION.md) | Configuracion de variables de entorno |
-| [GUIA_PERSONALIZACION.md](./docs/GUIA_PERSONALIZACION.md) | Como personalizar mensajes y flujos |
-| [GUIA_DEPLOYMENT.md](./docs/GUIA_DEPLOYMENT.md) | Deployment a Azure |
-| [GUIA_OPERACION.md](./docs/GUIA_OPERACION.md) | Monitoreo y troubleshooting |
+| [API_DOCUMENTATION.md](./docs/API_DOCUMENTATION.md)                             | Documentacion de endpoints               |
+| [GUIA_CONFIGURACION.md](./docs/GUIA_CONFIGURACION.md)                           | Configuracion de variables de entorno    |
+| [GUIA_PERSONALIZACION.md](./docs/GUIA_PERSONALIZACION.md)                       | Como personalizar mensajes y flujos      |
+| [GUIA_DEPLOYMENT.md](./docs/GUIA_DEPLOYMENT.md)                                 | Deployment a Azure                       |
+| [GUIA_OPERACION.md](./docs/GUIA_OPERACION.md)                                   | Monitoreo y troubleshooting              |
 
 ---
 
 ## Stack Tecnologico
 
-| Componente | Tecnologia |
-|------------|------------|
-| Runtime | Node.js 22 |
-| Framework | Azure Functions v4 |
-| Base de datos | Azure SQL Server |
-| IA/NLP | Gemini / Azure OpenAI |
-| OCR | Azure Computer Vision |
-| Mensajeria | WhatsApp Business API |
-| Validacion | Zod |
-| Testing | Jest |
-| Linting | ESLint + Prettier |
+| Componente    | Tecnologia            |
+| ------------- | --------------------- |
+| Runtime       | Node.js 22            |
+| Framework     | Azure Functions v4    |
+| Base de datos | Azure SQL Server      |
+| IA/NLP        | Gemini / Azure OpenAI |
+| OCR           | Azure Computer Vision |
+| Mensajeria    | WhatsApp Business API |
+| Validacion    | Zod                   |
+| Testing       | Jest                  |
+| Linting       | ESLint + Prettier     |
 
 ---
 
 ## Costos Estimados
 
-| Recurso | Costo Mensual |
-|---------|---------------|
-| Azure SQL (S0) | ~$15 |
-| Azure Functions | ~$3-5 |
-| Computer Vision | ~$3 |
-| IA (Gemini/Azure OpenAI) | ~$2 |
-| Storage | ~$2 |
-| **Total** | **~$30-35 USD/mes** |
+| Recurso                  | Costo Mensual       |
+| ------------------------ | ------------------- |
+| Azure SQL (S0)           | ~$15                |
+| Azure Functions          | ~$3-5               |
+| Computer Vision          | ~$3                 |
+| IA (Gemini/Azure OpenAI) | ~$2                 |
+| Storage                  | ~$2                 |
+| **Total**                | **~$30-35 USD/mes** |
 
-*Basado en 100 reportes/dia (~3,000/mes)*
+_Basado en 100 reportes/dia (~3,000/mes)_
 
 ---
 

@@ -1,19 +1,11 @@
 /**
- * AC FIXBOT - Metrics Dashboard API
- * Endpoint para visualización de métricas detalladas
- *
- * Endpoint:
- * - GET /api/metrics
- * - GET /api/metrics?operation=webhook.process
- * - GET /api/metrics?historical=true&date=2025-01-15
- *
- * Autenticación:
- * - Requiere API key en header: x-api-key o query param: apiKey
+ * Handler: Metrics Dashboard
+ * Rutas: GET /api/admin/metrics
  */
 
-const metricsService = require('../core/services/infrastructure/metricsService');
-const security = require('../core/services/infrastructure/securityService');
-const { applySecurityHeaders } = require('../core/middleware/securityHeaders');
+const metricsService = require('../../core/services/infrastructure/metricsService');
+const security = require('../../core/services/infrastructure/securityService');
+const { applySecurityHeaders } = require('../../core/middleware/securityHeaders');
 
 /**
  * Valida API key para acceso a métricas
@@ -23,7 +15,6 @@ function validateApiKey(req) {
   const validKey = process.env.ADMIN_API_KEY;
 
   if (!validKey) {
-    // Si no hay API key configurada, permitir acceso (desarrollo)
     return { valid: true, warning: 'No API key configured' };
   }
 
@@ -48,7 +39,6 @@ function formatMetricsResponse(summary, options = {}) {
     version: process.env.npm_package_version || '1.0.0',
   };
 
-  // Filtrar por operación específica si se solicita
   if (options.operation) {
     const op = options.operation;
     response.operation = op;
@@ -61,7 +51,6 @@ function formatMetricsResponse(summary, options = {}) {
       errorRate: summary.errorRates[op] || null,
     };
   } else {
-    // Retornar todas las métricas
     response.summary = {
       totalOperations: Object.keys(summary.operations).length,
       cache: summary.cache,
@@ -79,7 +68,7 @@ function formatMetricsResponse(summary, options = {}) {
 }
 
 /**
- * Obtiene métricas históricas si están disponibles
+ * Obtiene métricas históricas
  */
 async function getHistoricalMetricsData(date, operationType) {
   try {
@@ -108,45 +97,34 @@ async function getHistoricalMetricsData(date, operationType) {
   }
 }
 
-/**
- * Handle rate limiting
- */
-function handleRateLimit(context, clientIp, rateLimit) {
-  context.log.warn(`Rate limit excedido para IP ${clientIp}`);
-  return {
-    status: 429,
-    headers: applySecurityHeaders({
-      'Content-Type': 'application/json',
-      'Retry-After': Math.ceil(rateLimit.resetMs / 1000).toString(),
-    }),
-    body: {
-      error: 'rate_limited',
-      message: 'Too many requests',
-      retryAfterMs: rateLimit.resetMs,
-    },
-  };
-}
-
-// ==============================================================
-// MAIN HANDLER
-// ==============================================================
-
-module.exports = async function (context, req) {
+module.exports = async function metricsHandler(context, req) {
   const startTime = Date.now();
 
-  // Rate limiting por IP
+  // Rate limiting
   const clientIp = security.getClientIp(req);
   const rateLimit = security.checkIpRateLimit(clientIp);
 
   if (!rateLimit.allowed) {
-    context.res = handleRateLimit(context, clientIp, rateLimit);
+    context.log.warn(`Rate limit excedido: ${clientIp}`);
+    context.res = {
+      status: 429,
+      headers: applySecurityHeaders({
+        'Content-Type': 'application/json',
+        'Retry-After': Math.ceil(rateLimit.resetMs / 1000).toString(),
+      }),
+      body: {
+        error: 'rate_limited',
+        message: 'Too many requests',
+        retryAfterMs: rateLimit.resetMs,
+      },
+    };
     return;
   }
 
   // Validar API key
   const auth = validateApiKey(req);
   if (!auth.valid) {
-    context.log.warn(`Acceso no autorizado a metrics desde IP ${clientIp}`, { error: auth.error });
+    context.log.warn(`Acceso no autorizado a metrics: ${clientIp}`);
     context.res = {
       status: 401,
       headers: applySecurityHeaders({ 'Content-Type': 'application/json' }),
@@ -158,27 +136,23 @@ module.exports = async function (context, req) {
     return;
   }
 
-  // Log warning si no hay API key configurada
   if (auth.warning) {
     context.log.warn(auth.warning);
   }
 
   try {
-    // Parse query parameters
     const operation = req.query.operation;
     const historical = req.query.historical === 'true';
-    const date = req.query.date; // YYYY-MM-DD
+    const date = req.query.date;
 
     let response;
 
     if (historical) {
-      // Métricas históricas de Azure Table Storage
       response = {
         type: 'historical',
         data: await getHistoricalMetricsData(date, operation),
       };
     } else {
-      // Métricas en tiempo real de memoria
       const summary = metricsService.getMetricsSummary();
       response = {
         type: 'real-time',
@@ -187,9 +161,7 @@ module.exports = async function (context, req) {
     }
 
     const duration = Date.now() - startTime;
-    context.log(
-      `Metrics endpoint called: ${historical ? 'historical' : 'real-time'}${operation ? ` (${operation})` : ''} - ${duration}ms`
-    );
+    context.log(`Metrics: ${historical ? 'historical' : 'real-time'} - ${duration}ms`);
 
     context.res = {
       status: 200,
@@ -200,8 +172,7 @@ module.exports = async function (context, req) {
       body: response,
     };
   } catch (error) {
-    context.log.error('Error obteniendo métricas', error);
-
+    context.log.error('Error en metrics handler:', error);
     context.res = {
       status: 500,
       headers: applySecurityHeaders({ 'Content-Type': 'application/json' }),

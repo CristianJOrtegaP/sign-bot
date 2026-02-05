@@ -1,12 +1,65 @@
-# Azure Functions ignore file
+# Azure Functions Deployment Ignore
+# Archivos excluidos del deployment a Azure
 
-node_modules.nosync
-coverage
-.git
-.vscode
-local.settings.json
-tests
-docs
-*.md
+# Git
+.git/
 .gitignore
+.gitattributes
+
+# IDE
+.vscode/
+.idea/
+.cursor/
+.claude/
+*.swp
+*.swo
+
+# Node
+node_modules/
+node_modules.nosync/
+npm-debug.log
+
+# Tests
+tests/
+coverage/
+.nyc_output/
+jest.config.js
+*.test.js
+
+# Docs
+docs/
+*.md
+!host.json
+
+# Scripts de desarrollo
+scripts/
+sql-scripts/
+
+# Configs locales
+local.settings.json
+local.settings.json.example
+.env*
+*.env
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Temporary
+tmp/
+temp/
+*.tmp
+*.log
+
+# Build artifacts
+dist/
+*.zip
+
+# Linting
+eslint.config.js
+.prettierrc
+.prettierignore
+.husky/
+
+# Frontend (se deploya por separado en Static Web Apps)
+frontend/

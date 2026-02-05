@@ -165,6 +165,7 @@ az sql db show-connection-string \
 ```
 
 Resultado:
+
 ```
 Server=tcp:sql-acfixbot-prod.database.windows.net,1433;Database=db-acfixbot;User ID=sqladmin;Password=TuPassword;Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;
 ```
@@ -202,7 +203,7 @@ sqlcmd -S sql-acfixbot-prod.database.windows.net \
 
 ```bash
 # 1. Navegar al proyecto
-cd acfixbot-poc
+cd acfixbot
 
 # 2. Instalar dependencias
 npm ci --production
@@ -355,16 +356,16 @@ Respuesta esperada:
 
 ```json
 {
-    "status": "healthy",
-    "checks": {
-        "database": { "status": "healthy" },
-        "configuration": { "status": "healthy" },
-        "circuitBreakers": { "status": "healthy" },
-        "externalServices": {
-            "ai": { "configured": true },
-            "whatsapp": { "configured": true }
-        }
+  "status": "healthy",
+  "checks": {
+    "database": { "status": "healthy" },
+    "configuration": { "status": "healthy" },
+    "circuitBreakers": { "status": "healthy" },
+    "externalServices": {
+      "ai": { "configured": true },
+      "whatsapp": { "configured": true }
     }
+  }
 }
 ```
 
@@ -501,6 +502,7 @@ func azure functionapp publish func-acfixbot-prod --force
 ### Error: "Database connection failed"
 
 1. Verificar firewall de SQL Server:
+
 ```bash
 az sql server firewall-rule create \
     --resource-group rg-acfixbot-prod \

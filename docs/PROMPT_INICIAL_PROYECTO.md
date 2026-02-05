@@ -1,9 +1,11 @@
 # AC FIXBOT - Prompt Inicial para Contexto Rápido
 
 ## Descripción General
+
 **AC FixBot** es un chatbot de WhatsApp desarrollado para **Arca Continental** que permite reportar fallas de equipos (refrigeradores y vehículos), consultar estado de tickets y responder encuestas de satisfacción a través de conversaciones naturales. El sistema está implementado con **Azure Functions** (serverless) y utiliza IA (Google Gemini o Azure OpenAI) para procesamiento inteligente de lenguaje natural.
 
 ## Stack Tecnológico
+
 - **Backend**: Node.js con Azure Functions (serverless)
 - **IA/NLP**: Google Gemini 2.5 Flash API o Azure OpenAI (configurable)
 - **Visión por computadora**: Azure Computer Vision (OCR para códigos de barras)
@@ -13,8 +15,9 @@
 - **Costo aproximado**: ~$30-35 USD/mes (100 reportes/día)
 
 ## Estructura de Carpetas
+
 ```
-acfixbot-poc/
+acfixbot/
 ├── functions/                       # Azure Functions (serverless)
 │   ├── api-whatsapp-webhook/        # Webhook principal de WhatsApp
 │   │   ├── index.js                 # GET (verificacion) y POST (mensajes)
@@ -117,31 +120,37 @@ acfixbot-poc/
 ## Azure Functions
 
 Todas las functions estan organizadas en la carpeta `functions/` con prefijos descriptivos:
+
 - `api-*` para HTTP triggers
 - `timer-*` para timer triggers
 
 ### 1. api-whatsapp-webhook (HTTP Trigger)
+
 - **Ruta**: `GET/POST /api/api-whatsapp-webhook`
 - **Responsabilidad**: Webhook principal de WhatsApp
   - `GET` - Verificacion de webhook (Meta challenge)
   - `POST` - Recibir mensajes, imagenes, botones, ubicaciones
 
 ### 2. api-ticket-resolve (HTTP Trigger - Function Level Auth)
+
 - **Ruta**: `POST /api/api-ticket-resolve`
 - **Responsabilidad**: API externa para resolver tickets
 - **Payload**: `{ "ticketId": "TKT..." }`
 
 ### 3. api-admin-cache (HTTP Trigger)
+
 - **Ruta**: `GET/POST /api/api-admin-cache`
 - **Responsabilidad**: Administracion de cache
 - **Parametros**: `type=equipos|sesiones|all|stats|trigger_timeout`
 
 ### 4. api-health (HTTP Trigger - Anonymous)
+
 - **Ruta**: `GET /api/api-health`
 - **Responsabilidad**: Health check del sistema
 - **Verifica**: Base de datos, configuracion, memoria, uptime
 
 ### 5. timer-session-cleanup (Timer Trigger)
+
 - **Schedule**: CRON configurable (default: cada 5 minutos)
 - **Responsabilidad**:
   - Enviar advertencia "Sigues ahi?" a sesiones proximas a expirar
@@ -149,6 +158,7 @@ Todas las functions estan organizadas en la carpeta `functions/` con prefijos de
   - Limpiar mensajes deduplicados antiguos
 
 ### 6. timer-survey-sender (Timer Trigger)
+
 - **Schedule**: CRON configurable (default: 9:00 AM diario)
 - **Responsabilidad**:
   - Buscar reportes resueltos hace 24+ horas sin encuesta
@@ -158,48 +168,53 @@ Todas las functions estan organizadas en la carpeta `functions/` con prefijos de
 ## Estados de Sesión (Normalizados)
 
 ### Estados Terminales (Sesión Inactiva)
-| Estado | ID | Descripción |
-|--------|----|----|
-| `INICIO` | 1 | Estado inicial, listo para nuevo flujo |
-| `CANCELADO` | 2 | Usuario canceló el flujo |
-| `FINALIZADO` | 3 | Flujo completado exitosamente |
-| `TIMEOUT` | 4 | Sesión cerrada por inactividad |
+
+| Estado       | ID  | Descripción                            |
+| ------------ | --- | -------------------------------------- |
+| `INICIO`     | 1   | Estado inicial, listo para nuevo flujo |
+| `CANCELADO`  | 2   | Usuario canceló el flujo               |
+| `FINALIZADO` | 3   | Flujo completado exitosamente          |
+| `TIMEOUT`    | 4   | Sesión cerrada por inactividad         |
 
 ### Estados de Flujo Refrigerador
-| Estado | ID | Descripción |
-|--------|----|----|
-| `REFRI_ESPERA_SAP` | 5 | Esperando código SAP del refrigerador |
-| `REFRI_CONFIRMAR_EQUIPO` | 6 | Esperando confirmación de datos |
-| `REFRI_ESPERA_DESCRIPCION` | 7 | Esperando descripción del problema |
+
+| Estado                     | ID  | Descripción                           |
+| -------------------------- | --- | ------------------------------------- |
+| `REFRI_ESPERA_SAP`         | 5   | Esperando código SAP del refrigerador |
+| `REFRI_CONFIRMAR_EQUIPO`   | 6   | Esperando confirmación de datos       |
+| `REFRI_ESPERA_DESCRIPCION` | 7   | Esperando descripción del problema    |
 
 ### Estados de Flujo Vehículo
-| Estado | ID | Descripción |
-|--------|----|----|
-| `VEHICULO_ESPERA_EMPLEADO` | 8 | Esperando número de empleado |
-| `VEHICULO_ESPERA_SAP` | 9 | Esperando código SAP del vehículo |
-| `VEHICULO_ESPERA_DESCRIPCION` | 10 | Esperando descripción del problema |
-| `VEHICULO_ESPERA_UBICACION` | 11 | Esperando ubicación (mapa) |
+
+| Estado                        | ID  | Descripción                        |
+| ----------------------------- | --- | ---------------------------------- |
+| `VEHICULO_ESPERA_EMPLEADO`    | 8   | Esperando número de empleado       |
+| `VEHICULO_ESPERA_SAP`         | 9   | Esperando código SAP del vehículo  |
+| `VEHICULO_ESPERA_DESCRIPCION` | 10  | Esperando descripción del problema |
+| `VEHICULO_ESPERA_UBICACION`   | 11  | Esperando ubicación (mapa)         |
 
 ### Estados de Flujo Encuesta
-| Estado | ID | Descripción |
-|--------|----|----|
-| `ENCUESTA_INVITACION` | 12 | Esperando aceptar/rechazar encuesta |
-| `ENCUESTA_PREGUNTA_1` | 13 | Pregunta 1 de satisfacción |
-| `ENCUESTA_PREGUNTA_2` | 14 | Pregunta 2 de satisfacción |
-| `ENCUESTA_PREGUNTA_3` | 15 | Pregunta 3 de satisfacción |
-| `ENCUESTA_PREGUNTA_4` | 16 | Pregunta 4 de satisfacción |
-| `ENCUESTA_PREGUNTA_5` | 17 | Pregunta 5 de satisfacción |
-| `ENCUESTA_PREGUNTA_6` | 18 | Pregunta 6 de satisfacción |
-| `ENCUESTA_COMENTARIO` | 19 | Pregunta si desea dejar comentario |
-| `ENCUESTA_ESPERA_COMENTARIO` | 20 | Esperando comentario de texto libre |
+
+| Estado                       | ID  | Descripción                         |
+| ---------------------------- | --- | ----------------------------------- |
+| `ENCUESTA_INVITACION`        | 12  | Esperando aceptar/rechazar encuesta |
+| `ENCUESTA_PREGUNTA_1`        | 13  | Pregunta 1 de satisfacción          |
+| `ENCUESTA_PREGUNTA_2`        | 14  | Pregunta 2 de satisfacción          |
+| `ENCUESTA_PREGUNTA_3`        | 15  | Pregunta 3 de satisfacción          |
+| `ENCUESTA_PREGUNTA_4`        | 16  | Pregunta 4 de satisfacción          |
+| `ENCUESTA_PREGUNTA_5`        | 17  | Pregunta 5 de satisfacción          |
+| `ENCUESTA_PREGUNTA_6`        | 18  | Pregunta 6 de satisfacción          |
+| `ENCUESTA_COMENTARIO`        | 19  | Pregunta si desea dejar comentario  |
+| `ENCUESTA_ESPERA_COMENTARIO` | 20  | Esperando comentario de texto libre |
 
 ### Estados de Reporte
-| Estado | ID | Descripción |
-|--------|----|----|
-| `PENDIENTE` | 1 | Reporte pendiente de asignación |
-| `EN_PROCESO` | 2 | Técnico trabajando en el reporte |
-| `RESUELTO` | 3 | Reporte resuelto |
-| `CANCELADO` | 4 | Reporte cancelado |
+
+| Estado       | ID  | Descripción                      |
+| ------------ | --- | -------------------------------- |
+| `PENDIENTE`  | 1   | Reporte pendiente de asignación  |
+| `EN_PROCESO` | 2   | Técnico trabajando en el reporte |
+| `RESUELTO`   | 3   | Reporte resuelto                 |
+| `CANCELADO`  | 4   | Reporte cancelado                |
 
 ## Pipeline de Procesamiento de Mensajes
 
@@ -250,6 +265,7 @@ WhatsApp Webhook (POST)
 ## Sistema de Intenciones
 
 ### Estrategia Híbrida (intentService.js)
+
 1. **Regex (< 1ms)**: Patrones comunes con alta confianza (0.9)
    - SALUDO, CANCELAR, DESPEDIDA
    - REPORTAR_FALLA, TIPO_REFRIGERADOR, TIPO_VEHICULO
@@ -258,31 +274,35 @@ WhatsApp Webhook (POST)
    - Interpretación de mensajes ambiguos
 
 ### Intenciones Detectadas
-| Intención | Descripción | Acción |
-|-----------|-------------|--------|
-| `SALUDO` | Hola, buenos días, etc. | Mostrar menú principal |
-| `REPORTAR_FALLA` | Problema con equipo | Iniciar flujo según tipo |
-| `TIPO_REFRIGERADOR` | Refri, cooler, nevera | Iniciar flujo refrigerador |
-| `TIPO_VEHICULO` | Carro, camión, auto | Iniciar flujo vehículo |
-| `CONSULTAR_ESTADO` | Ver ticket, estado | Iniciar flujo consulta |
-| `CANCELAR` | Cancelar, salir | Cancelar flujo actual |
-| `DESPEDIDA` | Adiós, gracias | Reiniciar sesión |
-| `OTRO` | No reconocido | Mostrar menú principal |
+
+| Intención           | Descripción             | Acción                     |
+| ------------------- | ----------------------- | -------------------------- |
+| `SALUDO`            | Hola, buenos días, etc. | Mostrar menú principal     |
+| `REPORTAR_FALLA`    | Problema con equipo     | Iniciar flujo según tipo   |
+| `TIPO_REFRIGERADOR` | Refri, cooler, nevera   | Iniciar flujo refrigerador |
+| `TIPO_VEHICULO`     | Carro, camión, auto     | Iniciar flujo vehículo     |
+| `CONSULTAR_ESTADO`  | Ver ticket, estado      | Iniciar flujo consulta     |
+| `CANCELAR`          | Cancelar, salir         | Cancelar flujo actual      |
+| `DESPEDIDA`         | Adiós, gracias          | Reiniciar sesión           |
+| `OTRO`              | No reconocido           | Mostrar menú principal     |
 
 ## Arquitectura de Capas
 
 ### 1. Controllers (Capa de Presentación)
+
 - **messageHandler.js**: Punto de entrada para mensajes de texto y botones
 - **imageHandler.js**: Punto de entrada para imágenes
 - **FlowManager.js**: Orquestador que mapea estados → handlers y botones → acciones
 
 ### 2. Flows (Lógica de Negocio por Flujo)
+
 - **refrigeradorFlow.js**: Reporte de refrigeradores
 - **vehiculoFlow.js**: Reporte de vehículos con ubicación
 - **consultaEstadoFlow.js**: Consulta de tickets
 - **encuestaFlow.js**: Encuestas de satisfacción (6 preguntas + comentario)
 
 ### 3. Services (Servicios Transversales)
+
 - **ai/**: Detección de intenciones, OCR, proveedores IA
 - **core/**: Rate limiting, manejo de errores, métricas
 - **external/**: Comunicación con WhatsApp API
@@ -290,6 +310,7 @@ WhatsApp Webhook (POST)
 - **processing/**: Procesamiento de imágenes, timeouts
 
 ### 4. Repositories (Capa de Datos)
+
 - **BaseRepository.js**: Clase base con caché, TTL y reintentos
 - **SesionRepository.js**: Operaciones de sesión
 - **EquipoRepository.js**: Consulta de equipos por SAP
@@ -299,6 +320,7 @@ WhatsApp Webhook (POST)
 ## Configuración Centralizada (config/index.js)
 
 ### Base de Datos
+
 ```javascript
 database: {
     sessionCache: { ttlMs: 5 * 60 * 1000 },    // 5 min
@@ -308,6 +330,7 @@ database: {
 ```
 
 ### WhatsApp
+
 ```javascript
 whatsapp: {
     apiUrl: 'https://graph.facebook.com/v22.0',
@@ -318,6 +341,7 @@ whatsapp: {
 ```
 
 ### IA (Configurable)
+
 ```javascript
 ai: {
     provider: process.env.AI_PROVIDER || 'gemini', // 'gemini' o 'azure-openai'
@@ -326,6 +350,7 @@ ai: {
 ```
 
 ### Rate Limiting
+
 ```javascript
 rateLimiting: {
     messages: { maxPerMinute: 20, maxPerHour: 100 },
@@ -336,6 +361,7 @@ rateLimiting: {
 ```
 
 ### Sesiones
+
 ```javascript
 session: {
     timeoutMinutes: 30,  // Configurable via env
@@ -345,6 +371,7 @@ session: {
 ```
 
 ### Encuestas
+
 ```javascript
 survey: {
     minutosEspera: 1440,      // 24 horas después de resolver
@@ -356,43 +383,48 @@ survey: {
 ## Variables de Entorno
 
 ### Requeridas
-| Variable | Descripción |
-|----------|-------------|
-| `SQL_CONNECTION_STRING` | Connection string de Azure SQL |
-| `WHATSAPP_TOKEN` | Token de acceso de WhatsApp Business API |
-| `WHATSAPP_PHONE_ID` | ID del número de teléfono de WhatsApp |
-| `WHATSAPP_VERIFY_TOKEN` | Token de verificación del webhook |
+
+| Variable                | Descripción                              |
+| ----------------------- | ---------------------------------------- |
+| `SQL_CONNECTION_STRING` | Connection string de Azure SQL           |
+| `WHATSAPP_TOKEN`        | Token de acceso de WhatsApp Business API |
+| `WHATSAPP_PHONE_ID`     | ID del número de teléfono de WhatsApp    |
+| `WHATSAPP_VERIFY_TOKEN` | Token de verificación del webhook        |
 
 ### Opcionales - IA
-| Variable | Default | Descripción |
-|----------|---------|-------------|
-| `USE_AI` | false | Activar/desactivar IA |
-| `AI_PROVIDER` | gemini | Proveedor: 'gemini' o 'azure-openai' |
-| `GEMINI_API_KEY` | - | API Key de Google Gemini |
-| `AZURE_OPENAI_ENDPOINT` | - | Endpoint de Azure OpenAI |
-| `AZURE_OPENAI_KEY` | - | API Key de Azure OpenAI |
-| `AZURE_OPENAI_DEPLOYMENT` | - | Nombre del deployment |
+
+| Variable                  | Default | Descripción                          |
+| ------------------------- | ------- | ------------------------------------ |
+| `USE_AI`                  | false   | Activar/desactivar IA                |
+| `AI_PROVIDER`             | gemini  | Proveedor: 'gemini' o 'azure-openai' |
+| `GEMINI_API_KEY`          | -       | API Key de Google Gemini             |
+| `AZURE_OPENAI_ENDPOINT`   | -       | Endpoint de Azure OpenAI             |
+| `AZURE_OPENAI_KEY`        | -       | API Key de Azure OpenAI              |
+| `AZURE_OPENAI_DEPLOYMENT` | -       | Nombre del deployment                |
 
 ### Opcionales - Servicios Azure
-| Variable | Default | Descripción |
-|----------|---------|-------------|
-| `VISION_ENDPOINT` | - | Endpoint de Azure Computer Vision |
-| `VISION_KEY` | - | API Key de Azure Computer Vision |
-| `BLOB_CONNECTION_STRING` | - | Connection string de Azure Blob Storage |
+
+| Variable                 | Default | Descripción                             |
+| ------------------------ | ------- | --------------------------------------- |
+| `VISION_ENDPOINT`        | -       | Endpoint de Azure Computer Vision       |
+| `VISION_KEY`             | -       | API Key de Azure Computer Vision        |
+| `BLOB_CONNECTION_STRING` | -       | Connection string de Azure Blob Storage |
 
 ### Opcionales - Configuración
-| Variable | Default | Descripción |
-|----------|---------|-------------|
-| `SESSION_TIMEOUT_MINUTES` | 30 | Minutos de inactividad antes de timeout |
-| `SESSION_WARNING_MINUTES` | 25 | Minutos antes de enviar "¿Sigues ahí?" |
-| `TIMER_SCHEDULE` | */5 * * * * | CRON del timer de timeout |
-| `SURVEY_TIMER_SCHEDULE` | 0 9 * * * | CRON del timer de encuestas |
-| `SURVEY_MINUTOS_ESPERA` | 1440 | Minutos después de resolver para encuesta |
-| `SURVEY_HORAS_EXPIRACION` | 72 | Horas para expirar encuesta |
+
+| Variable                  | Default        | Descripción                               |
+| ------------------------- | -------------- | ----------------------------------------- |
+| `SESSION_TIMEOUT_MINUTES` | 30             | Minutos de inactividad antes de timeout   |
+| `SESSION_WARNING_MINUTES` | 25             | Minutos antes de enviar "¿Sigues ahí?"    |
+| `TIMER_SCHEDULE`          | _/5 _ \* \* \* | CRON del timer de timeout                 |
+| `SURVEY_TIMER_SCHEDULE`   | 0 9 \* \* \*   | CRON del timer de encuestas               |
+| `SURVEY_MINUTOS_ESPERA`   | 1440           | Minutos después de resolver para encuesta |
+| `SURVEY_HORAS_EXPIRACION` | 72             | Horas para expirar encuesta               |
 
 ## Ejemplos de Conversación
 
 ### Flujo Refrigerador
+
 ```
 Usuario: "El refrigerador no enfría y está tirando agua"
 
@@ -437,6 +469,7 @@ Bot: "✅ Reporte creado exitosamente!
 ```
 
 ### Flujo Encuesta de Satisfacción (Automático 24h después de resolver)
+
 ```
 [survey-sender-timer se ejecuta - 9:00 AM]
 
@@ -485,27 +518,30 @@ Bot: "¡Gracias por tu retroalimentación!
 ## Base de Datos
 
 ### Tablas Principales
-| Tabla | Descripción |
-|-------|-------------|
-| `Clientes` | Información de clientes (nombre, dirección, ciudad) |
-| `Equipos` | Refrigeradores con código SAP, modelo, marca, ubicación |
-| `Reportes` | Tickets de fallas (refrigerador o vehículo) |
-| `SesionesChat` | Estado de conversación de cada usuario |
-| `MensajesChat` | Historial de mensajes de la conversación |
-| `Encuestas` | Encuestas de satisfacción vinculadas a reportes |
-| `RespuestasEncuesta` | Respuestas individuales a cada pregunta |
+
+| Tabla                | Descripción                                             |
+| -------------------- | ------------------------------------------------------- |
+| `Clientes`           | Información de clientes (nombre, dirección, ciudad)     |
+| `Equipos`            | Refrigeradores con código SAP, modelo, marca, ubicación |
+| `Reportes`           | Tickets de fallas (refrigerador o vehículo)             |
+| `SesionesChat`       | Estado de conversación de cada usuario                  |
+| `MensajesChat`       | Historial de mensajes de la conversación                |
+| `Encuestas`          | Encuestas de satisfacción vinculadas a reportes         |
+| `RespuestasEncuesta` | Respuestas individuales a cada pregunta                 |
 
 ### Catálogos
-| Catálogo | Valores |
-|----------|---------|
-| `CatTipoReporte` | REFRIGERADOR, VEHICULO |
-| `CatEstadoSesion` | 20 estados normalizados |
-| `CatEstadoReporte` | PENDIENTE, EN_PROCESO, RESUELTO, CANCELADO |
-| `CatTipoEncuesta` | Tipos de encuesta configurables |
+
+| Catálogo            | Valores                                    |
+| ------------------- | ------------------------------------------ |
+| `CatTipoReporte`    | REFRIGERADOR, VEHICULO                     |
+| `CatEstadoSesion`   | 20 estados normalizados                    |
+| `CatEstadoReporte`  | PENDIENTE, EN_PROCESO, RESUELTO, CANCELADO |
+| `CatTipoEncuesta`   | Tipos de encuesta configurables            |
 | `CatEstadoEncuesta` | ENVIADA, EN_PROGRESO, COMPLETADA, EXPIRADA |
-| `PreguntasEncuesta` | Preguntas dinámicas por tipo de encuesta |
+| `PreguntasEncuesta` | Preguntas dinámicas por tipo de encuesta   |
 
 ### Stored Procedures
+
 - `sp_CheckSpam` - Detecta spam en BD
 - `sp_GetReportesByTelefono` - Reportes de un usuario
 - `sp_GetSesionesToClose` - Sesiones para timeout
@@ -513,23 +549,27 @@ Bot: "¡Gracias por tu retroalimentación!
 ## Características de Seguridad y Resiliencia
 
 ### Deduplicación de Mensajes
+
 - WhatsApp reenvía webhooks si no recibe HTTP 200 en ~20 segundos
 - `rateLimiter.isDuplicateMessage(messageId)` previene procesamiento duplicado
 - TTL de 30 minutos para messageIds procesados
 - Limpieza automática periódica
 
 ### Rate Limiting Multinivel
+
 1. **Memoria (rápido)**: Max 20 msgs/min, 100 msgs/hora por usuario
 2. **Base de datos (persistente)**: Detección de patrones
 3. **Spam detection**: 5+ mensajes en 10 segundos
 
 ### Manejo de Errores
+
 - Tipos específicos: DatabaseError, ExternalServiceError, OCRError
 - Reintentos automáticos con backoff exponencial (500ms a 5s)
 - Lista de errores transitorios de SQL para reconexión
 - Siempre responde HTTP 200 a WhatsApp (evita reintentos infinitos)
 
 ### Caché Inteligente
+
 - Sesiones: 5 min TTL
 - Equipos: 15 min TTL (cambian menos frecuentemente)
 - Encuestas: 1 min TTL

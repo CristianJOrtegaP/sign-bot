@@ -10,6 +10,7 @@ sqlcmd -S <server> -d <database> -i scripts/verify-migrations.sql
 ```
 
 Debe mostrar:
+
 - ✅ Columna Version existe
 - ✅ Columnas Reintentos, UltimoReintento, Telefono existen
 
@@ -30,6 +31,7 @@ Esperar mensaje: `Host started`
 ```
 
 **Verificar:**
+
 - Mensaje 1: procesado ✅
 - Mensaje 2 (duplicado): devuelve 200 OK ✅
 - Logs muestran: `Mensaje duplicado detectado (MERGE)`
@@ -42,6 +44,7 @@ Esperar mensaje: `Host started`
 ```
 
 **Verificar logs:**
+
 - `[ConcurrencyRetry] ... Intento X/3 falló, reintentando`
 - Todos los webhooks eventualmente tienen éxito
 - Version incrementa correctamente

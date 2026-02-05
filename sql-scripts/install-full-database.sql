@@ -439,6 +439,17 @@ CREATE TABLE [dbo].[SesionesChat] (
     [AdvertenciaEnviada] BIT DEFAULT 0 NOT NULL,
     [FechaAdvertencia] DATETIME NULL,
 
+    -- Optimistic Locking (previene race conditions)
+    [Version] INT NOT NULL DEFAULT 0,
+
+    -- Nombre de usuario de WhatsApp
+    [NombreUsuario] NVARCHAR(200) NULL,
+
+    -- Soporte para Handoff a agente humano
+    [AgenteId] NVARCHAR(100) NULL,
+    [AgenteNombre] NVARCHAR(200) NULL,
+    [FechaTomaAgente] DATETIME NULL,
+
     CONSTRAINT [FK_SesionesChat_TipoReporte] FOREIGN KEY ([TipoReporteId])
         REFERENCES [dbo].[CatTipoReporte] ([TipoReporteId]),
     CONSTRAINT [FK_SesionesChat_Estado] FOREIGN KEY ([EstadoId])
@@ -452,7 +463,17 @@ CREATE NONCLUSTERED INDEX [IX_SesionesChat_UltimaActividad_Estado]
     ON [dbo].[SesionesChat] ([UltimaActividad], [EstadoId])
     INCLUDE ([Telefono], [SesionId]);
 
-PRINT '   SesionesChat creada';
+-- Indice para optimistic locking
+CREATE NONCLUSTERED INDEX [IX_SesionesChat_Telefono_Version]
+    ON [dbo].[SesionesChat] ([Telefono], [Version])
+    INCLUDE ([EstadoId], [DatosTemp], [EquipoIdTemp]);
+
+-- Indice para buscar sesiones con agente
+CREATE NONCLUSTERED INDEX [IX_SesionesChat_AgenteId]
+    ON [dbo].[SesionesChat] ([AgenteId])
+    WHERE [AgenteId] IS NOT NULL;
+
+PRINT '   SesionesChat creada (incluye Version, NombreUsuario, Agente)';
 GO
 
 -- =============================================
@@ -513,6 +534,9 @@ CREATE TABLE [dbo].[MensajesChat] (
     [IntencionDetectada] NVARCHAR(50) NULL,
     [ConfianzaIA] DECIMAL(5,4) NULL,
 
+    -- Soporte para mensajes de agente humano (Tipo='A')
+    [AgenteId] NVARCHAR(100) NULL,
+
     [FechaCreacion] DATETIME DEFAULT GETDATE(),
 
     CONSTRAINT [FK_MensajesChat_Sesion] FOREIGN KEY ([SesionId])
@@ -523,6 +547,7 @@ CREATE NONCLUSTERED INDEX [IX_MensajesChat_Telefono] ON [dbo].[MensajesChat] ([T
 CREATE NONCLUSTERED INDEX [IX_MensajesChat_SesionId] ON [dbo].[MensajesChat] ([SesionId]);
 CREATE NONCLUSTERED INDEX [IX_MensajesChat_FechaCreacion] ON [dbo].[MensajesChat] ([FechaCreacion]);
 CREATE NONCLUSTERED INDEX [IX_MensajesChat_Tipo] ON [dbo].[MensajesChat] ([Tipo], [FechaCreacion]);
+CREATE NONCLUSTERED INDEX [IX_MensajesChat_AgenteId] ON [dbo].[MensajesChat] ([AgenteId]) WHERE [AgenteId] IS NOT NULL;
 
 PRINT '   MensajesChat creada';
 GO
@@ -772,9 +797,17 @@ INSERT INTO [dbo].[CatEstadoSesion] ([Codigo], [Nombre], [Descripcion], [EsTermi
 ('ENCUESTA_PREGUNTA_5', 'Encuesta Pregunta 5', 'Pregunta: Informacion reparacion', 0, 45, 1),
 ('ENCUESTA_PREGUNTA_6', 'Encuesta Pregunta 6', 'Pregunta: Falla corregida', 0, 46, 1),
 ('ENCUESTA_COMENTARIO', 'Encuesta Comentario', 'Pregunta si desea dejar comentario', 0, 47, 1),
-('ENCUESTA_ESPERA_COMENTARIO', 'Esperando Comentario', 'Esperando texto de comentario', 0, 48, 1);
+('ENCUESTA_ESPERA_COMENTARIO', 'Esperando Comentario', 'Esperando texto de comentario', 0, 48, 1),
+-- Estados Flexibles (FASE 2b) - IA Vision
+('REFRI_ACTIVO', 'Refrigerador Activo', 'Flujo flexible de refrigerador en progreso', 0, 50, 1),
+('VEHICULO_ACTIVO', 'Vehiculo Activo', 'Flujo flexible de vehiculo en progreso', 0, 51, 1),
+('AI_CONFIRMAR', 'Confirmar IA', 'Esperando confirmacion de datos extraidos por IA', 0, 52, 1),
+('AI_VISION_CONFIRMAR', 'Confirmar Vision IA', 'Esperando confirmacion de codigo SAP extraido por OCR', 0, 53, 1),
+('CONFIRMAR_DATOS', 'Confirmar Datos', 'Mostrando resumen de datos para confirmacion final', 0, 54, 1),
+-- Estado de Handoff a Agente Humano
+('AGENTE_ACTIVO', 'Atencion por Agente', 'Conversacion tomada por un agente humano', 0, 60, 1);
 
-PRINT '   CatEstadoSesion: 22 registros (12 base + 1 consulta + 9 encuesta)';
+PRINT '   CatEstadoSesion: 28 registros (base + consulta + encuesta + flexibles + agente)';
 GO
 
 -- Estados de Reporte
