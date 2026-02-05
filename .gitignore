@@ -28,7 +28,9 @@ __pycache__/
 .env
 .env.local
 .env.*.local
-*.env
+
+# Templates de ambiente (SI se trackean - no contienen secretos)
+!scripts/azure/environments/*.env
 
 # Archivos temporales
 tmp/

@@ -102,202 +102,288 @@ check_prerequisites() {
 # INFRAESTRUCTURA
 # ============================================================================
 
+# Defaults para ENABLE_* (se pueden sobreescribir en ambiente)
+: "${ENABLE_SQL:=true}"
+: "${ENABLE_STORAGE:=true}"
+: "${ENABLE_COMPUTER_VISION:=true}"
+: "${ENABLE_KEY_VAULT:=true}"
+: "${ENABLE_APP_INSIGHTS:=true}"
+: "${ENABLE_AZURE_SPEECH:=true}"
+: "${ENABLE_AZURE_MAPS:=true}"
+: "${ENABLE_STATIC_WEBAPP:=true}"
+: "${ENABLE_AZURE_OPENAI:=true}"
+: "${ENABLE_FUNCTION_APP:=true}"
+
 create_infrastructure() {
     log_step "Creando infraestructura Azure"
 
-    # Resource Group
+    # Resource Group (siempre se crea)
     log_info "Resource Group: $RESOURCE_GROUP"
     az group create --name "$RESOURCE_GROUP" --location "$LOCATION" \
         --tags project=acfixbot environment=$ENVIRONMENT \
         --output none 2>/dev/null || log_warn "Ya existe"
     log_ok "Resource Group"
 
-    # SQL Server
-    log_info "SQL Server: $SQL_SERVER_NAME"
-    if ! az sql server show --name "$SQL_SERVER_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
-        az sql server create \
-            --name "$SQL_SERVER_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --location "$LOCATION" \
-            --admin-user "${SQL_ADMIN_USER:-acfixbotadmin}" \
-            --admin-password "$SQL_ADMIN_PASSWORD" \
-            --output none
+    # SQL Server + Database
+    if [ "${ENABLE_SQL}" = "true" ]; then
+        log_info "SQL Server: $SQL_SERVER_NAME"
+        if ! az sql server show --name "$SQL_SERVER_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
+            az sql server create \
+                --name "$SQL_SERVER_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --location "$LOCATION" \
+                --admin-user "${SQL_ADMIN_USER:-acfixbotadmin}" \
+                --admin-password "$SQL_ADMIN_PASSWORD" \
+                --output none
 
-        # Firewall
-        az sql server firewall-rule create \
-            --name "AllowAzure" \
-            --resource-group "$RESOURCE_GROUP" \
-            --server "$SQL_SERVER_NAME" \
-            --start-ip-address 0.0.0.0 \
-            --end-ip-address 0.0.0.0 \
-            --output none 2>/dev/null || true
-    fi
-    log_ok "SQL Server"
+            # Firewall
+            az sql server firewall-rule create \
+                --name "AllowAzure" \
+                --resource-group "$RESOURCE_GROUP" \
+                --server "$SQL_SERVER_NAME" \
+                --start-ip-address 0.0.0.0 \
+                --end-ip-address 0.0.0.0 \
+                --output none 2>/dev/null || true
+        fi
+        log_ok "SQL Server"
 
-    # SQL Database
-    log_info "SQL Database: $SQL_DATABASE_NAME"
-    if ! az sql db show --name "$SQL_DATABASE_NAME" --server "$SQL_SERVER_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
-        az sql db create \
-            --name "$SQL_DATABASE_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --server "$SQL_SERVER_NAME" \
-            --edition "${SQL_EDITION:-Basic}" \
-            --capacity "${SQL_CAPACITY:-5}" \
-            --output none
+        log_info "SQL Database: $SQL_DATABASE_NAME"
+        if ! az sql db show --name "$SQL_DATABASE_NAME" --server "$SQL_SERVER_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
+            az sql db create \
+                --name "$SQL_DATABASE_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --server "$SQL_SERVER_NAME" \
+                --edition "${SQL_EDITION:-Basic}" \
+                --capacity "${SQL_CAPACITY:-5}" \
+                --output none
+        fi
+        log_ok "SQL Database"
+    else
+        log_warn "SQL: DESHABILITADO"
     fi
-    log_ok "SQL Database"
 
     # Storage Account
-    log_info "Storage: $STORAGE_ACCOUNT_NAME"
-    if ! az storage account show --name "$STORAGE_ACCOUNT_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
-        az storage account create \
-            --name "$STORAGE_ACCOUNT_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --location "$LOCATION" \
-            --sku "${STORAGE_SKU:-Standard_LRS}" \
-            --output none
+    if [ "${ENABLE_STORAGE}" = "true" ]; then
+        log_info "Storage: $STORAGE_ACCOUNT_NAME"
+        if ! az storage account show --name "$STORAGE_ACCOUNT_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
+            az storage account create \
+                --name "$STORAGE_ACCOUNT_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --location "$LOCATION" \
+                --sku "${STORAGE_SKU:-Standard_LRS}" \
+                --output none
+        fi
+        log_ok "Storage"
+    else
+        log_warn "Storage: DESHABILITADO"
     fi
-    log_ok "Storage"
 
     # Computer Vision
-    CV_LOCATION="${LOCATION}"
-    [[ "$LOCATION" == "mexicocentral" ]] && CV_LOCATION="southcentralus"
+    if [ "${ENABLE_COMPUTER_VISION}" = "true" ]; then
+        CV_LOCATION="${LOCATION}"
+        [[ "$LOCATION" == "mexicocentral" ]] && CV_LOCATION="southcentralus"
 
-    log_info "Computer Vision: $COMPUTER_VISION_NAME"
-    if ! az cognitiveservices account show --name "$COMPUTER_VISION_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
-        az cognitiveservices account create \
-            --name "$COMPUTER_VISION_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --kind ComputerVision \
-            --sku "${COMPUTER_VISION_SKU:-F0}" \
-            --location "$CV_LOCATION" \
-            --yes --output none 2>/dev/null || log_warn "Ya existe o requiere purge"
+        log_info "Computer Vision: $COMPUTER_VISION_NAME"
+        if ! az cognitiveservices account show --name "$COMPUTER_VISION_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
+            az cognitiveservices account create \
+                --name "$COMPUTER_VISION_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --kind ComputerVision \
+                --sku "${COMPUTER_VISION_SKU:-F0}" \
+                --location "$CV_LOCATION" \
+                --yes --output none 2>/dev/null || log_warn "Ya existe o requiere purge"
+        fi
+        log_ok "Computer Vision"
+    else
+        log_warn "Computer Vision: DESHABILITADO"
     fi
-    log_ok "Computer Vision"
 
     # Application Insights
-    APP_INSIGHTS_NAME="appi-acfixbot-${ENVIRONMENT}"
-    log_info "App Insights: $APP_INSIGHTS_NAME"
-    if ! az monitor app-insights component show --app "$APP_INSIGHTS_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null 2>&1; then
-        az monitor app-insights component create \
-            --app "$APP_INSIGHTS_NAME" \
-            --location "$LOCATION" \
-            --resource-group "$RESOURCE_GROUP" \
-            --kind web \
-            --application-type Node.JS \
-            --output none
+    if [ "${ENABLE_APP_INSIGHTS}" = "true" ]; then
+        APP_INSIGHTS_NAME="appi-acfixbot-${ENVIRONMENT}"
+        log_info "App Insights: $APP_INSIGHTS_NAME"
+        if ! az monitor app-insights component show --app "$APP_INSIGHTS_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null 2>&1; then
+            az monitor app-insights component create \
+                --app "$APP_INSIGHTS_NAME" \
+                --location "$LOCATION" \
+                --resource-group "$RESOURCE_GROUP" \
+                --kind web \
+                --application-type Node.JS \
+                --output none
+        fi
+        log_ok "App Insights"
+    else
+        log_warn "App Insights: DESHABILITADO"
     fi
-    log_ok "App Insights"
 
     # Key Vault
-    KEY_VAULT_NAME="kv-acfixbot-${ENVIRONMENT}"
-    log_info "Key Vault: $KEY_VAULT_NAME"
-    if ! az keyvault show --name "$KEY_VAULT_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null 2>&1; then
-        az keyvault create \
-            --name "$KEY_VAULT_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --location "$LOCATION" \
-            --enable-rbac-authorization false \
-            --output none 2>/dev/null || log_warn "Ya existe o requiere purge"
+    if [ "${ENABLE_KEY_VAULT}" = "true" ]; then
+        KEY_VAULT_NAME="kv-acfixbot-${ENVIRONMENT}"
+        log_info "Key Vault: $KEY_VAULT_NAME"
+        if ! az keyvault show --name "$KEY_VAULT_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null 2>&1; then
+            az keyvault create \
+                --name "$KEY_VAULT_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --location "$LOCATION" \
+                --enable-rbac-authorization false \
+                --output none 2>/dev/null || log_warn "Ya existe o requiere purge"
+        fi
+        log_ok "Key Vault"
+    else
+        log_warn "Key Vault: DESHABILITADO"
     fi
-    log_ok "Key Vault"
 
     # Speech Services (para transcripcion de audios)
-    SPEECH_NAME="speech-acfixbot-${ENVIRONMENT}"
-    SPEECH_LOCATION="${LOCATION}"
-    [[ "$LOCATION" == "mexicocentral" ]] && SPEECH_LOCATION="southcentralus"
+    if [ "${ENABLE_AZURE_SPEECH}" = "true" ]; then
+        SPEECH_NAME="speech-acfixbot-${ENVIRONMENT}"
+        SPEECH_LOCATION="${LOCATION}"
+        [[ "$LOCATION" == "mexicocentral" ]] && SPEECH_LOCATION="southcentralus"
 
-    log_info "Speech Services: $SPEECH_NAME"
-    if ! az cognitiveservices account show --name "$SPEECH_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
-        # Intentar F0 (gratis) primero, si falla usar S0
-        az cognitiveservices account create \
-            --name "$SPEECH_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --kind SpeechServices \
-            --sku F0 \
-            --location "$SPEECH_LOCATION" \
-            --yes --output none 2>/dev/null || \
-        az cognitiveservices account create \
-            --name "$SPEECH_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --kind SpeechServices \
-            --sku S0 \
-            --location "$SPEECH_LOCATION" \
-            --yes --output none 2>/dev/null || log_warn "Ya existe o requiere purge"
+        log_info "Speech Services: $SPEECH_NAME"
+        if ! az cognitiveservices account show --name "$SPEECH_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
+            # Intentar F0 (gratis) primero, si falla usar S0
+            az cognitiveservices account create \
+                --name "$SPEECH_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --kind SpeechServices \
+                --sku F0 \
+                --location "$SPEECH_LOCATION" \
+                --yes --output none 2>/dev/null || \
+            az cognitiveservices account create \
+                --name "$SPEECH_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --kind SpeechServices \
+                --sku S0 \
+                --location "$SPEECH_LOCATION" \
+                --yes --output none 2>/dev/null || log_warn "Ya existe o requiere purge"
+        fi
+        log_ok "Speech Services"
+    else
+        log_warn "Speech Services: DESHABILITADO"
     fi
-    log_ok "Speech Services"
 
     # Azure Maps (geocodificacion y rutas)
-    MAPS_NAME="maps-acfixbot-${ENVIRONMENT}"
-    log_info "Azure Maps: $MAPS_NAME"
-    if ! az maps account show --name "$MAPS_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
-        az maps account create \
-            --name "$MAPS_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --sku G2 \
-            --kind Gen2 \
-            --accept-tos \
-            --output none 2>/dev/null || log_warn "Ya existe"
+    if [ "${ENABLE_AZURE_MAPS}" = "true" ]; then
+        MAPS_NAME="maps-acfixbot-${ENVIRONMENT}"
+        log_info "Azure Maps: $MAPS_NAME"
+        if ! az maps account show --name "$MAPS_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
+            az maps account create \
+                --name "$MAPS_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --sku G2 \
+                --kind Gen2 \
+                --accept-tos \
+                --output none 2>/dev/null || log_warn "Ya existe"
+        fi
+        log_ok "Azure Maps"
+    else
+        log_warn "Azure Maps: DESHABILITADO"
     fi
-    log_ok "Azure Maps"
+
+    # Azure OpenAI (para Whisper y GPT)
+    if [ "${ENABLE_AZURE_OPENAI}" = "true" ]; then
+        AOAI_NAME="aoai-acfixbot-${ENVIRONMENT}"
+        AOAI_LOCATION="${AZURE_OPENAI_LOCATION:-eastus}"  # OpenAI tiene disponibilidad limitada
+
+        log_info "Azure OpenAI: $AOAI_NAME"
+        if ! az cognitiveservices account show --name "$AOAI_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
+            az cognitiveservices account create \
+                --name "$AOAI_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --kind OpenAI \
+                --sku S0 \
+                --location "$AOAI_LOCATION" \
+                --yes --output none 2>/dev/null || log_warn "Ya existe o requiere aprobacion"
+        fi
+        log_ok "Azure OpenAI"
+
+        # Deploy modelo Whisper si no existe
+        if [ "${ENABLE_WHISPER_MODEL}" = "true" ]; then
+            WHISPER_DEPLOYMENT="whisper"
+            log_info "Desplegando modelo Whisper..."
+            az cognitiveservices account deployment create \
+                --name "$AOAI_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --deployment-name "$WHISPER_DEPLOYMENT" \
+                --model-name "whisper" \
+                --model-version "001" \
+                --model-format OpenAI \
+                --sku-capacity 1 \
+                --sku-name "Standard" \
+                --output none 2>/dev/null || log_warn "Ya existe o no disponible"
+            log_ok "Modelo Whisper"
+        fi
+    else
+        log_warn "Azure OpenAI: DESHABILITADO"
+    fi
 
     # Static Web App (dashboard)
-    SWA_NAME="swa-acfixbot-${ENVIRONMENT}"
-    SWA_LOCATION="westus2"  # SWA tiene disponibilidad limitada
-    log_info "Static Web App: $SWA_NAME"
-    if ! az staticwebapp show --name "$SWA_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null 2>&1; then
-        az staticwebapp create \
-            --name "$SWA_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --location "$SWA_LOCATION" \
-            --sku Free \
-            --output none 2>/dev/null || log_warn "Ya existe"
+    if [ "${ENABLE_STATIC_WEBAPP}" = "true" ]; then
+        SWA_NAME="swa-acfixbot-${ENVIRONMENT}"
+        SWA_LOCATION="westus2"  # SWA tiene disponibilidad limitada
+        log_info "Static Web App: $SWA_NAME"
+        if ! az staticwebapp show --name "$SWA_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null 2>&1; then
+            az staticwebapp create \
+                --name "$SWA_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --location "$SWA_LOCATION" \
+                --sku Free \
+                --output none 2>/dev/null || log_warn "Ya existe"
+        fi
+        log_ok "Static Web App"
+    else
+        log_warn "Static Web App: DESHABILITADO"
     fi
-    log_ok "Static Web App"
 
     # Function App
-    log_info "Function App: $FUNCTION_APP_NAME"
-    if ! az functionapp show --name "$FUNCTION_APP_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
-        az functionapp create \
+    if [ "${ENABLE_FUNCTION_APP}" = "true" ]; then
+        log_info "Function App: $FUNCTION_APP_NAME"
+        if ! az functionapp show --name "$FUNCTION_APP_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
+            az functionapp create \
+                --name "$FUNCTION_APP_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --storage-account "$STORAGE_ACCOUNT_NAME" \
+                --consumption-plan-location "$LOCATION" \
+                --runtime node \
+                --runtime-version 22 \
+                --functions-version 4 \
+                --os-type Linux \
+                --output none 2>/dev/null || \
+            az functionapp create \
+                --name "$FUNCTION_APP_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --storage-account "$STORAGE_ACCOUNT_NAME" \
+                --consumption-plan-location "southcentralus" \
+                --runtime node \
+                --runtime-version 22 \
+                --functions-version 4 \
+                --os-type Linux \
+                --output none
+        fi
+        log_ok "Function App"
+
+        # Managed Identity
+        log_info "Habilitando Managed Identity..."
+        PRINCIPAL_ID=$(az functionapp identity assign \
             --name "$FUNCTION_APP_NAME" \
             --resource-group "$RESOURCE_GROUP" \
-            --storage-account "$STORAGE_ACCOUNT_NAME" \
-            --consumption-plan-location "$LOCATION" \
-            --runtime node \
-            --runtime-version 22 \
-            --functions-version 4 \
-            --os-type Linux \
-            --output none 2>/dev/null || \
-        az functionapp create \
-            --name "$FUNCTION_APP_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --storage-account "$STORAGE_ACCOUNT_NAME" \
-            --consumption-plan-location "southcentralus" \
-            --runtime node \
-            --runtime-version 22 \
-            --functions-version 4 \
-            --os-type Linux \
-            --output none
+            --query principalId -o tsv)
+
+        sleep 10
+
+        # Key Vault access
+        if [ "${ENABLE_KEY_VAULT}" = "true" ]; then
+            az keyvault set-policy \
+                --name "$KEY_VAULT_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --object-id "$PRINCIPAL_ID" \
+                --secret-permissions get list \
+                --output none 2>/dev/null || true
+        fi
+        log_ok "Managed Identity configurado"
+    else
+        log_warn "Function App: DESHABILITADO"
     fi
-    log_ok "Function App"
-
-    # Managed Identity
-    log_info "Habilitando Managed Identity..."
-    PRINCIPAL_ID=$(az functionapp identity assign \
-        --name "$FUNCTION_APP_NAME" \
-        --resource-group "$RESOURCE_GROUP" \
-        --query principalId -o tsv)
-
-    sleep 10
-
-    # Key Vault access
-    az keyvault set-policy \
-        --name "$KEY_VAULT_NAME" \
-        --resource-group "$RESOURCE_GROUP" \
-        --object-id "$PRINCIPAL_ID" \
-        --secret-permissions get list \
-        --output none 2>/dev/null || true
-    log_ok "Managed Identity configurado"
 
     # Guardar outputs
     save_outputs
@@ -443,42 +529,78 @@ configure_app_settings() {
     [ -n "$GEMINI_API_KEY" ] && az keyvault secret set --vault-name "$KEY_VAULT_NAME" --name "GEMINI-API-KEY" --value "$GEMINI_API_KEY" --output none 2>/dev/null || true
 
     # Speech Services key
-    SPEECH_NAME="speech-acfixbot-${ENVIRONMENT}"
-    SPEECH_KEY=$(az cognitiveservices account keys list --name "$SPEECH_NAME" --resource-group "$RESOURCE_GROUP" --query key1 -o tsv 2>/dev/null)
-    [ -n "$SPEECH_KEY" ] && az keyvault secret set --vault-name "$KEY_VAULT_NAME" --name "AZURE-SPEECH-KEY" --value "$SPEECH_KEY" --output none 2>/dev/null || true
+    if [ "${ENABLE_AZURE_SPEECH}" = "true" ]; then
+        SPEECH_NAME="speech-acfixbot-${ENVIRONMENT}"
+        SPEECH_KEY=$(az cognitiveservices account keys list --name "$SPEECH_NAME" --resource-group "$RESOURCE_GROUP" --query key1 -o tsv 2>/dev/null)
+        [ -n "$SPEECH_KEY" ] && az keyvault secret set --vault-name "$KEY_VAULT_NAME" --name "AZURE-SPEECH-KEY" --value "$SPEECH_KEY" --output none 2>/dev/null || true
+    fi
 
     # Azure Maps key
-    MAPS_NAME="maps-acfixbot-${ENVIRONMENT}"
-    MAPS_KEY=$(az maps account keys list --name "$MAPS_NAME" --resource-group "$RESOURCE_GROUP" --query primaryKey -o tsv 2>/dev/null)
-    [ -n "$MAPS_KEY" ] && az keyvault secret set --vault-name "$KEY_VAULT_NAME" --name "AZURE-MAPS-KEY" --value "$MAPS_KEY" --output none 2>/dev/null || true
+    if [ "${ENABLE_AZURE_MAPS}" = "true" ]; then
+        MAPS_NAME="maps-acfixbot-${ENVIRONMENT}"
+        MAPS_KEY=$(az maps account keys list --name "$MAPS_NAME" --resource-group "$RESOURCE_GROUP" --query primaryKey -o tsv 2>/dev/null)
+        [ -n "$MAPS_KEY" ] && az keyvault secret set --vault-name "$KEY_VAULT_NAME" --name "AZURE-MAPS-KEY" --value "$MAPS_KEY" --output none 2>/dev/null || true
+    fi
+
+    # Azure OpenAI key
+    if [ "${ENABLE_AZURE_OPENAI}" = "true" ]; then
+        AOAI_NAME="aoai-acfixbot-${ENVIRONMENT}"
+        AOAI_KEY=$(az cognitiveservices account keys list --name "$AOAI_NAME" --resource-group "$RESOURCE_GROUP" --query key1 -o tsv 2>/dev/null)
+        AOAI_ENDPOINT=$(az cognitiveservices account show --name "$AOAI_NAME" --resource-group "$RESOURCE_GROUP" --query properties.endpoint -o tsv 2>/dev/null)
+        [ -n "$AOAI_KEY" ] && az keyvault secret set --vault-name "$KEY_VAULT_NAME" --name "AZURE-OPENAI-KEY" --value "$AOAI_KEY" --output none 2>/dev/null || true
+    fi
 
     # Configurar Function App
     log_info "Configurando Function App..."
 
     SETTINGS=(
-        "SQL_CONNECTION_STRING=@Microsoft.KeyVault(SecretUri=${KEY_VAULT_URI}secrets/SQL-CONNECTION-STRING/)"
-        "VISION_ENDPOINT=$VISION_ENDPOINT"
-        "VISION_KEY=@Microsoft.KeyVault(SecretUri=${KEY_VAULT_URI}secrets/VISION-KEY/)"
-        "APPINSIGHTS_INSTRUMENTATIONKEY=$APP_INSIGHTS_KEY"
-        "APPLICATIONINSIGHTS_CONNECTION_STRING=$APP_INSIGHTS_CONN"
         "KEY_VAULT_URI=$KEY_VAULT_URI"
         "AI_PROVIDER=${AI_PROVIDER:-gemini}"
         "USE_AI=${USE_AI:-true}"
     )
 
+    # SQL
+    if [ "${ENABLE_SQL}" = "true" ]; then
+        SETTINGS+=("SQL_CONNECTION_STRING=@Microsoft.KeyVault(SecretUri=${KEY_VAULT_URI}secrets/SQL-CONNECTION-STRING/)")
+    fi
+
+    # Computer Vision
+    if [ "${ENABLE_COMPUTER_VISION}" = "true" ]; then
+        SETTINGS+=("VISION_ENDPOINT=$VISION_ENDPOINT")
+        SETTINGS+=("VISION_KEY=@Microsoft.KeyVault(SecretUri=${KEY_VAULT_URI}secrets/VISION-KEY/)")
+    fi
+
+    # App Insights
+    if [ "${ENABLE_APP_INSIGHTS}" = "true" ]; then
+        SETTINGS+=("APPINSIGHTS_INSTRUMENTATIONKEY=$APP_INSIGHTS_KEY")
+        SETTINGS+=("APPLICATIONINSIGHTS_CONNECTION_STRING=$APP_INSIGHTS_CONN")
+    fi
+
+    # WhatsApp
     [ -n "$WHATSAPP_TOKEN" ] && SETTINGS+=("WHATSAPP_TOKEN=@Microsoft.KeyVault(SecretUri=${KEY_VAULT_URI}secrets/WHATSAPP-TOKEN/)")
     [ -n "$WHATSAPP_PHONE_ID" ] && SETTINGS+=("WHATSAPP_PHONE_ID=$WHATSAPP_PHONE_ID")
     [ -n "$GEMINI_API_KEY" ] && SETTINGS+=("GEMINI_API_KEY=@Microsoft.KeyVault(SecretUri=${KEY_VAULT_URI}secrets/GEMINI-API-KEY/)")
 
     # Speech Services (transcripcion de audios)
-    SPEECH_LOCATION="${LOCATION}"
-    [[ "$LOCATION" == "mexicocentral" ]] && SPEECH_LOCATION="southcentralus"
-    SETTINGS+=("AZURE_SPEECH_KEY=@Microsoft.KeyVault(SecretUri=${KEY_VAULT_URI}secrets/AZURE-SPEECH-KEY/)")
-    SETTINGS+=("AZURE_SPEECH_REGION=$SPEECH_LOCATION")
-    SETTINGS+=("AUDIO_TRANSCRIPTION_ENABLED=true")
+    if [ "${ENABLE_AZURE_SPEECH}" = "true" ]; then
+        SPEECH_LOCATION="${LOCATION}"
+        [[ "$LOCATION" == "mexicocentral" ]] && SPEECH_LOCATION="southcentralus"
+        SETTINGS+=("AZURE_SPEECH_KEY=@Microsoft.KeyVault(SecretUri=${KEY_VAULT_URI}secrets/AZURE-SPEECH-KEY/)")
+        SETTINGS+=("AZURE_SPEECH_REGION=$SPEECH_LOCATION")
+        SETTINGS+=("AUDIO_TRANSCRIPTION_ENABLED=${AUDIO_TRANSCRIPTION_ENABLED:-true}")
+    fi
 
     # Azure Maps (rutas y geocodificacion)
-    SETTINGS+=("AZURE_MAPS_KEY=@Microsoft.KeyVault(SecretUri=${KEY_VAULT_URI}secrets/AZURE-MAPS-KEY/)")
+    if [ "${ENABLE_AZURE_MAPS}" = "true" ]; then
+        SETTINGS+=("AZURE_MAPS_KEY=@Microsoft.KeyVault(SecretUri=${KEY_VAULT_URI}secrets/AZURE-MAPS-KEY/)")
+    fi
+
+    # Azure OpenAI
+    if [ "${ENABLE_AZURE_OPENAI}" = "true" ]; then
+        SETTINGS+=("AZURE_OPENAI_KEY=@Microsoft.KeyVault(SecretUri=${KEY_VAULT_URI}secrets/AZURE-OPENAI-KEY/)")
+        SETTINGS+=("AZURE_OPENAI_ENDPOINT=$AOAI_ENDPOINT")
+        [ -n "${AZURE_OPENAI_DEPLOYMENT}" ] && SETTINGS+=("AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}")
+    fi
 
     az functionapp config appsettings set \
         --name "$FUNCTION_APP_NAME" \
