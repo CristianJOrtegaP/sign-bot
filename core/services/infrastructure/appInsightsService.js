@@ -59,6 +59,17 @@ function initialize() {
       process.env.WEBSITE_INSTANCE_ID || 'local';
 
     console.log('[AppInsights] Inicializado correctamente');
+
+    // Registrar graceful shutdown handlers
+    try {
+      const gracefulShutdown = require('../../utils/gracefulShutdown');
+      gracefulShutdown.setupSignalHandlers();
+      gracefulShutdown.registerCommonHandlers();
+      console.log('[AppInsights] Graceful shutdown configurado');
+    } catch (shutdownError) {
+      console.warn('[AppInsights] No se pudo configurar graceful shutdown:', shutdownError.message);
+    }
+
     return true;
   } catch (error) {
     console.error('[AppInsights] Error inicializando:', error.message);

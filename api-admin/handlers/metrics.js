@@ -1,33 +1,13 @@
 /**
  * Handler: Metrics Dashboard
  * Rutas: GET /api/admin/metrics
+ *
+ * Autenticación: Azure Function Keys (validado automáticamente por Azure)
+ * Rate Limiting: Manejado en index.js (60 req/min por IP)
  */
 
 const metricsService = require('../../core/services/infrastructure/metricsService');
-const security = require('../../core/services/infrastructure/securityService');
 const { applySecurityHeaders } = require('../../core/middleware/securityHeaders');
-
-/**
- * Valida API key para acceso a métricas
- */
-function validateApiKey(req) {
-  const apiKey = req.headers['x-api-key'] || req.query.apiKey;
-  const validKey = process.env.ADMIN_API_KEY;
-
-  if (!validKey) {
-    return { valid: true, warning: 'No API key configured' };
-  }
-
-  if (!apiKey) {
-    return { valid: false, error: 'Missing API key' };
-  }
-
-  if (apiKey !== validKey) {
-    return { valid: false, error: 'Invalid API key' };
-  }
-
-  return { valid: true };
-}
 
 /**
  * Formatea métricas para respuesta HTTP
@@ -100,45 +80,8 @@ async function getHistoricalMetricsData(date, operationType) {
 module.exports = async function metricsHandler(context, req) {
   const startTime = Date.now();
 
-  // Rate limiting
-  const clientIp = security.getClientIp(req);
-  const rateLimit = security.checkIpRateLimit(clientIp);
-
-  if (!rateLimit.allowed) {
-    context.log.warn(`Rate limit excedido: ${clientIp}`);
-    context.res = {
-      status: 429,
-      headers: applySecurityHeaders({
-        'Content-Type': 'application/json',
-        'Retry-After': Math.ceil(rateLimit.resetMs / 1000).toString(),
-      }),
-      body: {
-        error: 'rate_limited',
-        message: 'Too many requests',
-        retryAfterMs: rateLimit.resetMs,
-      },
-    };
-    return;
-  }
-
-  // Validar API key
-  const auth = validateApiKey(req);
-  if (!auth.valid) {
-    context.log.warn(`Acceso no autorizado a metrics: ${clientIp}`);
-    context.res = {
-      status: 401,
-      headers: applySecurityHeaders({ 'Content-Type': 'application/json' }),
-      body: {
-        error: 'unauthorized',
-        message: auth.error,
-      },
-    };
-    return;
-  }
-
-  if (auth.warning) {
-    context.log.warn(auth.warning);
-  }
+  // Autenticación: Azure valida Function Key antes de llegar aquí
+  // Rate Limiting: Manejado en index.js
 
   try {
     const operation = req.query.operation;

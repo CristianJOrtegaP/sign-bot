@@ -39,9 +39,7 @@ const OPTIONAL_ENV_VARS = [
   'SURVEY_HORAS_EXPIRACION', // Horas para expirar encuestas sin respuesta
   // SEGURIDAD
   'WHATSAPP_APP_SECRET', // App Secret para verificar firma X-Hub-Signature-256
-  'ADMIN_API_KEY', // API Key para endpoints administrativos
-  'IP_RATE_LIMIT', // Límite de requests por IP (default: 100)
-  'IP_RATE_WINDOW_MS', // Ventana de rate limit en ms (default: 60000)
+  'ADMIN_RATE_LIMIT_MAX', // Límite de requests por IP para admin API (default: 60)
   // AZURE MAPS
   'AZURE_MAPS_KEY', // API Key de Azure Maps para geocoding y routing
   'ROUTE_BUFFER_MINUTES', // Minutos adicionales a sumar al tiempo de ruta (default: 20)

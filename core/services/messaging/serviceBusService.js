@@ -178,14 +178,27 @@ async function receiveMessages(maxMessages = 10, maxWaitTimeMs = 5000) {
       maxWaitTimeInMs: maxWaitTimeMs,
     });
 
-    return messages.map((msg) => ({
-      id: msg.messageId,
-      body: typeof msg.body === 'string' ? JSON.parse(msg.body) : msg.body,
-      correlationId: msg.correlationId,
-      properties: msg.applicationProperties,
-      // Guardar referencia al mensaje original para complete/abandon
-      _serviceBusMessage: msg,
-    }));
+    return messages.map((msg) => {
+      let parsedBody;
+      try {
+        parsedBody = typeof msg.body === 'string' ? JSON.parse(msg.body) : msg.body;
+      } catch (parseError) {
+        logger.warn('[ServiceBus] Error parseando body de mensaje', {
+          messageId: msg.messageId,
+          error: parseError.message,
+        });
+        parsedBody = { raw: msg.body, parseError: true };
+      }
+
+      return {
+        id: msg.messageId,
+        body: parsedBody,
+        correlationId: msg.correlationId,
+        properties: msg.applicationProperties,
+        // Guardar referencia al mensaje original para complete/abandon
+        _serviceBusMessage: msg,
+      };
+    });
   } catch (error) {
     logger.error('[ServiceBus] Error recibiendo mensajes', error);
     return [];

@@ -125,8 +125,8 @@ scenarios:
       - get:
           url: "/api/admin-cache?type=stats"
           headers:
-            X-API-Key: "{{ $processEnvironment.ADMIN_API_KEY }}"
+            x-functions-key: "{{ $processEnvironment.FUNCTIONS_KEY }}"
           expect:
             - statusCode:
                 - 200
-                - 401  # Si no hay API key configurada
+                - 401  # Si no hay function key configurada

@@ -70,55 +70,6 @@ function verifyWebhookSignature(payload, signature) {
 }
 
 /**
- * Verifica API key para endpoints administrativos
- * SEGURIDAD: Solo permite bypass sin API key en localhost
- * @param {object} req - Request de Azure Functions
- * @returns {{ valid: boolean, error?: string }}
- */
-function verifyAdminApiKey(req) {
-  const adminApiKey = process.env.ADMIN_API_KEY;
-
-  // Si no hay key configurada, solo permitir en localhost
-  if (!adminApiKey) {
-    const host = req.headers?.host || '';
-    const isLocalhost = host.startsWith('localhost') || host.startsWith('127.0.0.1');
-
-    if (isLocalhost) {
-      logger.warn('ADMIN_API_KEY no configurado - permitido solo en localhost');
-      return { valid: true };
-    }
-
-    // En cualquier otro ambiente (Azure, staging, prod), rechazar
-    logger.error('ADMIN_API_KEY requerido fuera de localhost - rechazando request');
-    return { valid: false, error: 'Configuracion de seguridad incompleta' };
-  }
-
-  // Buscar API key en headers o query
-  const providedKey = req.headers['x-api-key'] || req.headers['X-API-Key'] || req.query.apiKey;
-
-  if (!providedKey) {
-    return { valid: false, error: 'API key requerida' };
-  }
-
-  // Comparacion segura
-  try {
-    const isValid = crypto.timingSafeEqual(
-      Buffer.from(providedKey, 'utf8'),
-      Buffer.from(adminApiKey, 'utf8')
-    );
-
-    if (!isValid) {
-      logger.security('API key invalida proporcionada');
-      return { valid: false, error: 'API key invalida' };
-    }
-
-    return { valid: true };
-  } catch (_error) {
-    return { valid: false, error: 'API key invalida' };
-  }
-}
-
-/**
  * Valida formato de ticketId
  * Formato esperado: TKT-XXXXXXXX (8 caracteres hexadecimales)
  * @param {string} ticketId
@@ -293,7 +244,6 @@ function getClientIp(req) {
 
 module.exports = {
   verifyWebhookSignature,
-  verifyAdminApiKey,
   validateTicketId,
   validateLocation,
   validatePhoneNumber,

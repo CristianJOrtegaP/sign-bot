@@ -27,6 +27,16 @@ const SENSITIVE_PATTERNS = [
   // Azure specific
   { name: 'subscriptionKey', pattern: /(\bsubscription[_-]?key\b["\s:=]+["']?)[\w\-_.]+/gi },
   { name: 'sasToken', pattern: /(\bsig=)[\w%]+/gi },
+  { name: 'accountKey', pattern: /(AccountKey=)[^;]+/gi },
+  { name: 'sharedAccessKey', pattern: /(SharedAccessKey=)[^;]+/gi },
+  { name: 'primaryKey', pattern: /(\bprimary[_-]?key\b["\s:=]+["']?)[\w\-_.+/=]+/gi },
+  { name: 'secondaryKey', pattern: /(\bsecondary[_-]?key\b["\s:=]+["']?)[\w\-_.+/=]+/gi },
+  { name: 'instrumentationKey', pattern: /(\binstrumentation[_-]?key\b["\s:=]+["']?)[\w-]+/gi },
+
+  // Gemini/OpenAI
+  { name: 'geminiKey', pattern: /(GEMINI_API_KEY["\s:=]+["']?)[\w\-_.]+/gi },
+  { name: 'openaiKey', pattern: /(OPENAI_API_KEY["\s:=]+["']?)[\w\-_.]+/gi },
+  { name: 'azureOpenaiKey', pattern: /(AZURE_OPENAI_KEY["\s:=]+["']?)[\w\-_.]+/gi },
 
   // WhatsApp
   { name: 'whatsappToken', pattern: /(WHATSAPP_TOKEN["\s:=]+["']?)[\w\-_.]+/gi },

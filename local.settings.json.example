@@ -40,9 +40,8 @@
         "SURVEY_HORAS_EXPIRACION": "72",
 
         "// ========== SECURITY ==========": "",
-        "ADMIN_API_KEY": "",
-        "IP_RATE_LIMIT": "100",
-        "IP_RATE_WINDOW_MS": "60000",
+        "// Admin API usa Azure Function Keys (ver Azure Portal > App Keys)": "",
+        "ADMIN_RATE_LIMIT_MAX": "60",
 
         "// ========== AZURE MAPS ==========": "",
         "AZURE_MAPS_KEY": "",

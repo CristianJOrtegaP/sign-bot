@@ -85,9 +85,6 @@ WHATSAPP_APP_SECRET="tu_app_secret"
 AI_PROVIDER="gemini"  # O "azure-openai"
 GEMINI_API_KEY="tu_gemini_key"  # Si usas Gemini
 
-# FASE 2: Admin API Key (para /api/metrics)
-ADMIN_API_KEY="staging_admin_key_2026"
-
 # FASE 2: Alert Webhook (opcional)
 ALERT_WEBHOOK_URL="https://hooks.slack.com/services/tu-webhook"
 ```

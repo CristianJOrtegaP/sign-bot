@@ -137,7 +137,17 @@ async function get(key) {
     try {
       const value = await redisClient.get(fullKey);
       if (value) {
-        return JSON.parse(value);
+        try {
+          return JSON.parse(value);
+        } catch (parseError) {
+          logger.warn('[RedisService] Error parseando valor de cache', {
+            key,
+            error: parseError.message,
+          });
+          // Eliminar valor corrupto del cache
+          await redisClient.del(fullKey).catch(() => {});
+          return null;
+        }
       }
       return null;
     } catch (error) {

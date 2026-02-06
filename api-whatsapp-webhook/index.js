@@ -218,14 +218,20 @@ async function processMessageByType(message, from, messageId, context, log) {
 
 /**
  * Guarda mensaje fallido en Dead Letter Queue
+ * CRÍTICO: Siempre loguear errores de DLQ para no perder trazabilidad
  */
-function saveToDeadLetter(message, error) {
-  const messageContent =
-    message.text?.body ||
-    message.interactive?.button_reply?.id ||
-    (message.location ? JSON.stringify(message.location) : null) ||
-    (message.image ? `image:${message.image.id}` : null) ||
-    (message.audio ? `audio:${message.audio.id}` : null);
+function saveToDeadLetter(message, error, logError) {
+  let messageContent;
+  try {
+    messageContent =
+      message.text?.body ||
+      message.interactive?.button_reply?.id ||
+      (message.location ? JSON.stringify(message.location) : null) ||
+      (message.image ? `image:${message.image.id}` : null) ||
+      (message.audio ? `audio:${message.audio.id}` : null);
+  } catch (_e) {
+    messageContent = 'error-extracting-content';
+  }
 
   deadLetter
     .saveFailedMessage(
@@ -237,7 +243,18 @@ function saveToDeadLetter(message, error) {
       },
       error
     )
-    .catch(() => {});
+    .catch((dlqError) => {
+      // CRÍTICO: Nunca silenciar errores de DLQ - loguear siempre
+      if (logError) {
+        logError('Error guardando en Dead Letter Queue - MENSAJE PERDIDO', {
+          originalError: error?.message,
+          dlqError: dlqError?.message,
+          messageId: message.id,
+          from: message.from,
+          type: message.type,
+        });
+      }
+    });
 }
 
 /**
@@ -361,7 +378,7 @@ module.exports = async function (context, req) {
       // Guardar en Dead Letter Queue
       const message = extractMessage(req.body);
       if (message) {
-        saveToDeadLetter(message, error);
+        saveToDeadLetter(message, error, logError);
       }
 
       // Siempre responder 200 para evitar reintentos de Meta

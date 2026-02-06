@@ -23,12 +23,12 @@ Esta guia detalla todas las variables de entorno y opciones de configuracion del
 
 Estas variables **deben** estar definidas para que el sistema funcione:
 
-| Variable | Descripcion | Ejemplo |
-|----------|-------------|---------|
-| `SQL_CONNECTION_STRING` | Connection string de Azure SQL Server | `Server=sql-server.database.windows.net;Database=db-acfixbot;User Id=admin;Password=xxx;Encrypt=true` |
-| `WHATSAPP_TOKEN` | Token de acceso permanente de WhatsApp Business API | `EAAGm...` |
-| `WHATSAPP_PHONE_ID` | ID del numero de telefono registrado en Meta | `123456789012345` |
-| `WHATSAPP_VERIFY_TOKEN` | Token para verificacion del webhook (definido por ti) | `mi_token_secreto_123` |
+| Variable                | Descripcion                                           | Ejemplo                                                                                               |
+| ----------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `SQL_CONNECTION_STRING` | Connection string de Azure SQL Server                 | `Server=sql-server.database.windows.net;Database=db-acfixbot;User Id=admin;Password=xxx;Encrypt=true` |
+| `WHATSAPP_TOKEN`        | Token de acceso permanente de WhatsApp Business API   | `EAAGm...`                                                                                            |
+| `WHATSAPP_PHONE_ID`     | ID del numero de telefono registrado en Meta          | `123456789012345`                                                                                     |
+| `WHATSAPP_VERIFY_TOKEN` | Token para verificacion del webhook (definido por ti) | `mi_token_secreto_123`                                                                                |
 
 ### Validacion al Inicio
 
@@ -37,10 +37,10 @@ El sistema valida estas variables al iniciar. Si alguna falta, lanzara un error:
 ```javascript
 // core/config/index.js
 const REQUIRED_ENV_VARS = [
-    'SQL_CONNECTION_STRING',
-    'WHATSAPP_TOKEN',
-    'WHATSAPP_PHONE_ID',
-    'WHATSAPP_VERIFY_TOKEN'
+  'SQL_CONNECTION_STRING',
+  'WHATSAPP_TOKEN',
+  'WHATSAPP_PHONE_ID',
+  'WHATSAPP_VERIFY_TOKEN',
 ];
 ```
 
@@ -59,28 +59,28 @@ SQL_CONNECTION_STRING="Server=tcp:sql-acfixbot-prod.database.windows.net,1433;In
 ```javascript
 // core/config/index.js
 const database = {
-    connectionTimeout: 30000,  // 30 segundos
-    requestTimeout: 30000,     // 30 segundos
+  connectionTimeout: 30000, // 30 segundos
+  requestTimeout: 30000, // 30 segundos
 
-    // Cache de sesiones
-    sessionCache: {
-        ttlMs: 5 * 60 * 1000,           // 5 minutos
-        cleanupIntervalMs: 2 * 60 * 1000 // Limpieza cada 2 minutos
-    },
+  // Cache de sesiones
+  sessionCache: {
+    ttlMs: 5 * 60 * 1000, // 5 minutos
+    cleanupIntervalMs: 2 * 60 * 1000, // Limpieza cada 2 minutos
+  },
 
-    // Cache de equipos
-    equipoCache: {
-        ttlMs: 15 * 60 * 1000,          // 15 minutos
-        cleanupIntervalMs: 2 * 60 * 1000
-    },
+  // Cache de equipos
+  equipoCache: {
+    ttlMs: 15 * 60 * 1000, // 15 minutos
+    cleanupIntervalMs: 2 * 60 * 1000,
+  },
 
-    // Reintentos
-    retry: {
-        maxRetries: 3,
-        initialDelayMs: 500,
-        maxDelayMs: 5000,
-        backoffMultiplier: 2
-    }
+  // Reintentos
+  retry: {
+    maxRetries: 3,
+    initialDelayMs: 500,
+    maxDelayMs: 5000,
+    backoffMultiplier: 2,
+  },
 };
 ```
 
@@ -100,12 +100,12 @@ sqlcmd -S tu-servidor.database.windows.net -U admin -P password -d db-acfixbot -
 
 ### Variables de Entorno
 
-| Variable | Descripcion |
-|----------|-------------|
-| `WHATSAPP_TOKEN` | Token de acceso (System User Token recomendado) |
-| `WHATSAPP_PHONE_ID` | ID del numero de telefono |
-| `WHATSAPP_VERIFY_TOKEN` | Token para verificar webhook |
-| `WHATSAPP_APP_SECRET` | App Secret para verificar firma X-Hub-Signature-256 |
+| Variable                | Descripcion                                         |
+| ----------------------- | --------------------------------------------------- |
+| `WHATSAPP_TOKEN`        | Token de acceso (System User Token recomendado)     |
+| `WHATSAPP_PHONE_ID`     | ID del numero de telefono                           |
+| `WHATSAPP_VERIFY_TOKEN` | Token para verificar webhook                        |
+| `WHATSAPP_APP_SECRET`   | App Secret para verificar firma X-Hub-Signature-256 |
 
 ### Obtener Credenciales
 
@@ -131,10 +131,8 @@ Si defines `WHATSAPP_APP_SECRET`, el sistema verificara la firma HMAC de cada re
 
 ```javascript
 // core/services/infrastructure/securityService.js
-const expectedSignature = 'sha256=' +
-    crypto.createHmac('sha256', appSecret)
-        .update(rawBody)
-        .digest('hex');
+const expectedSignature =
+  'sha256=' + crypto.createHmac('sha256', appSecret).update(rawBody).digest('hex');
 ```
 
 ---
@@ -143,9 +141,9 @@ const expectedSignature = 'sha256=' +
 
 ### Variables de Entorno
 
-| Variable | Default | Descripcion |
-|----------|---------|-------------|
-| `USE_AI` | `false` | Activar/desactivar IA |
+| Variable      | Default  | Descripcion                          |
+| ------------- | -------- | ------------------------------------ |
+| `USE_AI`      | `false`  | Activar/desactivar IA                |
 | `AI_PROVIDER` | `gemini` | Proveedor: `gemini` o `azure-openai` |
 
 ### Opcion A: Google Gemini (Recomendado para POC)
@@ -157,6 +155,7 @@ GEMINI_API_KEY=tu_api_key_de_gemini
 ```
 
 **Obtener API Key:**
+
 1. Ir a [Google AI Studio](https://aistudio.google.com)
 2. Crear API Key
 3. Modelo utilizado: `gemini-2.5-flash`
@@ -172,6 +171,7 @@ AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
 ```
 
 **Prerequisitos:**
+
 1. Solicitar acceso: https://aka.ms/oai/access
 2. Crear recurso Azure OpenAI en Azure Portal
 3. Crear deployment con modelo `gpt-4o-mini`
@@ -183,10 +183,10 @@ Si `USE_AI=false`, el sistema usa deteccion por regex (menos precisa pero funcio
 ```javascript
 // Patrones de deteccion por regex
 const REFRIGERADOR_PATTERNS = [
-    /refri(gerador)?/i,
-    /enfriador/i,
-    /cooler/i,
-    /no\s*(enfria|congela)/i
+  /refri(gerador)?/i,
+  /enfriador/i,
+  /cooler/i,
+  /no\s*(enfria|congela)/i,
 ];
 ```
 
@@ -196,10 +196,10 @@ const REFRIGERADOR_PATTERNS = [
 
 ### Variables de Entorno
 
-| Variable | Descripcion |
-|----------|-------------|
+| Variable          | Descripcion                       |
+| ----------------- | --------------------------------- |
 | `VISION_ENDPOINT` | Endpoint de Azure Computer Vision |
-| `VISION_KEY` | API Key de Azure Computer Vision |
+| `VISION_KEY`      | API Key de Azure Computer Vision  |
 
 ### Ejemplo
 
@@ -224,11 +224,11 @@ El OCR se usa para leer codigos SAP de etiquetas de refrigeradores cuando el usu
 
 ### Variables de Entorno
 
-| Variable | Default | Descripcion |
-|----------|---------|-------------|
-| `SESSION_TIMEOUT_MINUTES` | `30` | Minutos de inactividad antes de cerrar sesion |
-| `SESSION_WARNING_MINUTES` | `25` | Minutos antes de enviar advertencia "¿Sigues ahi?" |
-| `TIMER_SCHEDULE` | `0 */5 * * * *` | CRON del timer de limpieza (cada 5 min) |
+| Variable                  | Default         | Descripcion                                        |
+| ------------------------- | --------------- | -------------------------------------------------- |
+| `SESSION_TIMEOUT_MINUTES` | `30`            | Minutos de inactividad antes de cerrar sesion      |
+| `SESSION_WARNING_MINUTES` | `25`            | Minutos antes de enviar advertencia "¿Sigues ahi?" |
+| `TIMER_SCHEDULE`          | `0 */5 * * * *` | CRON del timer de limpieza (cada 5 min)            |
 
 ### Ejemplo
 
@@ -263,11 +263,11 @@ segundo minuto hora dia mes dia-semana
 
 ### Variables de Entorno
 
-| Variable | Default | Descripcion |
-|----------|---------|-------------|
-| `SURVEY_TIMER_SCHEDULE` | `0 0 9 * * *` | CRON del timer (9 AM diario) |
-| `SURVEY_HORAS_ESPERA` | `24` | Horas despues de resolucion para enviar |
-| `SURVEY_HORAS_EXPIRACION` | `72` | Horas para expirar encuestas sin respuesta |
+| Variable                  | Default       | Descripcion                                |
+| ------------------------- | ------------- | ------------------------------------------ |
+| `SURVEY_TIMER_SCHEDULE`   | `0 0 9 * * *` | CRON del timer (9 AM diario)               |
+| `SURVEY_HORAS_ESPERA`     | `24`          | Horas despues de resolucion para enviar    |
+| `SURVEY_HORAS_EXPIRACION` | `72`          | Horas para expirar encuestas sin respuesta |
 
 ### Ejemplo
 
@@ -291,10 +291,20 @@ SURVEY_HORAS_EXPIRACION=72
 
 ### Variables de Entorno
 
-| Variable | Default | Descripcion |
-|----------|---------|-------------|
-| `WHATSAPP_APP_SECRET` | - | App Secret para verificar firma HMAC |
-| `ADMIN_API_KEY` | - | API Key para endpoints administrativos |
+| Variable               | Default | Descripcion                              |
+| ---------------------- | ------- | ---------------------------------------- |
+| `WHATSAPP_APP_SECRET`  | -       | App Secret para verificar firma HMAC     |
+| `ADMIN_RATE_LIMIT_MAX` | `60`    | Límite de requests por IP para admin API |
+
+### Autenticación de Endpoints Admin
+
+Los endpoints administrativos (`/api/admin/*`) usan **Azure Function Keys** para autenticación:
+
+```http
+x-functions-key: <host-key-from-azure-portal>
+```
+
+Las keys se obtienen en: Azure Portal → Function App → App Keys → Host keys
 
 ### Headers de Seguridad
 
@@ -329,28 +339,27 @@ Todos los inputs del usuario se sanitizan automaticamente:
 
 ### Variables de Entorno
 
-| Variable | Default | Descripcion |
-|----------|---------|-------------|
-| `IP_RATE_LIMIT` | `100` | Max requests por IP en el health check |
-| `IP_RATE_WINDOW_MS` | `60000` | Ventana de rate limit (1 minuto) |
+| Variable               | Default | Descripcion                                     |
+| ---------------------- | ------- | ----------------------------------------------- |
+| `ADMIN_RATE_LIMIT_MAX` | `60`    | Max requests por IP para admin API (por minuto) |
 
 ### Rate Limiting por Usuario (en codigo)
 
 ```javascript
 // core/config/index.js
 const rateLimiting = {
-    messages: {
-        maxPerMinute: 20,
-        maxPerHour: 100
-    },
-    images: {
-        maxPerMinute: 3,
-        maxPerHour: 20
-    },
-    spam: {
-        windowMs: 10000,         // 10 segundos
-        maxMessagesInWindow: 10  // >10 = spam
-    }
+  messages: {
+    maxPerMinute: 20,
+    maxPerHour: 100,
+  },
+  images: {
+    maxPerMinute: 3,
+    maxPerHour: 20,
+  },
+  spam: {
+    windowMs: 10000, // 10 segundos
+    maxMessagesInWindow: 10, // >10 = spam
+  },
 };
 ```
 
@@ -362,35 +371,33 @@ Para desarrollo local, crea un archivo `local.settings.json`:
 
 ```json
 {
-    "IsEncrypted": false,
-    "Values": {
-        "FUNCTIONS_WORKER_RUNTIME": "node",
-        "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
 
-        "SQL_CONNECTION_STRING": "Server=localhost;Database=acfixbot;User Id=sa;Password=YourPassword123;TrustServerCertificate=true",
+    "SQL_CONNECTION_STRING": "Server=localhost;Database=acfixbot;User Id=sa;Password=YourPassword123;TrustServerCertificate=true",
 
-        "WHATSAPP_TOKEN": "EAAGm...",
-        "WHATSAPP_PHONE_ID": "123456789012345",
-        "WHATSAPP_VERIFY_TOKEN": "mi_token_secreto",
-        "WHATSAPP_APP_SECRET": "abc123...",
+    "WHATSAPP_TOKEN": "EAAGm...",
+    "WHATSAPP_PHONE_ID": "123456789012345",
+    "WHATSAPP_VERIFY_TOKEN": "mi_token_secreto",
+    "WHATSAPP_APP_SECRET": "abc123...",
 
-        "USE_AI": "true",
-        "AI_PROVIDER": "gemini",
-        "GEMINI_API_KEY": "AIza...",
+    "USE_AI": "true",
+    "AI_PROVIDER": "gemini",
+    "GEMINI_API_KEY": "AIza...",
 
-        "VISION_ENDPOINT": "https://cv-acfixbot.cognitiveservices.azure.com/",
-        "VISION_KEY": "abc123...",
+    "VISION_ENDPOINT": "https://cv-acfixbot.cognitiveservices.azure.com/",
+    "VISION_KEY": "abc123...",
 
-        "SESSION_TIMEOUT_MINUTES": "30",
-        "SESSION_WARNING_MINUTES": "25",
+    "SESSION_TIMEOUT_MINUTES": "30",
+    "SESSION_WARNING_MINUTES": "25",
 
-        "ADMIN_API_KEY": "mi_api_key_admin",
-
-        "NODE_ENV": "development"
-    },
-    "Host": {
-        "CORS": "*"
-    }
+    "NODE_ENV": "development"
+  },
+  "Host": {
+    "CORS": "*"
+  }
 }
 ```
 
@@ -412,16 +419,16 @@ Respuesta esperada:
 
 ```json
 {
-    "status": "healthy",
-    "checks": {
-        "database": { "status": "healthy" },
-        "configuration": { "status": "healthy" },
-        "externalServices": {
-            "ai": { "configured": true, "provider": "gemini" },
-            "vision": { "configured": true },
-            "whatsapp": { "configured": true }
-        }
+  "status": "healthy",
+  "checks": {
+    "database": { "status": "healthy" },
+    "configuration": { "status": "healthy" },
+    "externalServices": {
+      "ai": { "configured": true, "provider": "gemini" },
+      "vision": { "configured": true },
+      "whatsapp": { "configured": true }
     }
+  }
 }
 ```
 

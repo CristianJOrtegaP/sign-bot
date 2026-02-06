@@ -1,31 +1,18 @@
 /**
  * Handler: Cache Management
  * Rutas: GET/POST /api/admin/cache?type=...
+ *
+ * Autenticación: Azure Function Keys (validado automáticamente por Azure)
  */
 
 const db = require('../../core/services/storage/databaseService');
 const sessionTimeoutService = require('../../core/services/processing/sessionTimeoutService');
-const security = require('../../core/services/infrastructure/securityService');
 const { applySecurityHeaders } = require('../../core/middleware/securityHeaders');
 const audit = require('../../core/services/infrastructure/auditService');
 
 module.exports = async function cacheHandler(context, req) {
-  // Verificar autenticación
-  const authResult = security.verifyAdminApiKey(req);
-  if (!authResult.valid) {
-    context.log.warn('Acceso denegado a cache:', authResult.error);
-    audit.logAuthFailure(authResult.error, req);
-    context.res = {
-      status: 401,
-      headers: applySecurityHeaders({ 'Content-Type': 'application/json' }),
-      body: {
-        success: false,
-        error: authResult.error,
-        timestamp: new Date().toISOString(),
-      },
-    };
-    return;
-  }
+  // Autenticación: Azure valida Function Key antes de llegar aquí
+  // Si este código se ejecuta, la key ya es válida
 
   try {
     const type = req.query.type || req.body?.type;

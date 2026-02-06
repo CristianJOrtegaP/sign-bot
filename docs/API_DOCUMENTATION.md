@@ -24,16 +24,17 @@ Esta documentacion cubre todos los endpoints HTTP disponibles en AC FixBot.
 
 AC FixBot expone 4 endpoints HTTP y 2 timers programados:
 
-| Tipo | Nombre | Descripcion |
-|------|--------|-------------|
-| HTTP | `/api/health` | Health check del sistema |
-| HTTP | `/api/whatsapp-webhook` | Webhook para mensajes de WhatsApp |
-| HTTP | `/api/ticket-resolve` | Marcar tickets como resueltos |
-| HTTP | `/api/admin-cache` | Administracion de cache |
-| Timer | `session-cleanup` | Limpieza de sesiones inactivas |
-| Timer | `survey-sender` | Envio de encuestas de satisfaccion |
+| Tipo  | Nombre                  | Descripcion                        |
+| ----- | ----------------------- | ---------------------------------- |
+| HTTP  | `/api/health`           | Health check del sistema           |
+| HTTP  | `/api/whatsapp-webhook` | Webhook para mensajes de WhatsApp  |
+| HTTP  | `/api/ticket-resolve`   | Marcar tickets como resueltos      |
+| HTTP  | `/api/admin-cache`      | Administracion de cache            |
+| Timer | `session-cleanup`       | Limpieza de sesiones inactivas     |
+| Timer | `survey-sender`         | Envio de encuestas de satisfaccion |
 
 **Base URL:**
+
 - Produccion: `https://func-acfixbot-prod.azurewebsites.net`
 - Local: `http://localhost:7071`
 
@@ -44,36 +45,27 @@ AC FixBot expone 4 endpoints HTTP y 2 timers programados:
 ### 1. Webhook WhatsApp
 
 **Verificacion (GET):**
+
 - Query param `hub.verify_token` debe coincidir con variable `WHATSAPP_VERIFY_TOKEN`
 
 **Mensajes (POST):**
+
 - Header `X-Hub-Signature-256` con firma HMAC-SHA256
 - Calculada como: `sha256=HMAC(body, WHATSAPP_APP_SECRET)`
 
 ### 2. Azure Functions Key
 
-Para endpoints con `authLevel: function` (`ticket-resolve`):
+Para endpoints protegidos (`ticket-resolve`, `admin/*`):
 
 ```http
 x-functions-key: <azure-function-key>
 ```
 
-Obtener la key en: Azure Portal → Function App → App Keys
+Obtener la key en: Azure Portal → Function App → App Keys → Host keys
 
-### 3. API Key Administrativa
-
-Para endpoints administrativos (`admin-cache`):
-
-```http
-X-API-Key: <admin-api-key>
-```
-
-O como query param:
-```
-?apiKey=<admin-api-key>
-```
-
-Configurada via variable `ADMIN_API_KEY`
+**Nota:** Los endpoints administrativos (`/api/admin/*`) también usan Azure Function Keys.
+La autenticación se valida automáticamente por Azure antes de que el código se ejecute.
+Adicionalmente, hay rate limiting por IP (60 requests/minuto por defecto).
 
 ---
 
@@ -83,11 +75,11 @@ Configurada via variable `ADMIN_API_KEY`
 
 Verifica el estado de salud del sistema completo.
 
-| Propiedad | Valor |
-|-----------|-------|
-| URL | `GET /api/health` |
-| Auth | Ninguna (rate limited por IP) |
-| Rate Limit | 100 requests/minuto por IP |
+| Propiedad  | Valor                         |
+| ---------- | ----------------------------- |
+| URL        | `GET /api/health`             |
+| Auth       | Ninguna (rate limited por IP) |
+| Rate Limit | 100 requests/minuto por IP    |
 
 #### Request
 
@@ -100,69 +92,69 @@ Host: func-acfixbot-prod.azurewebsites.net
 
 ```json
 {
-    "status": "healthy",
-    "timestamp": "2026-01-27T10:30:00.000Z",
-    "version": "2.0.0",
-    "environment": "production",
-    "responseTimeMs": 45,
-    "checks": {
-        "database": {
-            "status": "healthy",
-            "message": "Connection successful",
-            "responseTimeMs": 23
+  "status": "healthy",
+  "timestamp": "2026-01-27T10:30:00.000Z",
+  "version": "2.0.0",
+  "environment": "production",
+  "responseTimeMs": 45,
+  "checks": {
+    "database": {
+      "status": "healthy",
+      "message": "Connection successful",
+      "responseTimeMs": 23
+    },
+    "configuration": {
+      "status": "healthy",
+      "message": "All required environment variables are set",
+      "servicesConfigured": true
+    },
+    "memory": {
+      "status": "healthy",
+      "heapUsedMB": 45,
+      "heapTotalMB": 128,
+      "heapPercentage": 35
+    },
+    "uptime": {
+      "status": "healthy",
+      "uptimeSeconds": 3600
+    },
+    "circuitBreakers": {
+      "status": "healthy",
+      "services": {
+        "ai": {
+          "status": "closed",
+          "provider": "gemini",
+          "enabled": true
         },
-        "configuration": {
-            "status": "healthy",
-            "message": "All required environment variables are set",
-            "servicesConfigured": true
-        },
-        "memory": {
-            "status": "healthy",
-            "heapUsedMB": 45,
-            "heapTotalMB": 128,
-            "heapPercentage": 35
-        },
-        "uptime": {
-            "status": "healthy",
-            "uptimeSeconds": 3600
-        },
-        "circuitBreakers": {
-            "status": "healthy",
-            "services": {
-                "ai": {
-                    "status": "closed",
-                    "provider": "gemini",
-                    "enabled": true
-                },
-                "whatsapp": {
-                    "status": "closed"
-                }
-            }
-        },
-        "deadLetter": {
-            "status": "healthy",
-            "total": 5,
-            "pending": 3,
-            "failed": 2,
-            "message": "OK"
-        },
-        "externalServices": {
-            "status": "healthy",
-            "services": {
-                "ai": {
-                    "configured": true,
-                    "provider": "gemini",
-                    "enabled": true
-                },
-                "vision": {
-                    "configured": true
-                },
-                "whatsapp": {
-                    "configured": true
-                }
-            }
+        "whatsapp": {
+          "status": "closed"
         }
+      }
+    },
+    "deadLetter": {
+      "status": "healthy",
+      "total": 5,
+      "pending": 3,
+      "failed": 2,
+      "message": "OK"
+    },
+    "externalServices": {
+      "status": "healthy",
+      "services": {
+        "ai": {
+          "configured": true,
+          "provider": "gemini",
+          "enabled": true
+        },
+        "vision": {
+          "configured": true
+        },
+        "whatsapp": {
+          "configured": true
+        }
+      }
     }
+  }
 }
 ```
 
@@ -170,13 +162,13 @@ Host: func-acfixbot-prod.azurewebsites.net
 
 ```json
 {
-    "status": "unhealthy",
-    "checks": {
-        "database": {
-            "status": "unhealthy",
-            "message": "Connection timeout"
-        }
+  "status": "unhealthy",
+  "checks": {
+    "database": {
+      "status": "unhealthy",
+      "message": "Connection timeout"
     }
+  }
 }
 ```
 
@@ -184,9 +176,9 @@ Host: func-acfixbot-prod.azurewebsites.net
 
 ```json
 {
-    "status": "rate_limited",
-    "message": "Too many requests",
-    "retryAfterMs": 60000
+  "status": "rate_limited",
+  "message": "Too many requests",
+  "retryAfterMs": 60000
 }
 ```
 
@@ -200,10 +192,10 @@ Endpoint para recibir mensajes de WhatsApp via Meta Cloud API.
 
 Meta envia esta solicitud para verificar el webhook.
 
-| Propiedad | Valor |
-|-----------|-------|
-| URL | `GET /api/whatsapp-webhook` |
-| Auth | Verify Token |
+| Propiedad | Valor                       |
+| --------- | --------------------------- |
+| URL       | `GET /api/whatsapp-webhook` |
+| Auth      | Verify Token                |
 
 ##### Request
 
@@ -228,10 +220,10 @@ Forbidden
 
 Recibe mensajes entrantes de WhatsApp.
 
-| Propiedad | Valor |
-|-----------|-------|
-| URL | `POST /api/whatsapp-webhook` |
-| Auth | X-Hub-Signature-256 |
+| Propiedad | Valor                        |
+| --------- | ---------------------------- |
+| URL       | `POST /api/whatsapp-webhook` |
+| Auth      | X-Hub-Signature-256          |
 
 ##### Headers
 
@@ -244,29 +236,35 @@ X-Hub-Signature-256: sha256=abc123...
 
 ```json
 {
-    "object": "whatsapp_business_account",
-    "entry": [{
-        "id": "123456789",
-        "changes": [{
-            "value": {
-                "messaging_product": "whatsapp",
-                "metadata": {
-                    "display_phone_number": "15551234567",
-                    "phone_number_id": "123456789"
-                },
-                "messages": [{
-                    "id": "wamid.ABC123...",
-                    "from": "5218112345678",
-                    "timestamp": "1706300000",
-                    "type": "text",
-                    "text": {
-                        "body": "El refrigerador no enfria"
-                    }
-                }]
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "123456789",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "15551234567",
+              "phone_number_id": "123456789"
             },
-            "field": "messages"
-        }]
-    }]
+            "messages": [
+              {
+                "id": "wamid.ABC123...",
+                "from": "5218112345678",
+                "timestamp": "1706300000",
+                "type": "text",
+                "text": {
+                  "body": "El refrigerador no enfria"
+                }
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ]
 }
 ```
 
@@ -274,22 +272,28 @@ X-Hub-Signature-256: sha256=abc123...
 
 ```json
 {
-    "object": "whatsapp_business_account",
-    "entry": [{
-        "changes": [{
-            "value": {
-                "messages": [{
-                    "id": "wamid.ABC123...",
-                    "from": "5218112345678",
-                    "type": "image",
-                    "image": {
-                        "id": "media_id_123",
-                        "mime_type": "image/jpeg"
-                    }
-                }]
-            }
-        }]
-    }]
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "changes": [
+        {
+          "value": {
+            "messages": [
+              {
+                "id": "wamid.ABC123...",
+                "from": "5218112345678",
+                "type": "image",
+                "image": {
+                  "id": "media_id_123",
+                  "mime_type": "image/jpeg"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
 }
 ```
 
@@ -297,25 +301,31 @@ X-Hub-Signature-256: sha256=abc123...
 
 ```json
 {
-    "object": "whatsapp_business_account",
-    "entry": [{
-        "changes": [{
-            "value": {
-                "messages": [{
-                    "id": "wamid.ABC123...",
-                    "from": "5218112345678",
-                    "type": "interactive",
-                    "interactive": {
-                        "type": "button_reply",
-                        "button_reply": {
-                            "id": "btn_tipo_refrigerador",
-                            "title": "Refrigerador"
-                        }
-                    }
-                }]
-            }
-        }]
-    }]
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "changes": [
+        {
+          "value": {
+            "messages": [
+              {
+                "id": "wamid.ABC123...",
+                "from": "5218112345678",
+                "type": "interactive",
+                "interactive": {
+                  "type": "button_reply",
+                  "button_reply": {
+                    "id": "btn_tipo_refrigerador",
+                    "title": "Refrigerador"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
 }
 ```
 
@@ -323,24 +333,30 @@ X-Hub-Signature-256: sha256=abc123...
 
 ```json
 {
-    "object": "whatsapp_business_account",
-    "entry": [{
-        "changes": [{
-            "value": {
-                "messages": [{
-                    "id": "wamid.ABC123...",
-                    "from": "5218112345678",
-                    "type": "location",
-                    "location": {
-                        "latitude": 25.6866,
-                        "longitude": -100.3161,
-                        "name": "Monterrey, NL",
-                        "address": "Av. Constitucion 123"
-                    }
-                }]
-            }
-        }]
-    }]
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "changes": [
+        {
+          "value": {
+            "messages": [
+              {
+                "id": "wamid.ABC123...",
+                "from": "5218112345678",
+                "type": "location",
+                "location": {
+                  "latitude": 25.6866,
+                  "longitude": -100.3161,
+                  "name": "Monterrey, NL",
+                  "address": "Av. Constitucion 123"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
 }
 ```
 
@@ -357,12 +373,12 @@ OK
 
 ##### Tipos de Mensaje Soportados
 
-| Tipo | Descripcion |
-|------|-------------|
-| `text` | Mensaje de texto |
-| `image` | Imagen (procesada con OCR) |
-| `interactive` | Respuesta a botones |
-| `location` | Ubicacion GPS |
+| Tipo          | Descripcion                |
+| ------------- | -------------------------- |
+| `text`        | Mensaje de texto           |
+| `image`       | Imagen (procesada con OCR) |
+| `interactive` | Respuesta a botones        |
+| `location`    | Ubicacion GPS              |
 
 ---
 
@@ -370,10 +386,10 @@ OK
 
 Marca un ticket como RESUELTO. Usado por sistemas externos.
 
-| Propiedad | Valor |
-|-----------|-------|
-| URL | `POST /api/ticket-resolve` |
-| Auth | Azure Functions Key |
+| Propiedad | Valor                      |
+| --------- | -------------------------- |
+| URL       | `POST /api/ticket-resolve` |
+| Auth      | Azure Functions Key        |
 
 #### Request
 
@@ -398,11 +414,11 @@ x-functions-key: tu-function-key
 
 ```json
 {
-    "success": true,
-    "message": "Ticket TKT1706300000000 marcado como RESUELTO",
-    "ticketId": "TKT1706300000000",
-    "previousState": "PENDIENTE",
-    "newState": "RESUELTO"
+  "success": true,
+  "message": "Ticket TKT1706300000000 marcado como RESUELTO",
+  "ticketId": "TKT1706300000000",
+  "previousState": "PENDIENTE",
+  "newState": "RESUELTO"
 }
 ```
 
@@ -410,22 +426,22 @@ x-functions-key: tu-function-key
 
 ```json
 {
-    "success": false,
-    "error": "ticketId es requerido"
+  "success": false,
+  "error": "ticketId es requerido"
 }
 ```
 
 ```json
 {
-    "success": false,
-    "error": "Formato de ticketId invalido. Formato esperado: TKT-XXXXXXXX (8 caracteres hex)"
+  "success": false,
+  "error": "Formato de ticketId invalido. Formato esperado: TKT-XXXXXXXX (8 caracteres hex)"
 }
 ```
 
 ```json
 {
-    "success": false,
-    "error": "El ticket ya esta RESUELTO o CANCELADO"
+  "success": false,
+  "error": "El ticket ya esta RESUELTO o CANCELADO"
 }
 ```
 
@@ -433,8 +449,8 @@ x-functions-key: tu-function-key
 
 ```json
 {
-    "success": false,
-    "error": "Ticket no encontrado"
+  "success": false,
+  "error": "Ticket no encontrado"
 }
 ```
 
@@ -444,22 +460,22 @@ x-functions-key: tu-function-key
 
 Gestion del cache en memoria del sistema.
 
-| Propiedad | Valor |
-|-----------|-------|
-| URL | `GET/POST /api/admin-cache` |
-| Auth | API Key (X-API-Key header o apiKey query) |
+| Propiedad | Valor                                     |
+| --------- | ----------------------------------------- |
+| URL       | `GET/POST /api/admin-cache`               |
+| Auth      | API Key (X-API-Key header o apiKey query) |
 
 #### Operaciones Disponibles
 
-| type | Parametros Adicionales | Descripcion |
-|------|------------------------|-------------|
-| `stats` | - | Ver estadisticas del cache |
-| `equipos` | - | Limpiar todo el cache de equipos |
-| `equipos` | `codigo` | Limpiar equipo especifico |
-| `sesiones` | - | Limpiar todas las sesiones |
-| `sesiones` | `telefono` | Limpiar sesion especifica |
-| `all` | - | Limpiar todo el cache |
-| `trigger_timeout` | - | Ejecutar limpieza de sesiones expiradas |
+| type              | Parametros Adicionales | Descripcion                             |
+| ----------------- | ---------------------- | --------------------------------------- |
+| `stats`           | -                      | Ver estadisticas del cache              |
+| `equipos`         | -                      | Limpiar todo el cache de equipos        |
+| `equipos`         | `codigo`               | Limpiar equipo especifico               |
+| `sesiones`        | -                      | Limpiar todas las sesiones              |
+| `sesiones`        | `telefono`             | Limpiar sesion especifica               |
+| `all`             | -                      | Limpiar todo el cache                   |
+| `trigger_timeout` | -                      | Ejecutar limpieza de sesiones expiradas |
 
 #### Request: Ver Estadisticas
 
@@ -473,21 +489,21 @@ X-API-Key: tu-api-key
 
 ```json
 {
-    "success": true,
-    "stats": {
-        "equipos": {
-            "entries": 150,
-            "hits": 1234,
-            "misses": 56
-        },
-        "sesiones": {
-            "entries": 25,
-            "active": 10
-        },
-        "messageDedup": {
-            "entries": 500
-        }
+  "success": true,
+  "stats": {
+    "equipos": {
+      "entries": 150,
+      "hits": 1234,
+      "misses": 56
+    },
+    "sesiones": {
+      "entries": 25,
+      "active": 10
+    },
+    "messageDedup": {
+      "entries": 500
     }
+  }
 }
 ```
 
@@ -503,9 +519,9 @@ X-API-Key: tu-api-key
 
 ```json
 {
-    "success": true,
-    "message": "Sesion de 5218112345678 limpiada",
-    "cleared": 1
+  "success": true,
+  "message": "Sesion de 5218112345678 limpiada",
+  "cleared": 1
 }
 ```
 
@@ -521,13 +537,13 @@ X-API-Key: tu-api-key
 
 ```json
 {
-    "success": true,
-    "message": "Todo el cache ha sido limpiado",
-    "cleared": {
-        "equipos": 150,
-        "sesiones": 25,
-        "messageDedup": 500
-    }
+  "success": true,
+  "message": "Todo el cache ha sido limpiado",
+  "cleared": {
+    "equipos": 150,
+    "sesiones": 25,
+    "messageDedup": 500
+  }
 }
 ```
 
@@ -537,14 +553,15 @@ X-API-Key: tu-api-key
 
 ### Session Cleanup Timer
 
-| Propiedad | Valor |
-|-----------|-------|
-| Nombre | `timer-session-cleanup` |
-| Schedule | Cada 5 minutos (configurable) |
-| Variable | `TIMER_SCHEDULE` |
-| CRON | `0 */5 * * * *` |
+| Propiedad | Valor                         |
+| --------- | ----------------------------- |
+| Nombre    | `timer-session-cleanup`       |
+| Schedule  | Cada 5 minutos (configurable) |
+| Variable  | `TIMER_SCHEDULE`              |
+| CRON      | `0 */5 * * * *`               |
 
 **Funciones:**
+
 1. Busca sesiones inactivas > `SESSION_WARNING_MINUTES`
 2. Envia mensaje "¿Sigues ahi?"
 3. Busca sesiones inactivas > `SESSION_TIMEOUT_MINUTES`
@@ -552,14 +569,15 @@ X-API-Key: tu-api-key
 
 ### Survey Sender Timer
 
-| Propiedad | Valor |
-|-----------|-------|
-| Nombre | `timer-survey-sender` |
-| Schedule | 9:00 AM diario (configurable) |
-| Variable | `SURVEY_TIMER_SCHEDULE` |
-| CRON | `0 0 9 * * *` |
+| Propiedad | Valor                         |
+| --------- | ----------------------------- |
+| Nombre    | `timer-survey-sender`         |
+| Schedule  | 9:00 AM diario (configurable) |
+| Variable  | `SURVEY_TIMER_SCHEDULE`       |
+| CRON      | `0 0 9 * * *`                 |
 
 **Funciones:**
+
 1. Busca tickets resueltos hace > `SURVEY_HORAS_ESPERA`
 2. Crea registro de encuesta en BD
 3. Envia invitacion via WhatsApp
@@ -569,16 +587,16 @@ X-API-Key: tu-api-key
 
 ## Codigos de Error
 
-| Status | Significado | Cuando Ocurre |
-|--------|-------------|---------------|
-| 200 | OK | Solicitud exitosa |
-| 400 | Bad Request | Parametros invalidos o faltantes |
-| 401 | Unauthorized | Firma HMAC invalida (webhook) |
-| 403 | Forbidden | Token de verificacion incorrecto |
-| 404 | Not Found | Ticket no encontrado |
-| 429 | Too Many Requests | Rate limit excedido |
-| 500 | Internal Server Error | Error interno del servidor |
-| 503 | Service Unavailable | Sistema no saludable |
+| Status | Significado           | Cuando Ocurre                    |
+| ------ | --------------------- | -------------------------------- |
+| 200    | OK                    | Solicitud exitosa                |
+| 400    | Bad Request           | Parametros invalidos o faltantes |
+| 401    | Unauthorized          | Firma HMAC invalida (webhook)    |
+| 403    | Forbidden             | Token de verificacion incorrecto |
+| 404    | Not Found             | Ticket no encontrado             |
+| 429    | Too Many Requests     | Rate limit excedido              |
+| 500    | Internal Server Error | Error interno del servidor       |
+| 503    | Service Unavailable   | Sistema no saludable             |
 
 ---
 
@@ -626,11 +644,11 @@ curl "https://func-acfixbot-prod.azurewebsites.net/api/whatsapp-webhook?hub.mode
 
 ### Archivos Disponibles
 
-| Archivo | Descripcion |
-|---------|-------------|
-| `AC-FIXBOT-API.postman_collection.json` | Coleccion completa con todos los endpoints |
-| `AC-FIXBOT-API.postman_environment.json` | Variables de entorno para desarrollo local |
-| `AC-FIXBOT-API-Production.postman_environment.json` | Variables de entorno para produccion |
+| Archivo                                             | Descripcion                                |
+| --------------------------------------------------- | ------------------------------------------ |
+| `AC-FIXBOT-API.postman_collection.json`             | Coleccion completa con todos los endpoints |
+| `AC-FIXBOT-API.postman_environment.json`            | Variables de entorno para desarrollo local |
+| `AC-FIXBOT-API-Production.postman_environment.json` | Variables de entorno para produccion       |
 
 ### Como Importar
 
@@ -646,12 +664,12 @@ curl "https://func-acfixbot-prod.azurewebsites.net/api/whatsapp-webhook?hub.mode
 
 ### Variables de Entorno
 
-| Variable | Local | Production |
-|----------|-------|------------|
-| `baseUrl` | `http://localhost:7071` | `https://func-acfixbot-prod.azurewebsites.net` |
-| `functionKey` | (no requerida) | `tu-function-key` |
-| `adminApiKey` | `dev-key` | `tu-api-key` |
-| `verifyToken` | `test-token` | `mi_token_secreto` |
+| Variable      | Local                   | Production                                     |
+| ------------- | ----------------------- | ---------------------------------------------- |
+| `baseUrl`     | `http://localhost:7071` | `https://func-acfixbot-prod.azurewebsites.net` |
+| `functionKey` | (no requerida)          | `tu-function-key`                              |
+| `adminApiKey` | `dev-key`               | `tu-api-key`                                   |
+| `verifyToken` | `test-token`            | `mi_token_secreto`                             |
 
 ---
 
@@ -664,6 +682,7 @@ x-correlation-id: corr-abc123-def456-ghi789
 ```
 
 Usar este ID para:
+
 - Correlacionar logs en Application Insights
 - Rastrear el flujo de un mensaje especifico
 - Debugging y troubleshooting

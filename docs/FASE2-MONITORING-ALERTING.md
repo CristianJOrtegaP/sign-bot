@@ -47,7 +47,7 @@ try {
 
 ```bash
 GET /api/metrics
-Authorization: Bearer <ADMIN_API_KEY>
+x-functions-key: <AZURE_FUNCTION_KEY>
 
 # Respuesta incluye:
 # - percentiles (p50, p75, p95, p99)
@@ -62,7 +62,7 @@ Authorization: Bearer <ADMIN_API_KEY>
 
 **Features**:
 
-- Endpoint HTTP GET protegido con API key
+- Endpoint HTTP GET protegido con Azure Function Key
 - Visualización de métricas en tiempo real
 - Métricas históricas desde Azure Table Storage
 - Filtrado por operación específica
@@ -83,11 +83,10 @@ GET /api/metrics?historical=true&date=2025-01-15
 **Autenticación**:
 
 ```bash
-# Header
-x-api-key: <ADMIN_API_KEY>
+# Header (Azure Function Key)
+x-functions-key: <AZURE_FUNCTION_KEY>
 
-# O query param
-?apiKey=<ADMIN_API_KEY>
+# Obtener la key en: Azure Portal > Function App > App Keys > Host keys
 ```
 
 ### 3. Enhanced Health Checks
@@ -332,7 +331,7 @@ npm run test:coverage
 ALERT_WEBHOOK_URL=https://hooks.slack.com/services/...
 
 # API Authentication
-ADMIN_API_KEY=your_secure_api_key_here
+# Usar Azure Function Keys (configurar en Azure Portal > Function App > App Keys)
 
 # DLQ Processor
 DLQ_CLEANUP_DAYS=7
@@ -341,7 +340,7 @@ DLQ_CLEANUP_DAYS=7
 ## Endpoints Nuevos
 
 ```
-GET  /api/metrics              - Métricas dashboard (requiere API key)
+GET  /api/metrics              - Métricas dashboard (requiere Function Key)
 GET  /api/metrics?operation=X  - Métricas de operación específica
 GET  /api/metrics?historical=true&date=YYYY-MM-DD  - Métricas históricas
 GET  /api/health               - Enhanced health checks

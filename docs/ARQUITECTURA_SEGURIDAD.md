@@ -53,17 +53,19 @@ Formato: sha256=<signature>
 
 ### 2.2 Endpoints Administrativos
 
-**Mecanismo**: API Key en header
+**Mecanismo**: Azure Function Keys (authLevel: "function")
 
 ```
-Header: x-api-key: <ADMIN_API_KEY>
+Header: x-functions-key: <host-key>
 ```
+
+Obtener en: Azure Portal → Function App → App Keys → Host keys
 
 **Protecciones**:
 
-- ✅ Timing-safe comparison
-- ✅ API Key en Key Vault
-- ✅ Rate limiting por IP (100 req/min)
+- ✅ Validación nativa por Azure (antes de ejecutar código)
+- ✅ Keys rotables desde Azure Portal
+- ✅ Rate limiting por IP (60 req/min)
 - ✅ Logging de todos los accesos
 
 ### 2.3 Azure AD (Easy Auth) - Opcional
@@ -207,14 +209,14 @@ const phoneSchema = z.string().min(10).max(15).regex(/^\d+$/);
 
 ### 6.1 Variables Sensibles
 
-| Secreto               | Almacenamiento | Rotación     |
-| --------------------- | -------------- | ------------ |
-| WHATSAPP_APP_SECRET   | Key Vault      | Manual       |
-| SQL_CONNECTION_STRING | Key Vault      | Manual       |
-| GEMINI_API_KEY        | Key Vault      | Manual       |
-| AZURE_OPENAI_KEY      | Key Vault      | Manual       |
-| ADMIN_API_KEY         | Key Vault      | Cada 90 días |
-| REDIS_PASSWORD        | Key Vault      | Manual       |
+| Secreto               | Almacenamiento | Rotación   |
+| --------------------- | -------------- | ---------- |
+| WHATSAPP_APP_SECRET   | Key Vault      | Manual     |
+| SQL_CONNECTION_STRING | Key Vault      | Manual     |
+| GEMINI_API_KEY        | Key Vault      | Manual     |
+| AZURE_OPENAI_KEY      | Key Vault      | Manual     |
+| Function Keys (Admin) | Azure Portal   | Via Portal |
+| REDIS_PASSWORD        | Key Vault      | Manual     |
 
 ### 6.2 Key Vault Integration
 

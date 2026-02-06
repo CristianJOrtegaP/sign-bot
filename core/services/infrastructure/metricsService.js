@@ -454,10 +454,21 @@ async function getHistoricalMetrics(date = null, operationType = null) {
     });
 
     for await (const entity of iterator) {
+      let parsedMetadata = {};
+      if (entity.metadata) {
+        try {
+          parsedMetadata = JSON.parse(entity.metadata);
+        } catch (parseError) {
+          logger.warn('Error parseando metadata de métrica', {
+            error: parseError.message,
+            operation: entity.operation,
+          });
+        }
+      }
       entities.push({
         operation: entity.operation,
         durationMs: entity.durationMs,
-        metadata: entity.metadata ? JSON.parse(entity.metadata) : {},
+        metadata: parsedMetadata,
         timestamp: entity.timestamp,
       });
     }

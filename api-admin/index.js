@@ -7,10 +7,15 @@
  * - GET      /api/admin/metrics            - Métricas en tiempo real
  * - POST     /api/admin/tickets/resolve    - Resolver tickets
  *
- * Autenticación: Requiere header X-API-Key o query param apiKey
+ * Autenticación: Azure Function Key (authLevel: "function")
+ * - Azure valida automáticamente el parámetro ?code=xxx o header x-functions-key
+ * - Las keys se gestionan en Azure Portal > Function App > App Keys
+ * Rate Limiting: 60 requests/minuto por IP
  */
 
 const { applySecurityHeaders } = require('../core/middleware/securityHeaders');
+const { checkIpRateLimit } = require('../core/middleware/rateLimitMiddleware');
+const { logger } = require('../core/services/infrastructure/errorHandler');
 
 // Handlers
 const cacheHandler = require('./handlers/cache');
@@ -29,12 +34,49 @@ module.exports = async function (context, req) {
       status: 204,
       headers: applySecurityHeaders({
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, X-API-Key',
+        'Access-Control-Allow-Headers': 'Content-Type, x-functions-key',
         'Access-Control-Max-Age': '86400',
       }),
     };
     return;
   }
+
+  // ============================================
+  // AUTENTICACIÓN: Azure Function Key (nativa)
+  // Azure ya validó la key antes de llegar aquí
+  // Si el request llegó, la key es válida
+  // ============================================
+
+  // Rate limiting por IP (la key ya fue validada por Azure)
+  const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || 'unknown';
+  const rateLimit = checkIpRateLimit(clientIp);
+
+  if (!rateLimit.allowed) {
+    logger.warn('[Admin API] Rate limit excedido', { ip: clientIp });
+    context.res = {
+      status: 429,
+      headers: applySecurityHeaders({
+        'Content-Type': 'application/json',
+        'Retry-After': Math.ceil(rateLimit.resetIn / 1000).toString(),
+      }),
+      body: {
+        success: false,
+        error: 'Demasiadas solicitudes. Espera antes de reintentar.',
+        retryAfter: Math.ceil(rateLimit.resetIn / 1000),
+      },
+    };
+    return;
+  }
+
+  const rateLimitHeaders = {
+    'X-RateLimit-Remaining': rateLimit.remaining.toString(),
+    'X-RateLimit-Reset': Math.ceil(rateLimit.resetIn / 1000).toString(),
+  };
+
+  logger.debug('[Admin API] Request procesado', { action, subaction, ip: clientIp });
+
+  // Pasar rate limit headers al contexto para handlers
+  context.rateLimitHeaders = rateLimitHeaders;
 
   // Router
   switch (action) {
@@ -50,8 +92,12 @@ module.exports = async function (context, req) {
       }
       context.res = {
         status: 400,
-        headers: applySecurityHeaders({ 'Content-Type': 'application/json' }),
+        headers: applySecurityHeaders({
+          'Content-Type': 'application/json',
+          ...rateLimitHeaders,
+        }),
         body: {
+          success: false,
           error: 'Subacción no válida para tickets',
           available: ['resolve'],
           example: 'POST /api/admin/tickets/resolve',
@@ -62,8 +108,12 @@ module.exports = async function (context, req) {
     default:
       context.res = {
         status: 400,
-        headers: applySecurityHeaders({ 'Content-Type': 'application/json' }),
+        headers: applySecurityHeaders({
+          'Content-Type': 'application/json',
+          ...rateLimitHeaders,
+        }),
         body: {
+          success: false,
           error: 'Acción no válida',
           available_actions: ['cache', 'metrics', 'tickets'],
           examples: [

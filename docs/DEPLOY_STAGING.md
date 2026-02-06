@@ -121,8 +121,7 @@ SESSION_WARNING_MINUTES="25"
 # FASE 2: Alerting
 ALERT_WEBHOOK_URL="https://hooks.slack.com/services/TU_WEBHOOK"  # Opcional
 
-# FASE 2: Admin API Key
-ADMIN_API_KEY="staging_api_key_secure_2026"  # CAMBIAR por algo seguro
+# Autenticación de Admin API: Usar Azure Function Keys (configurar en Azure Portal)
 ```
 
 ---
@@ -236,7 +235,6 @@ az functionapp config appsettings set \
     AI_PROVIDER="gemini" \
     GEMINI_API_KEY="$GEMINI_API_KEY" \
     SESSION_TIMEOUT_MINUTES="30" \
-    ADMIN_API_KEY="$ADMIN_API_KEY" \
     NODE_ENV="staging"
 
 # Obtener connection strings automáticamente

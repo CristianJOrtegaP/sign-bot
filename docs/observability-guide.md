@@ -146,7 +146,7 @@ El sistema ahora captura automáticamente:
 ```bash
 # Real-time metrics
 GET /api/metrics
-Authorization: Bearer <ADMIN_API_KEY>
+x-functions-key: <AZURE_FUNCTION_KEY>
 
 # Métricas de una operación específica
 GET /api/metrics?operation=webhook.process
