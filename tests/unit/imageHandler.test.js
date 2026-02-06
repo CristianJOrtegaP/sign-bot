@@ -57,7 +57,7 @@ describe('ImageHandler (FASE 2b)', () => {
 
       expect(rateLimiter.recordRequest).toHaveBeenCalledWith(testPhone, 'image');
       expect(whatsapp.sendTypingIndicator).toHaveBeenCalledWith(testPhone, 'msg_123');
-      expect(whatsapp.sendText).toHaveBeenCalledWith(
+      expect(whatsapp.sendAndSaveText).toHaveBeenCalledWith(
         testPhone,
         expect.stringContaining('código de barras')
       );
@@ -83,7 +83,7 @@ describe('ImageHandler (FASE 2b)', () => {
       );
 
       expect(rateLimiter.recordRequest).toHaveBeenCalledWith(testPhone, 'image');
-      expect(whatsapp.sendText).toHaveBeenCalledWith(
+      expect(whatsapp.sendAndSaveText).toHaveBeenCalledWith(
         testPhone,
         expect.stringContaining('inteligencia artificial')
       );
@@ -102,7 +102,7 @@ describe('ImageHandler (FASE 2b)', () => {
       await imageHandler.handleImage(testPhone, { id: 'img_789' }, 'msg_789', mockContext);
 
       // En estado INICIO, usa AI Vision por defecto
-      expect(whatsapp.sendText).toHaveBeenCalledWith(
+      expect(whatsapp.sendAndSaveText).toHaveBeenCalledWith(
         testPhone,
         expect.stringContaining('inteligencia artificial')
       );
@@ -117,7 +117,10 @@ describe('ImageHandler (FASE 2b)', () => {
 
       await imageHandler.handleImage(testPhone, { id: 'img_123' }, 'msg_123', mockContext);
 
-      expect(whatsapp.sendText).toHaveBeenCalledWith(testPhone, expect.stringContaining('Límite'));
+      expect(whatsapp.sendAndSaveText).toHaveBeenCalledWith(
+        testPhone,
+        expect.stringContaining('Límite')
+      );
       expect(backgroundProcessor.processImageInBackground).not.toHaveBeenCalled();
       expect(backgroundProcessor.processImageWithAIVision).not.toHaveBeenCalled();
     });
@@ -134,7 +137,7 @@ describe('ImageHandler (FASE 2b)', () => {
         imageHandler.handleImage(testPhone, { id: 'img_123' }, 'msg_123', mockContext)
       ).resolves.not.toThrow();
 
-      expect(whatsapp.sendText).toHaveBeenCalledWith(
+      expect(whatsapp.sendAndSaveText).toHaveBeenCalledWith(
         testPhone,
         expect.stringContaining('código de barras')
       );
@@ -154,7 +157,7 @@ describe('ImageHandler (FASE 2b)', () => {
         imageHandler.handleImage(testPhone, { id: 'img_123' }, 'msg_123', mockContext)
       ).resolves.not.toThrow();
 
-      expect(whatsapp.sendText).toHaveBeenCalledWith(
+      expect(whatsapp.sendAndSaveText).toHaveBeenCalledWith(
         testPhone,
         expect.stringContaining('inteligencia artificial')
       );
@@ -170,7 +173,7 @@ describe('ImageHandler (FASE 2b)', () => {
         mockContext
       );
 
-      expect(whatsapp.sendText).toHaveBeenCalledWith(
+      expect(whatsapp.sendAndSaveText).toHaveBeenCalledWith(
         testPhone,
         expect.stringContaining('Formato de imagen no soportado')
       );
@@ -187,7 +190,7 @@ describe('ImageHandler (FASE 2b)', () => {
         mockContext
       );
 
-      expect(whatsapp.sendText).toHaveBeenCalledWith(
+      expect(whatsapp.sendAndSaveText).toHaveBeenCalledWith(
         testPhone,
         expect.stringContaining('demasiado grande')
       );
@@ -204,7 +207,7 @@ describe('ImageHandler (FASE 2b)', () => {
         mockContext
       );
 
-      expect(whatsapp.sendText).toHaveBeenCalledWith(
+      expect(whatsapp.sendAndSaveText).toHaveBeenCalledWith(
         testPhone,
         expect.stringContaining('muy pequeña')
       );
@@ -216,7 +219,7 @@ describe('ImageHandler (FASE 2b)', () => {
 
       await imageHandler.handleImage(testPhone, { id: null }, 'msg_123', mockContext);
 
-      expect(whatsapp.sendText).toHaveBeenCalledWith(
+      expect(whatsapp.sendAndSaveText).toHaveBeenCalledWith(
         testPhone,
         expect.stringContaining('No pude procesar la imagen')
       );

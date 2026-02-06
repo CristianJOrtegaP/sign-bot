@@ -1,14 +1,15 @@
 /**
- * AC FIXBOT - FlowManager V3 (FASE 2b)
+ * AC FIXBOT - FlowManager V4 (FASE 3)
  * Orquestador central de flujos de conversación
- * Usa arquitectura flexible con estados simplificados
+ * Integra FlowEngine para flujos migrados + legacy para flujos antiguos
  *
  * @module controllers/flows/FlowManager
  *
- * ## Arquitectura de Flujos (FASE 2b)
+ * ## Arquitectura de Flujos (FASE 3 - FlowEngine)
  *
- * El FlowManager usa una arquitectura flexible que permite llenar campos
- * en cualquier orden. Solo 2 estados activos por tipo de reporte.
+ * El FlowManager ahora usa el FlowEngine como primera opción.
+ * Los flujos migrados usan inyección de dependencias y el patrón ctx.responder().
+ * Los flujos legacy mantienen compatibilidad hacia atrás.
  *
  * ## Diagrama de Estados
  *
@@ -20,14 +21,14 @@
  *   │
  *   ├─> ENCUESTA_INVITACION ─> ... ─> [ENCUESTA COMPLETADA]
  *   │
- *   └─> CONSULTA_ESPERA_TICKET ─> [CONSULTA COMPLETADA]
+ *   └─> CONSULTA_ESPERA_TICKET ─> [CONSULTA COMPLETADA]  (MIGRADO a FlowEngine)
  * ```
  *
  * ## Flujos Disponibles
  *
+ * - **FlowEngine** (migrados): consultaFlow
  * - **flexibleFlowManager**: Reportes de refrigeración y vehículos (FASE 2b)
  * - **encuestaFlow**: Encuestas de satisfacción post-resolución
- * - **consultaEstadoFlow**: Consulta de estado de tickets
  */
 
 const flexibleFlowManager = require('./flexibleFlowManager');
@@ -38,6 +39,18 @@ const db = require('../../../core/services/storage/databaseService');
 const MSG = require('../../constants/messages');
 const { safeParseJSON: _safeParseJSON } = require('../../../core/utils/helpers');
 const { logger } = require('../../../core/services/infrastructure/errorHandler');
+
+// FlowEngine - nuevo sistema de flujos
+const { registry, inicializarFlujos } = require('../../flows');
+
+// Inicializar flujos del FlowEngine al cargar el módulo
+let flowEngineInicializado = false;
+function ensureFlowEngineInit() {
+  if (!flowEngineInicializado) {
+    inicializarFlujos();
+    flowEngineInicializado = true;
+  }
+}
 const {
   ESTADO,
   TIPO_REPORTE,
@@ -166,7 +179,7 @@ function getTipoReportePorEstado(estado) {
 
 /**
  * Procesa un mensaje según el estado actual de la sesión del usuario
- * FASE 2b: Estados flexibles se manejan en messageHandler, aquí solo encuesta/consulta
+ * FASE 3: Primero intenta FlowEngine, luego legacy
  * @param {string} from - Número de teléfono del usuario (formato E.164)
  * @param {string} text - Texto del mensaje o datos de ubicación
  * @param {Object} session - Sesión actual del usuario con Estado y DatosTemp
@@ -174,6 +187,8 @@ function getTipoReportePorEstado(estado) {
  * @returns {Promise<boolean>} - true si el mensaje fue procesado por un handler
  */
 async function processSessionState(from, text, session, context) {
+  ensureFlowEngineInit();
+
   // Estados flexibles se manejan en messageHandler con flexibleFlowManager
   if (esEstadoFlexible(session.Estado)) {
     context.log(
@@ -182,15 +197,30 @@ async function processSessionState(from, text, session, context) {
     return false;
   }
 
+  // FASE 3: Intentar primero con FlowEngine (flujos migrados)
+  if (registry.tieneHandlerParaEstado(session.Estado)) {
+    context.log(`[FlowManager] Usando FlowEngine para estado: ${session.Estado}`);
+    try {
+      const procesado = await registry.procesarMensaje(from, text, session, context);
+      if (procesado) {
+        context.log(`[FlowManager] FlowEngine procesó el mensaje exitosamente`);
+        return true;
+      }
+    } catch (error) {
+      context.log(`❌ [FlowManager] Error en FlowEngine: ${error.message}`);
+      logger.error('Error en FlowEngine', error, { estado: session.Estado });
+      throw error;
+    }
+  }
+
+  // Legacy: Usar sistema antiguo para flujos no migrados
   const stateConfig = STATE_HANDLERS[session.Estado];
   if (!stateConfig || !stateConfig.handler) {
     context.log(`[FlowManager] No hay handler configurado para estado: ${session.Estado}`);
     return false;
   }
 
-  context.log(
-    `[FlowManager] Estado: ${session.Estado}, handler configurado: ${stateConfig.handler}`
-  );
+  context.log(`[FlowManager] Estado: ${session.Estado}, handler legacy: ${stateConfig.handler}`);
 
   const flow = getFlow(stateConfig.flow);
   if (!flow) {
@@ -206,7 +236,7 @@ async function processSessionState(from, text, session, context) {
   }
 
   try {
-    context.log(`[FlowManager] Ejecutando handler: ${stateConfig.handler}`);
+    context.log(`[FlowManager] Ejecutando handler legacy: ${stateConfig.handler}`);
     await handler(from, text, session, context);
     context.log(`[FlowManager] Handler ${stateConfig.handler} completado`);
     return true;
@@ -221,10 +251,30 @@ async function processSessionState(from, text, session, context) {
 
 /**
  * Procesa un botón presionado
- * FASE 2b: Botones de reporte usan flexibleFlowManager
+ * FASE 3: Primero intenta FlowEngine, luego legacy
  * @returns {boolean} true si el botón fue procesado
  */
 async function processButton(from, buttonId, session, context) {
+  ensureFlowEngineInit();
+
+  // FASE 3: Intentar primero con FlowEngine (flujos migrados)
+  const flowEngineHandler = registry.obtenerHandlerBoton(buttonId);
+  if (flowEngineHandler) {
+    context.log(`[FlowManager] Usando FlowEngine para botón: ${buttonId}`);
+    try {
+      const procesado = await registry.procesarBoton(from, buttonId, session, context);
+      if (procesado) {
+        context.log(`[FlowManager] FlowEngine procesó el botón exitosamente`);
+        return true;
+      }
+    } catch (error) {
+      context.log(`❌ [FlowManager] Error en FlowEngine para botón: ${error.message}`);
+      logger.error('Error en FlowEngine para botón', error, { buttonId });
+      throw error;
+    }
+  }
+
+  // Legacy: Sistema antiguo
   const buttonConfig = BUTTON_HANDLERS[buttonId];
   if (!buttonConfig) {
     context.log(`⚠️ Botón no registrado: ${buttonId}`);
@@ -250,7 +300,7 @@ async function processButton(from, buttonId, session, context) {
     return flexibleFlowManager.procesarBoton(from, buttonId, session, context);
   }
 
-  // Flujos de encuesta y consulta
+  // Flujos de encuesta y consulta (legacy)
   const flow = getFlow(buttonConfig.flow);
   if (!flow) {
     context.log(`⚠️ No se encontró flujo para: ${buttonConfig.flow}`);
