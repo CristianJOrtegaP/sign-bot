@@ -9,8 +9,43 @@
 const config = require('../../config');
 const { logger } = require('../infrastructure/errorHandler');
 
-// Cache local para fallback
+// ============================================================================
+// CACHE LOCAL CON LÍMITE DE MEMORIA (LRU)
+// Previene memory leaks cuando Redis no está disponible
+// ============================================================================
+const MAX_LOCAL_CACHE_ENTRIES = 10000; // Máximo 10,000 entradas
 const localCache = new Map();
+
+/**
+ * Evicta entradas antiguas cuando el cache excede el límite
+ * Usa estrategia LRU simplificada (elimina las primeras entradas insertadas)
+ */
+function evictIfNeeded() {
+  if (localCache.size <= MAX_LOCAL_CACHE_ENTRIES) {
+    return;
+  }
+
+  // Calcular cuántas entradas eliminar (20% del exceso + buffer)
+  const toRemove = Math.ceil((localCache.size - MAX_LOCAL_CACHE_ENTRIES) * 1.2);
+  let removed = 0;
+
+  // Map mantiene orden de inserción, eliminamos las más antiguas
+  for (const key of localCache.keys()) {
+    if (removed >= toRemove) {
+      break;
+    }
+    localCache.delete(key);
+    removed++;
+  }
+
+  if (removed > 0) {
+    logger.warn('[RedisService] Cache local: evictadas entradas por límite de memoria', {
+      removed,
+      currentSize: localCache.size,
+      maxSize: MAX_LOCAL_CACHE_ENTRIES,
+    });
+  }
+}
 
 // Estado de conexión
 let redisClient = null;
@@ -192,7 +227,8 @@ async function set(key, value, ttlSeconds = config.redis.ttl.default) {
     }
   }
 
-  // Fallback: cache local
+  // Fallback: cache local (con límite de memoria)
+  evictIfNeeded(); // Prevenir memory leaks
   localCache.set(fullKey, {
     data: value,
     expiresAt: Date.now() + ttlSeconds * 1000,
@@ -291,6 +327,7 @@ function getStats() {
     usingFallback,
     connectionAttempts,
     localCacheSize: localCache.size,
+    localCacheMaxSize: MAX_LOCAL_CACHE_ENTRIES,
     redisEnabled: config.redis.enabled,
     redisHost: config.redis.host ? `${config.redis.host}:${config.redis.port}` : 'not configured',
   };

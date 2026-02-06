@@ -292,30 +292,56 @@ module.exports = async function (context, req) {
   // PROCESAR MENSAJES ENTRANTES (POST)
   // ==========================================
   if (req.method === 'POST') {
-    // Verificar firma del webhook
-    // SKIP_SIGNATURE_VALIDATION solo funciona en desarrollo (NUNCA en producción)
-    const isProduction =
-      process.env.NODE_ENV === 'production' ||
-      process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Production';
-    const skipValidation = process.env.SKIP_SIGNATURE_VALIDATION === 'true';
+    // ============================================================
+    // VALIDACIÓN DE FIRMA - SEGURIDAD CRÍTICA
+    // ============================================================
+    // La firma X-Hub-Signature-256 es OBLIGATORIA en producción.
+    // SKIP_SIGNATURE_VALIDATION SOLO funciona en desarrollo local.
+    // Cualquier ambiente Azure SIEMPRE valida la firma.
+    // ============================================================
 
-    if (skipValidation && isProduction) {
-      logError('CRÍTICO: SKIP_SIGNATURE_VALIDATION no permitido en producción - ignorando flag');
+    // Detectar ambiente de producción (múltiples señales para Azure)
+    const isAzureEnvironment =
+      process.env.AZURE_FUNCTIONS_ENVIRONMENT ||
+      process.env.WEBSITE_SITE_NAME ||
+      process.env.FUNCTIONS_WORKER_RUNTIME;
+
+    const isProductionEnv = process.env.NODE_ENV === 'production';
+    const isAzureProduction = process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Production';
+
+    // Producción = cualquier ambiente Azure O NODE_ENV=production
+    const isProduction = isAzureEnvironment || isProductionEnv || isAzureProduction;
+
+    // El bypass SOLO funciona en desarrollo local (fuera de Azure)
+    const skipValidationRequested = process.env.SKIP_SIGNATURE_VALIDATION === 'true';
+
+    // SEGURIDAD: En cualquier ambiente Azure, SIEMPRE validar
+    if (skipValidationRequested && isProduction) {
+      logError('🚨 SEGURIDAD: SKIP_SIGNATURE_VALIDATION ignorado en ambiente Azure/producción', {
+        isAzureEnvironment: Boolean(isAzureEnvironment),
+        nodeEnv: process.env.NODE_ENV,
+        azureFunctionsEnv: process.env.AZURE_FUNCTIONS_ENVIRONMENT,
+      });
     }
 
-    const shouldValidate = isProduction || !skipValidation;
+    // SIEMPRE validar en producción, independiente del flag
+    const mustValidateSignature = isProduction || !skipValidationRequested;
 
-    if (shouldValidate) {
+    if (mustValidateSignature) {
       const signature = req.headers['x-hub-signature-256'];
       const rawBody = req.rawBody || JSON.stringify(req.body);
 
       if (!security.verifyWebhookSignature(rawBody, signature)) {
-        logWarn('Firma del webhook invalida - request rechazado');
+        logWarn('🔒 Firma del webhook inválida - request rechazado', {
+          hasSignature: Boolean(signature),
+          correlationId,
+        });
         context.res = { status: 401, body: 'Invalid signature' };
         return;
       }
     } else {
-      logWarn('⚠️  SKIP_SIGNATURE_VALIDATION activado - omitiendo validación (solo desarrollo)');
+      // Solo en desarrollo local, nunca en Azure
+      logWarn('⚠️ DEV: Validación de firma omitida (SKIP_SIGNATURE_VALIDATION=true)');
     }
 
     try {

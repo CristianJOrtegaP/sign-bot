@@ -13,7 +13,11 @@
 const { DefaultAzureCredential } = require('@azure/identity');
 const { SecretClient } = require('@azure/keyvault-secrets');
 
-// Cache de secretos para evitar llamadas repetidas
+// ============================================================================
+// CACHE DE SECRETOS CON LÍMITE DE MEMORIA
+// Key Vault típicamente tiene pocos secretos, pero limitamos por seguridad
+// ============================================================================
+const MAX_SECRETS_CACHE = 100; // Máximo 100 secretos en cache
 const secretsCache = new Map();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
 
@@ -75,7 +79,13 @@ async function getSecret(secretName, envVarName = null) {
   try {
     const secret = await client.getSecret(secretName);
 
-    // Guardar en cache
+    // Guardar en cache (con límite de memoria)
+    if (secretsCache.size >= MAX_SECRETS_CACHE) {
+      // Eliminar la entrada más antigua (primera en el Map)
+      const oldestKey = secretsCache.keys().next().value;
+      secretsCache.delete(oldestKey);
+      console.warn(`[KeyVault] Cache lleno, eliminada entrada antigua: ${oldestKey}`);
+    }
     secretsCache.set(secretName, {
       value: secret.value,
       timestamp: Date.now(),
