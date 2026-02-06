@@ -8,9 +8,10 @@
 const appInsights = require('../core/services/infrastructure/appInsightsService');
 appInsights.initialize();
 
-const messageHandler = require('../bot/controllers/messageHandler');
-const imageHandler = require('../bot/controllers/imageHandler');
-const audioHandler = require('../bot/controllers/audioHandler');
+const { processMessageByType } = require('../core/services/processing/messageRouter');
+const serviceBus = require('../core/services/messaging/serviceBusService');
+const config = require('../core/config');
+const { TimeoutBudget } = require('../core/utils/requestTimeout');
 const rateLimiter = require('../core/services/infrastructure/rateLimiter');
 const db = require('../core/services/storage/databaseService');
 const security = require('../core/services/infrastructure/securityService');
@@ -169,51 +170,6 @@ async function _checkDuplicates(message, log, logWarn) {
   }
 
   return { isDuplicate: false };
-}
-
-/**
- * Procesa mensaje según su tipo
- */
-async function processMessageByType(message, from, messageId, context, log) {
-  const messageType = message.type;
-
-  switch (messageType) {
-    case 'text': {
-      const textBody = message.text.body;
-      log(`Texto: "${textBody.substring(0, 50)}${textBody.length > 50 ? '...' : ''}"`);
-      await messageHandler.handleText(from, textBody, messageId, context);
-      break;
-    }
-
-    case 'image':
-      log('Imagen recibida');
-      await imageHandler.handleImage(from, message.image, messageId, context);
-      break;
-
-    case 'audio':
-      log('Audio recibido');
-      await audioHandler.handleAudio(from, message.audio, messageId, context);
-      break;
-
-    case 'interactive': {
-      const buttonReply = message.interactive && message.interactive.button_reply;
-      if (buttonReply) {
-        log(`Boton presionado: ${buttonReply.id}`);
-        await messageHandler.handleButton(from, buttonReply.id, messageId, context);
-      }
-      break;
-    }
-
-    case 'location': {
-      const location = message.location;
-      log(`Ubicacion recibida: lat=${location?.latitude}, lng=${location?.longitude}`);
-      await messageHandler.handleLocation(from, location, messageId, context);
-      break;
-    }
-
-    default:
-      log(`Tipo de mensaje no manejado: ${messageType}`);
-  }
 }
 
 /**
@@ -393,8 +349,27 @@ module.exports = async function (context, req) {
         return;
       }
 
-      // Procesar mensaje
-      await processMessageByType(message, from, messageId, context, log);
+      // Enqueue-or-fallback: si Service Bus está habilitado, encolar para procesamiento async
+      let enqueued = false;
+      if (config.isServiceBusEnabled) {
+        enqueued = await serviceBus.sendToQueue({
+          message,
+          from,
+          messageId,
+          profileName,
+          correlationId,
+          enqueuedAt: new Date().toISOString(),
+        });
+        if (enqueued) {
+          log(`Mensaje encolado en Service Bus para procesamiento async`);
+        }
+      }
+
+      // Fallback: procesar sincrónicamente si SB deshabilitado o enqueue falló
+      if (!enqueued) {
+        const budget = new TimeoutBudget(240000, correlationId);
+        await processMessageByType(message, from, messageId, context, log, budget);
+      }
 
       // Responder 200 OK
       context.res = createOkResponse(correlationId);

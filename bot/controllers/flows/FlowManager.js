@@ -1,44 +1,36 @@
 /**
- * AC FIXBOT - FlowManager V4 (FASE 3)
+ * AC FIXBOT - FlowManager V5
  * Orquestador central de flujos de conversación
- * Integra FlowEngine para flujos migrados + legacy para flujos antiguos
+ * Todos los flujos usan FlowEngine con inyección de dependencias
  *
  * @module controllers/flows/FlowManager
  *
- * ## Arquitectura de Flujos (FASE 3 - FlowEngine)
+ * ## Flujos (bot/flows/)
  *
- * El FlowManager ahora usa el FlowEngine como primera opción.
- * Los flujos migrados usan inyección de dependencias y el patrón ctx.responder().
- * Los flujos legacy mantienen compatibilidad hacia atrás.
+ * - **consultaFlow**: Consulta de tickets (StaticFlowContext)
+ * - **encuestaFlow**: Encuestas de satisfacción (StaticFlowContext)
+ * - **reporteFlow**: Reportes refrigerador/vehículo (FlexibleFlowContext)
  *
  * ## Diagrama de Estados
  *
  * ```
  * INICIO
  *   ├─> REFRIGERADOR_ACTIVO ─> [campos en cualquier orden] ─> [REPORTE CREADO]
- *   │
  *   ├─> VEHICULO_ACTIVO ─> [campos en cualquier orden] ─> [REPORTE CREADO]
- *   │
  *   ├─> ENCUESTA_INVITACION ─> ... ─> [ENCUESTA COMPLETADA]
- *   │
- *   └─> CONSULTA_ESPERA_TICKET ─> [CONSULTA COMPLETADA]  (MIGRADO a FlowEngine)
+ *   └─> CONSULTA_ESPERA_TICKET ─> [CONSULTA COMPLETADA]
  * ```
- *
- * ## Flujos Disponibles
- *
- * - **FlowEngine** (migrados): consultaFlow
- * - **flexibleFlowManager**: Reportes de refrigeración y vehículos (FASE 2b)
- * - **encuestaFlow**: Encuestas de satisfacción post-resolución
  */
 
-const flexibleFlowManager = require('./flexibleFlowManager');
-const encuestaFlow = require('./encuestaFlow');
-const consultaEstadoFlow = require('./consultaEstadoFlow');
+const flexibleFlowManager = require('../../flows/reporteFlow');
+const encuestaFlow = require('../../flows/encuestaFlow');
+const consultaEstadoFlow = require('../../flows/consultaFlow');
 const whatsapp = require('../../../core/services/external/whatsappService');
 const db = require('../../../core/services/storage/databaseService');
 const MSG = require('../../constants/messages');
 const { safeParseJSON: _safeParseJSON } = require('../../../core/utils/helpers');
 const { logger } = require('../../../core/services/infrastructure/errorHandler');
+const { ConcurrencyError } = require('../../../core/errors');
 
 // FlowEngine - nuevo sistema de flujos
 const { registry, inicializarFlujos } = require('../../flows');
@@ -252,7 +244,7 @@ async function processSessionState(from, text, session, context) {
 /**
  * Procesa un botón presionado
  * FASE 3: Primero intenta FlowEngine, luego legacy
- * @returns {boolean} true si el botón fue procesado
+ * @returns {Promise<boolean>} true si el botón fue procesado
  */
 async function processButton(from, buttonId, session, context) {
   ensureFlowEngineInit();
@@ -336,15 +328,31 @@ async function processButton(from, buttonId, session, context) {
 async function cancelarFlujo(from, context) {
   context.log(`🚫 Usuario ${from} canceló el flujo`);
 
+  // Leer sesión fresca para obtener versión (optimistic locking)
+  const session = await db.getSessionFresh(from);
+
   // Cambiar a estado CANCELADO (no INICIO)
-  await db.updateSession(
-    from,
-    ESTADO.CANCELADO,
-    null,
-    null,
-    ORIGEN_ACCION.USUARIO,
-    'Flujo cancelado por el usuario'
-  );
+  try {
+    await db.updateSession(
+      from,
+      ESTADO.CANCELADO,
+      null,
+      null,
+      ORIGEN_ACCION.USUARIO,
+      'Flujo cancelado por el usuario',
+      null,
+      session.Version
+    );
+  } catch (error) {
+    if (error instanceof ConcurrencyError) {
+      context.log(
+        `⚡ Conflicto de concurrencia al cancelar flujo de ${from}, sesión ya fue modificada`
+      );
+      // Continuar - enviar mensaje de cancelación de todas formas
+    } else {
+      throw error;
+    }
+  }
 
   // Enviar mensaje de despedida
   await whatsapp.sendText(from, MSG.GENERAL.CANCELLED);
@@ -360,6 +368,7 @@ async function cancelarFlujo(from, context) {
  * @param {string} datosExtraidos.problema - Descripción del problema
  * @param {string} datosExtraidos.codigo_sap - Código SAP del equipo (opcional)
  * @param {string} datosExtraidos.numero_empleado - Número de empleado para vehículos (opcional)
+ * @param {string} [datosExtraidos.ubicacion] - Ubicación del equipo (opcional)
  * @param {boolean} isFirstMessage - Si es el primer mensaje del usuario
  * @param {Object} context - Contexto de la función
  */

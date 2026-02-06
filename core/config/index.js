@@ -82,7 +82,7 @@ const database = {
 
   // Timeouts de conexión (en ms)
   connectionTimeout: 30000, // 30 segundos para establecer conexión
-  requestTimeout: 30000, // 30 segundos para queries (default mssql es 15s)
+  requestTimeout: 15000, // 15s para queries - fail fast, el webhook tiene budget de 5 min
 
   // Cache de sesiones
   sessionCache: {
@@ -94,6 +94,14 @@ const database = {
   equipoCache: {
     ttlMs: 15 * 60 * 1000, // 15 minutos (equipos cambian menos)
     cleanupIntervalMs: 2 * 60 * 1000,
+  },
+
+  // Pool de conexiones (configurable via env vars para escalar)
+  pool: {
+    min: Math.max(0, parseInt(process.env.SQL_POOL_MIN || '0', 10)),
+    max: Math.max(1, parseInt(process.env.SQL_POOL_MAX || '10', 10)),
+    idleTimeoutMillis: parseInt(process.env.SQL_POOL_IDLE_TIMEOUT_MS || '120000', 10),
+    acquireTimeoutMillis: parseInt(process.env.SQL_POOL_ACQUIRE_TIMEOUT_MS || '15000', 10),
   },
 
   // Reintentos de conexión
@@ -144,7 +152,14 @@ const whatsapp = {
   retry: {
     maxRetries: 2,
     delayMs: 1000,
-    retryOnCodes: ['ECONNABORTED'],
+    retryOnCodes: [
+      'ECONNABORTED',
+      'ETIMEDOUT',
+      'ECONNRESET',
+      'ECONNREFUSED',
+      'EPIPE',
+      'ENETUNREACH',
+    ],
   },
 
   // Límites de la API
@@ -510,6 +525,14 @@ const serviceBus = {
 };
 
 // ============================================================================
+// CONFIGURACIÓN DE PROCESAMIENTO EN BACKGROUND
+// ============================================================================
+
+const backgroundProcessor = {
+  maxConcurrent: parseInt(process.env.BACKGROUND_MAX_CONCURRENT || '10', 10),
+};
+
+// ============================================================================
 // EXPORTAR CONFIGURACIÓN
 // ============================================================================
 
@@ -531,6 +554,7 @@ module.exports = {
   validation,
   redis,
   serviceBus,
+  backgroundProcessor,
 
   // Enums/Constantes
   equipmentTypes,

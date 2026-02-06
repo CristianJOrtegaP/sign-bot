@@ -11,6 +11,7 @@ const {
 } = require('@azure/storage-blob');
 const { URL } = require('url');
 const { logger } = require('../infrastructure/errorHandler');
+const { getBreaker, SERVICES } = require('../infrastructure/circuitBreaker');
 
 const CONTAINER_NAME = 'imagenes-reportes';
 const connectionString = process.env.BLOB_CONNECTION_STRING;
@@ -152,6 +153,13 @@ async function uploadImage(imageBuffer, telefono, extension = 'jpg') {
     throw new Error(validation.error);
   }
 
+  // Circuit breaker gate check
+  const blobBreaker = getBreaker(SERVICES.BLOB_STORAGE);
+  const cbCheck = blobBreaker.canExecute();
+  if (!cbCheck.allowed) {
+    throw new Error('Blob Storage circuit breaker abierto');
+  }
+
   try {
     const container = await getContainerClient();
 
@@ -176,6 +184,7 @@ async function uploadImage(imageBuffer, telefono, extension = 'jpg') {
     const sasToken = generateSASToken(blobName);
     const urlWithSas = `${blockBlobClient.url}?${sasToken}`;
 
+    blobBreaker.recordSuccess();
     logger.info(`Imagen subida exitosamente con SAS token`, {
       blobName,
       size: imageBuffer.length,
@@ -184,6 +193,7 @@ async function uploadImage(imageBuffer, telefono, extension = 'jpg') {
 
     return urlWithSas;
   } catch (error) {
+    blobBreaker.recordFailure(error);
     logger.error('Error subiendo imagen a Blob Storage', error, {
       operation: 'uploadImage',
       telefono,

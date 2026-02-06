@@ -456,7 +456,8 @@ CREATE TABLE [dbo].[SesionesChat] (
         REFERENCES [dbo].[CatEstadoSesion] ([EstadoId])
 );
 
-CREATE NONCLUSTERED INDEX [IX_SesionesChat_Telefono] ON [dbo].[SesionesChat] ([Telefono]);
+-- NOTA: IX_SesionesChat_Telefono eliminado por redundante
+-- Los indices IX_SesionesChat_Telefono_Estado_Full y IX_SesionesChat_Telefono_Version ya cubren busquedas por Telefono
 CREATE NONCLUSTERED INDEX [IX_SesionesChat_EstadoId] ON [dbo].[SesionesChat] ([EstadoId]);
 CREATE NONCLUSTERED INDEX [IX_SesionesChat_UltimaActividad] ON [dbo].[SesionesChat] ([UltimaActividad]);
 CREATE NONCLUSTERED INDEX [IX_SesionesChat_UltimaActividad_Estado]
@@ -607,7 +608,7 @@ CREATE TABLE [dbo].[DeadLetterMessages] (
     [NextRetryAt] DATETIME NULL,
     [LastRetryAt] DATETIME NULL,
 
-    -- Estado: PENDING, RETRYING, PROCESSED, FAILED
+    -- Estado: PENDING, RETRYING, PROCESSED, FAILED, SKIPPED
     [Estado] NVARCHAR(20) DEFAULT 'PENDING',
     [ProcessedAt] DATETIME NULL,
 
@@ -633,7 +634,7 @@ INCLUDE ([TipoMensaje], [Estado], [ErrorMessage]);
 -- Indice para limpieza de mensajes antiguos
 CREATE NONCLUSTERED INDEX [IX_DeadLetter_Cleanup]
 ON [dbo].[DeadLetterMessages] ([Estado], [FechaCreacion])
-WHERE [Estado] IN ('PROCESSED', 'FAILED');
+WHERE [Estado] IN ('PROCESSED', 'FAILED', 'SKIPPED');
 
 PRINT '   DeadLetterMessages creada (mensajes fallidos para reintento)';
 GO
@@ -1260,7 +1261,8 @@ GO
 
 -- SP: Obtener reportes pendientes de encuesta
 CREATE OR ALTER PROCEDURE [dbo].[sp_GetReportesPendientesEncuesta]
-    @MinutosMinimasResolucion INT = 1440  -- Esperar al menos X minutos desde resolucion (default 24h = 1440 min)
+    @MinutosMinimasResolucion INT = 1440,  -- Esperar al menos X minutos desde resolucion (default 24h)
+    @CooldownHorasPorTelefono INT = 24     -- No enviar mas de 1 encuesta por telefono en X horas
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -1288,10 +1290,23 @@ BEGIN
     WHERE er.Codigo = 'RESUELTO'
       AND r.FechaResolucion IS NOT NULL
       AND DATEDIFF(MINUTE, r.FechaResolucion, GETDATE()) >= @MinutosMinimasResolucion
-      -- No tiene encuesta creada
+      -- No tiene encuesta creada para este reporte
       AND NOT EXISTS (
           SELECT 1 FROM Encuestas enc
           WHERE enc.ReporteId = r.ReporteId
+      )
+      -- Cooldown: no enviar si ya se envio una encuesta a este telefono recientemente
+      AND NOT EXISTS (
+          SELECT 1 FROM Encuestas enc2
+          WHERE enc2.TelefonoEncuestado = r.TelefonoReportante
+            AND enc2.FechaEnvio >= DATEADD(HOUR, -@CooldownHorasPorTelefono, GETDATE())
+      )
+      -- No enviar si el usuario tiene una sesion activa (no terminal)
+      AND NOT EXISTS (
+          SELECT 1 FROM SesionesChat sc
+          INNER JOIN CatEstadoSesion ces ON sc.EstadoId = ces.EstadoSesionId
+          WHERE sc.Telefono = r.TelefonoReportante
+            AND ces.EsTerminal = 0
       )
     ORDER BY r.FechaResolucion ASC;
 END;
@@ -1439,7 +1454,7 @@ BEGIN
 
     DELETE FROM DeadLetterMessages
     WHERE FechaCreacion < DATEADD(DAY, -@DaysToKeep, GETDATE())
-      AND Estado IN ('PROCESSED', 'FAILED');
+      AND Estado IN ('PROCESSED', 'FAILED', 'SKIPPED');
 
     SET @DeletedCount = @@ROWCOUNT;
 
@@ -1685,9 +1700,10 @@ PRINT '   IX_MensajesChat_Spam_Check creado';
 GO
 
 -- Indice para getSession y queries de estado (covering index)
+-- Incluye Version para evitar key lookup en optimistic locking
 CREATE NONCLUSTERED INDEX [IX_SesionesChat_Telefono_Estado_Full]
 ON [dbo].[SesionesChat] ([Telefono], [EstadoId])
-INCLUDE ([SesionId], [UltimaActividad], [DatosTemp], [TipoReporteId], [AdvertenciaEnviada]);
+INCLUDE ([SesionId], [UltimaActividad], [DatosTemp], [TipoReporteId], [AdvertenciaEnviada], [Version], [EquipoIdTemp]);
 
 PRINT '   IX_SesionesChat_Telefono_Estado_Full creado';
 GO
@@ -1709,9 +1725,10 @@ PRINT '   IX_Encuestas_Telefono_Estado_Full creado';
 GO
 
 -- Indice para historial de sesiones (auditoria)
+-- Incluye ReporteId para rastrear reportes creados
 CREATE NONCLUSTERED INDEX [IX_HistorialSesiones_Telefono_Fecha_Full]
 ON [dbo].[HistorialSesiones] ([Telefono], [FechaAccion] DESC)
-INCLUDE ([EstadoAnteriorId], [EstadoNuevoId], [OrigenAccion], [Descripcion]);
+INCLUDE ([EstadoAnteriorId], [EstadoNuevoId], [OrigenAccion], [Descripcion], [ReporteId]);
 
 PRINT '   IX_HistorialSesiones_Telefono_Fecha_Full creado';
 GO
@@ -1724,7 +1741,7 @@ INCLUDE ([ReporteId], [NumeroTicket], [TelefonoReportante], [TipoReporteId], [Cl
 WHERE [FechaResolucion] IS NOT NULL;
 
 PRINT '   IX_Reportes_Encuestas_Pendientes creado';
-PRINT '   6 indices de optimizacion creados';
+PRINT '   6 indices de optimizacion creados (IX_SesionesChat_Telefono redundante eliminado)';
 GO
 
 -- =============================================

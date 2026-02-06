@@ -191,10 +191,10 @@ async function transcribeWithAlternativeProvider(audioBuffer, options = {}) {
  * 2. Azure Speech Services (fallback)
  *
  * @param {Buffer} audioBuffer - Buffer con el contenido del audio
- * @param {Object} options - Opciones adicionales
- * @param {string} options.mimeType - Tipo MIME del audio (default: audio/ogg)
- * @param {string} options.filename - Nombre del archivo (default: audio.ogg)
- * @param {boolean} options.preferAlternative - Usar proveedor alternativo primero
+ * @param {Object} [options] - Opciones adicionales
+ * @param {string} [options.mimeType] - Tipo MIME del audio (default: audio/ogg)
+ * @param {string} [options.filename] - Nombre del archivo (default: audio.ogg)
+ * @param {boolean} [options.preferAlternative] - Usar proveedor alternativo primero
  * @returns {Promise<Object>} - Objeto con texto transcrito y metadata
  */
 async function transcribeAudio(audioBuffer, options = {}) {

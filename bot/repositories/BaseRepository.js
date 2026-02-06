@@ -66,14 +66,19 @@ const config = require('../../core/config');
  * Proporciona métodos comunes de caché y acceso a BD
  * @abstract
  */
+/** Límite máximo de entradas en cache local para prevenir memory leaks */
+const DEFAULT_MAX_CACHE_SIZE = 1000;
+
 class BaseRepository {
   /**
    * @param {string} name - Nombre del repositorio (para logging)
    * @param {number} cacheTtlMs - TTL del caché en milisegundos
+   * @param {number} maxCacheSize - Máximo de entradas en cache local
    */
-  constructor(name, cacheTtlMs = 5 * 60 * 1000) {
+  constructor(name, cacheTtlMs = 5 * 60 * 1000, maxCacheSize = DEFAULT_MAX_CACHE_SIZE) {
     this.name = name;
     this.cacheTtlMs = cacheTtlMs;
+    this.maxCacheSize = maxCacheSize;
     this.cache = new Map();
     this.cleanupInterval = null;
   }
@@ -182,6 +187,7 @@ class BaseRepository {
    * @deprecated Usar setInCacheAsync para soporte de Redis
    */
   setInCache(key, data) {
+    this._evictIfNeeded();
     this.cache.set(key, {
       data,
       timestamp: Date.now(),
@@ -199,6 +205,7 @@ class BaseRepository {
     const ttlSeconds = Math.floor(this.cacheTtlMs / 1000);
 
     // Guardar en cache local siempre (para fallback rápido)
+    this._evictIfNeeded();
     this.cache.set(key, {
       data,
       timestamp: Date.now(),
@@ -275,6 +282,29 @@ class BaseRepository {
 
     logger.info(`[${this.name}] Caché limpiado completamente`, { entriesDeleted: size });
     return size;
+  }
+
+  /**
+   * Evicta entradas antiguas si el cache excede el límite de tamaño
+   * @private
+   */
+  _evictIfNeeded() {
+    if (this.cache.size < this.maxCacheSize) {
+      return;
+    }
+    // Eliminar 20% de las entradas más antiguas
+    const toRemove = Math.ceil(this.maxCacheSize * 0.2);
+    let removed = 0;
+    for (const key of this.cache.keys()) {
+      if (removed >= toRemove) {
+        break;
+      }
+      this.cache.delete(key);
+      removed++;
+    }
+    logger.debug(
+      `[${this.name}] Caché evicción: ${removed} entradas eliminadas (límite: ${this.maxCacheSize})`
+    );
   }
 
   /**

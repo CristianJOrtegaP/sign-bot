@@ -2,15 +2,18 @@
  * AC FIXBOT - Handler de Audio
  * Procesa mensajes de voz enviados por los usuarios
  * Transcribe el audio a texto y lo procesa como mensaje de texto
+ *
+ * IMPORTANTE: La transcripción se ejecuta en background (fire-and-forget)
+ * para no bloquear la respuesta del webhook a Meta (~20s limit).
  */
 
 const whatsapp = require('../../core/services/external/whatsappService');
 const transcriptionService = require('../../core/services/ai/audioTranscriptionService');
 const messageHandler = require('./messageHandler');
 const db = require('../../core/services/storage/databaseService');
-const rateLimiter = require('../../core/services/infrastructure/rateLimiter');
 const config = require('../../core/config');
 const { TIPO_MENSAJE, TIPO_CONTENIDO } = require('../constants/sessionStates');
+const { enforceRateLimit } = require('./messageHandler/utils/handlerMiddleware');
 
 /**
  * Límites de tamaño de audio para seguridad
@@ -41,6 +44,7 @@ function isAudioTranscriptionEnabled() {
 
 /**
  * Procesa un mensaje de audio recibido
+ * Valida y lanza el procesamiento pesado en background para no bloquear el webhook.
  * @param {string} from - Número de teléfono del remitente
  * @param {Object} audioData - Datos del audio de WhatsApp
  * @param {string} audioData.id - ID del archivo de audio en WhatsApp
@@ -115,16 +119,12 @@ async function handleAudio(from, audioData, messageId, context) {
     }
   }
 
-  // Verificar rate limit para audios
-  const rateLimitCheck = rateLimiter.checkRateLimit(from, 'audio');
-  if (!rateLimitCheck.allowed) {
+  // Verificar rate limit (middleware compartido)
+  const rateLimitResult = await enforceRateLimit(from, 'audio');
+  if (!rateLimitResult.allowed) {
     context.log(`[AudioHandler] Rate limit de audio excedido para ${from}`);
-    await whatsapp.sendAndSaveText(from, `⏱️ ${rateLimitCheck.reason}`);
     return;
   }
-
-  // Registrar solicitud de audio
-  rateLimiter.recordRequest(from, 'audio');
 
   // Mostrar "Escribiendo..." mientras procesamos
   whatsapp.sendTypingIndicator(from, messageId).catch(() => {});
@@ -132,21 +132,39 @@ async function handleAudio(from, audioData, messageId, context) {
   // Notificar al usuario que estamos procesando
   await whatsapp.sendAndSaveText(from, '🎧 Procesando tu mensaje de voz...');
 
-  try {
-    // Descargar el audio de WhatsApp
-    context.log(`[AudioHandler] Descargando audio ${audioData.id}...`);
-    const audioBuffer = await whatsapp.downloadMedia(audioData.id);
-    context.log(`[AudioHandler] Audio descargado: ${audioBuffer.length} bytes`);
+  // FIRE-AND-FORGET: Lanzar transcripción en background
+  // Esto permite que el webhook retorne 200 OK a Meta inmediatamente
+  transcribeAndProcessInBackground(from, audioData.id, mimeType, messageId, context).catch(
+    (error) => {
+      context.log.error(`[AudioHandler] Error en background: ${error.message}`);
+    }
+  );
+}
 
-    // Transcribir el audio
-    context.log(`[AudioHandler] Transcribiendo audio...`);
+/**
+ * Transcribe y procesa audio en background (fire-and-forget)
+ * @param {string} from - Número de teléfono del remitente
+ * @param {string} audioId - ID del archivo de audio en WhatsApp
+ * @param {string} mimeType - Tipo MIME del audio
+ * @param {string} messageId - ID del mensaje recibido
+ * @param {Object} context - Contexto de Azure Functions
+ */
+async function transcribeAndProcessInBackground(from, audioId, mimeType, messageId, context) {
+  try {
+    // 1. Descargar el audio de WhatsApp
+    context.log(`[AudioHandler BG] Descargando audio ${audioId}...`);
+    const audioBuffer = await whatsapp.downloadMedia(audioId);
+    context.log(`[AudioHandler BG] Audio descargado: ${audioBuffer.length} bytes`);
+
+    // 2. Transcribir el audio
+    context.log(`[AudioHandler BG] Transcribiendo audio...`);
     const transcription = await transcriptionService.transcribeAudio(audioBuffer, {
       mimeType: mimeType,
       filename: `audio_${messageId}.ogg`,
     });
 
     if (!transcription.success) {
-      context.log.warn(`[AudioHandler] Error en transcripción: ${transcription.error}`);
+      context.log.warn(`[AudioHandler BG] Error en transcripción: ${transcription.error}`);
 
       // Mensajes de error específicos según el código
       let errorMsg = '❌ No pude entender el audio. ';
@@ -166,12 +184,12 @@ async function handleAudio(from, audioData, messageId, context) {
 
     const transcribedText = transcription.text;
     context.log(
-      `[AudioHandler] Audio transcrito: "${transcribedText.substring(0, 100)}${transcribedText.length > 100 ? '...' : ''}"`
+      `[AudioHandler BG] Audio transcrito: "${transcribedText.substring(0, 100)}${transcribedText.length > 100 ? '...' : ''}"`
     );
 
-    // Verificar si la transcripción tiene contenido útil
+    // 3. Verificar si la transcripción tiene contenido útil
     if (!transcribedText || transcribedText.trim().length < 2) {
-      context.log.warn(`[AudioHandler] Transcripción vacía o muy corta`);
+      context.log.warn(`[AudioHandler BG] Transcripción vacía o muy corta`);
       await whatsapp.sendAndSaveText(
         from,
         '🔇 No pude detectar palabras en el audio.\n\n' +
@@ -180,7 +198,7 @@ async function handleAudio(from, audioData, messageId, context) {
       return;
     }
 
-    // Guardar el mensaje de audio en el historial (con el texto transcrito)
+    // 4. Guardar el mensaje de audio en el historial (con el texto transcrito)
     try {
       await db.saveMessage(
         from,
@@ -189,23 +207,23 @@ async function handleAudio(from, audioData, messageId, context) {
         TIPO_CONTENIDO.AUDIO
       );
     } catch (dbError) {
-      context.log.warn(`[AudioHandler] Error guardando mensaje: ${dbError.message}`);
+      context.log.warn(`[AudioHandler BG] Error guardando mensaje: ${dbError.message}`);
       // Continuar aunque falle el guardado
     }
 
-    // Notificar al usuario qué entendimos
+    // 5. Notificar al usuario qué entendimos
     await whatsapp.sendAndSaveText(
       from,
       `🎤 Entendí: _"${transcribedText.substring(0, 200)}${transcribedText.length > 200 ? '...' : ''}"_`
     );
 
-    // Procesar el texto transcrito como si fuera un mensaje de texto normal
-    context.log(`[AudioHandler] Procesando texto transcrito como mensaje...`);
+    // 6. Procesar el texto transcrito como si fuera un mensaje de texto normal
+    context.log(`[AudioHandler BG] Procesando texto transcrito como mensaje...`);
     await messageHandler.handleText(from, transcribedText, messageId, context);
 
-    context.log(`[AudioHandler] Audio procesado exitosamente en ${transcription.duration}ms`);
+    context.log(`[AudioHandler BG] Audio procesado exitosamente en ${transcription.duration}ms`);
   } catch (error) {
-    context.log.error(`[AudioHandler] Error procesando audio:`, error);
+    context.log.error(`[AudioHandler BG] Error procesando audio:`, error);
 
     // Determinar mensaje de error apropiado
     let errorMsg = '❌ Hubo un problema procesando tu mensaje de voz.\n\n';

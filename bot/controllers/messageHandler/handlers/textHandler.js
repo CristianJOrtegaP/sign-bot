@@ -11,8 +11,8 @@ const metrics = require('../../../../core/services/infrastructure/metricsService
 const MSG = require('../../../constants/messages');
 const { sanitizeMessage, validatePhoneE164 } = require('../../../../core/utils/helpers');
 const FlowManager = require('../../flows/FlowManager');
-const flexibleFlowManager = require('../../flows/flexibleFlowManager');
-const consultaEstadoFlow = require('../../flows/consultaEstadoFlow');
+const flexibleFlowManager = require('../../../flows/reporteFlow');
+const consultaEstadoFlow = require('../../../flows/consultaFlow');
 const teamsService = require('../../../../core/services/external/teamsService');
 const {
   ESTADO,
@@ -35,6 +35,8 @@ const {
   handleTipoEquipo,
   handleDefaultIntent,
 } = require('../utils/reportHandlers');
+const { enforceRateLimit, reactivateSessionIfTerminal } = require('../utils/handlerMiddleware');
+const { ConcurrencyError } = require('../../../../core/errors');
 
 /**
  * Procesa un mensaje de texto entrante de WhatsApp
@@ -45,54 +47,16 @@ const {
  * @param {Function} handleButton - Referencia a handleButton para llamadas internas
  * @returns {Promise<void>}
  */
-async function handleText(from, text, messageId, context, handleButton) {
+async function handleText(from, text, messageId, context, handleButton, budget = null) {
   const timer = metrics.startTimer('message_handling', context);
   context.log(`Procesando texto de ${from}: ${text}`);
 
-  // Validar formato de teléfono E.164
-  const phoneValidation = validatePhoneE164(from);
-  if (!phoneValidation.valid) {
-    context.log.warn(`⚠️ Teléfono con formato inválido: ${from} - ${phoneValidation.error}`);
-    // Continuamos pero registramos la anomalía
-  }
-
-  // Sanitizar mensaje de entrada
-  const sanitizedText = sanitizeMessage(text);
-  if (sanitizedText !== text.trim()) {
-    context.log(`🔒 Mensaje sanitizado: "${text}" -> "${sanitizedText}"`);
-  }
-  text = sanitizedText;
-
-  // Verificar rate limit
-  const rateLimitCheck = rateLimiter.checkRateLimit(from, 'message');
-  if (!rateLimitCheck.allowed) {
-    context.log(`⚠️ Rate limit excedido para ${from}`);
-    await whatsapp.sendAndSaveText(from, `⏱️ ${rateLimitCheck.reason}`);
-    timer.end({ rateLimited: true });
+  // --- Validación y seguridad ---
+  const securityResult = await validateAndEnforce(from, text, timer, context);
+  if (!securityResult.allowed) {
     return;
   }
-
-  // Detectar spam (memoria local)
-  if (rateLimiter.isSpamming(from)) {
-    context.log(`🚨 Spam detectado de ${from} (rate limiter local)`);
-    await whatsapp.sendAndSaveText(from, MSG.RATE_LIMIT.SPAM_WARNING);
-    timer.end({ spam: true, source: 'local' });
-    return;
-  }
-
-  // Detectar spam (base de datos - más preciso)
-  const spamCheck = await db.checkSpam(from);
-  if (spamCheck.esSpam) {
-    context.log(
-      `🚨 Spam detectado de ${from} (BD): ${spamCheck.razon}, ${spamCheck.totalMensajes} mensajes`
-    );
-    await whatsapp.sendAndSaveText(from, MSG.RATE_LIMIT.SPAM_WARNING);
-    timer.end({ spam: true, source: 'database', reason: spamCheck.razon });
-    return;
-  }
-
-  // Registrar solicitud
-  rateLimiter.recordRequest(from, 'message');
+  text = securityResult.sanitizedText;
 
   // Mostrar "Escribiendo..." (fire-and-forget, no bloquea el flujo)
   whatsapp.sendTypingIndicator(from, messageId).catch(() => {});
@@ -134,27 +98,15 @@ async function handleText(from, text, messageId, context, handleButton) {
     return; // No procesar con el bot
   }
 
-  // Si la sesión está en un estado terminal (CANCELADO, FINALIZADO, TIMEOUT),
-  // reactivarla a INICIO y mostrar bienvenida
-  if (session.Estado !== ESTADO.INICIO && esEstadoTerminal(session.Estado)) {
-    context.log(`🔄 Reactivando sesión de ${from} desde estado ${session.Estado}`);
-    await db.updateSession(
-      from,
-      ESTADO.INICIO,
-      null,
-      null,
-      ORIGEN_ACCION.USUARIO,
-      `Sesión reactivada desde ${session.Estado}`
-    );
-    session.Estado = ESTADO.INICIO;
-  }
+  // Si la sesión está en un estado terminal, reactivarla a INICIO
+  await reactivateSessionIfTerminal(from, session, 'texto', context);
 
   // PERFORMANCE: Paralelizar updateLastActivity + detectIntent (~50ms ahorro)
   // Ambos son independientes: uno actualiza timestamp, otro detecta intencion
   // Usar allSettled para que fallo en updateLastActivity no afecte detectIntent
   const activityResults = await Promise.allSettled([
     db.updateLastActivity(from),
-    intent.detectIntent(text),
+    intent.detectIntent(text, budget),
   ]);
 
   // Verificar resultado de updateLastActivity (no crítico, solo logging)
@@ -217,18 +169,17 @@ async function handleText(from, text, messageId, context, handleButton) {
     return;
   }
 
-  // EXTRACCIÓN COMPLETA: Si detectamos REPORTAR_FALLA en mensaje, extraer TODOS los datos posibles
-  // Aplica para cualquier método de detección (regex o ai_extract) porque ai_extract no extrae SAP
-  // Umbral bajo (15 chars) para capturar mensajes como "Mi carro no enciende" (24 chars)
+  // EXTRACCIÓN COMPLETA: Solo si detectamos REPORTAR_FALLA por regex (no por ai_extract)
+  // Si el método fue 'ai_extract', detectIntent ya usó extractAllData y tenemos todos los datos
+  // Solo hace falta llamar a IA si fue regex y el mensaje es suficientemente largo
   if (
     detectedIntent.intencion === 'REPORTAR_FALLA' &&
+    detectedIntent.metodo !== 'ai_extract' &&
     text.trim().length > 15 &&
     !detectedIntent.codigo_sap
   ) {
-    // Solo si no tenemos SAP aún
-
     context.log(
-      `🔍 Mensaje detectado (${text.trim().length} chars), extrayendo TODOS los datos con extractAllData...`
+      `🔍 REPORTAR_FALLA detectada por regex (${text.trim().length} chars), extrayendo datos con extractAllData...`
     );
     detectedIntent = await enrichIntentWithStructuredData(
       text,
@@ -242,14 +193,23 @@ async function handleText(from, text, messageId, context, handleButton) {
   if (detectedIntent.intencion === 'DESPEDIDA') {
     await whatsapp.sendText(from, MSG.GENERAL.GOODBYE);
     await db.saveMessage(from, TIPO_MENSAJE.BOT, MSG.GENERAL.GOODBYE, TIPO_CONTENIDO.TEXTO);
-    await db.updateSession(
-      from,
-      ESTADO.INICIO,
-      null,
-      null,
-      ORIGEN_ACCION.USUARIO,
-      'Usuario se despidió'
-    );
+    try {
+      await db.updateSession(
+        from,
+        ESTADO.INICIO,
+        null,
+        null,
+        ORIGEN_ACCION.USUARIO,
+        'Usuario se despidió',
+        null,
+        session.Version
+      );
+    } catch (error) {
+      if (!(error instanceof ConcurrencyError)) {
+        throw error;
+      }
+      context.log(`⚡ Conflicto de concurrencia en DESPEDIDA, sesión ya fue modificada`);
+    }
     timer.end({ intent: 'DESPEDIDA', sessionReset: true });
     return;
   }
@@ -264,7 +224,12 @@ async function handleText(from, text, messageId, context, handleButton) {
   // SMART EXTRACTION: Si el usuario está en un flujo y envía mensaje,
   // extraer datos adicionales y actualizar la sesión
   // También detecta si quiere MODIFICAR datos existentes
-  if (!esEstadoTerminal(session.Estado) && text.trim().length > 15) {
+  // SKIP si detectIntent o enrichIntent ya usó extractAllData - evita llamada IA redundante
+  if (
+    !esEstadoTerminal(session.Estado) &&
+    text.trim().length > 15 &&
+    !detectedIntent.metodo?.includes('ai_extract')
+  ) {
     const resultado = await enrichSessionWithExtractedData(from, text, session, context);
 
     // Si hubo modificaciones, enviar confirmación y continuar el flujo
@@ -277,36 +242,94 @@ async function handleText(from, text, messageId, context, handleButton) {
     }
   }
 
-  // FASE 2b: Si estamos en un estado flexible, usar flexibleFlowManager
-  // IMPORTANTE: Leer sesión FRESCA para evitar problemas de caché con campoSolicitado
-  if (esEstadoFlexible(session.Estado)) {
-    context.log(`[FASE 2b] Estado flexible detectado: ${session.Estado} - leyendo sesión fresca`);
-    const freshSession = await db.getSessionFresh(from);
-    context.log(
-      `[FASE 2b] Sesión fresca obtenida, DatosTemp presente: ${freshSession.DatosTemp ? 'sí' : 'no'}`
-    );
-    const handledFlexible = await flexibleFlowManager.procesarMensaje(
-      from,
-      text,
-      freshSession,
-      context
-    );
-    if (handledFlexible) {
-      timer.end({ intent: detectedIntent.intencion, state: freshSession.Estado, flexible: true });
+  try {
+    // FASE 2b: Si estamos en un estado flexible, usar flexibleFlowManager
+    // IMPORTANTE: Leer sesión FRESCA para evitar problemas de caché con campoSolicitado
+    if (esEstadoFlexible(session.Estado)) {
+      context.log(`[FASE 2b] Estado flexible detectado: ${session.Estado} - leyendo sesión fresca`);
+      const freshSession = await db.getSessionFresh(from);
+      context.log(
+        `[FASE 2b] Sesión fresca obtenida, DatosTemp presente: ${freshSession.DatosTemp ? 'sí' : 'no'}`
+      );
+      const handledFlexible = await flexibleFlowManager.procesarMensaje(
+        from,
+        text,
+        freshSession,
+        context
+      );
+      if (handledFlexible) {
+        timer.end({ intent: detectedIntent.intencion, state: freshSession.Estado, flexible: true });
+        return;
+      }
+    }
+
+    // Procesar según el estado de la sesión (usando FlowManager - flujos legacy)
+    const handled = await FlowManager.processSessionState(from, text, session, context);
+    if (handled) {
+      timer.end({ intent: detectedIntent.intencion, state: session.Estado });
       return;
     }
+
+    // Procesar según la intención detectada
+    await processIntent(from, text, session, detectedIntent, context, handleButton);
+    timer.end({ intent: detectedIntent.intencion });
+  } catch (error) {
+    if (error instanceof ConcurrencyError) {
+      context.log(
+        `⚡ Conflicto de concurrencia en flujo de ${from}, sesión modificada por otro proceso`
+      );
+      timer.end({ intent: detectedIntent.intencion, concurrencyConflict: true });
+      return;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Valida input y aplica controles de seguridad (rate limit + spam).
+ * @returns {{allowed: boolean, sanitizedText?: string}}
+ */
+async function validateAndEnforce(from, text, timer, context) {
+  // Validar formato de teléfono E.164
+  const phoneValidation = validatePhoneE164(from);
+  if (!phoneValidation.valid) {
+    context.log.warn(`⚠️ Teléfono con formato inválido: ${from} - ${phoneValidation.error}`);
   }
 
-  // Procesar según el estado de la sesión (usando FlowManager - flujos legacy)
-  const handled = await FlowManager.processSessionState(from, text, session, context);
-  if (handled) {
-    timer.end({ intent: detectedIntent.intencion, state: session.Estado });
-    return;
+  // Sanitizar mensaje de entrada
+  const sanitizedText = sanitizeMessage(text);
+  if (sanitizedText !== text.trim()) {
+    context.log(`🔒 Mensaje sanitizado: "${text}" -> "${sanitizedText}"`);
   }
 
-  // Procesar según la intención detectada
-  await processIntent(from, text, session, detectedIntent, context, handleButton);
-  timer.end({ intent: detectedIntent.intencion });
+  // Rate limit (middleware compartido)
+  const rateLimitResult = await enforceRateLimit(from, 'message');
+  if (!rateLimitResult.allowed) {
+    context.log(`⚠️ Rate limit excedido para ${from}`);
+    timer.end({ rateLimited: true });
+    return { allowed: false };
+  }
+
+  // Detectar spam (memoria local)
+  if (rateLimiter.isSpamming(from)) {
+    context.log(`🚨 Spam detectado de ${from} (rate limiter local)`);
+    await whatsapp.sendAndSaveText(from, MSG.RATE_LIMIT.SPAM_WARNING);
+    timer.end({ spam: true, source: 'local' });
+    return { allowed: false };
+  }
+
+  // Detectar spam (base de datos)
+  const spamCheck = await db.checkSpam(from);
+  if (spamCheck.esSpam) {
+    context.log(
+      `🚨 Spam detectado de ${from} (BD): ${spamCheck.razon}, ${spamCheck.totalMensajes} mensajes`
+    );
+    await whatsapp.sendAndSaveText(from, MSG.RATE_LIMIT.SPAM_WARNING);
+    timer.end({ spam: true, source: 'database', reason: spamCheck.razon });
+    return { allowed: false };
+  }
+
+  return { allowed: true, sanitizedText };
 }
 
 /**

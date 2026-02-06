@@ -22,8 +22,8 @@ const { registry } = require('../../core/flowEngine');
 // ============================================================
 
 const consultaFlow = require('./consultaFlow');
-// const encuestaFlow = require('./encuestaFlow');  // TODO: Migrar
-// const reporteFlow = require('./reporteFlow');    // TODO: Migrar
+const encuestaFlow = require('./encuestaFlow');
+const reporteFlow = require('./reporteFlow');
 
 // ============================================================
 // CONFIGURACIÓN: QUÉ FLUJOS ESTÁN HABILITADOS
@@ -38,9 +38,9 @@ const consultaFlow = require('./consultaFlow');
  * Activar cuando los tests se actualicen para el nuevo sistema
  */
 const FLUJOS_HABILITADOS = {
-  CONSULTA: false, // TODO: Activar cuando los tests se actualicen
-  // ENCUESTA: true,   // TODO: Migrar
-  // REPORTE: true,    // TODO: Migrar (refrigerador + vehículo)
+  CONSULTA: true, // Migrado a FlowEngine
+  ENCUESTA: true, // Migrado a FlowEngine
+  REPORTE: true, // Migrado a FlowEngine (refrigerador + vehículo)
 };
 
 // ============================================================
@@ -53,8 +53,8 @@ const FLUJOS_HABILITADOS = {
  */
 const FLUJOS_DISPONIBLES = {
   CONSULTA: consultaFlow,
-  // ENCUESTA: encuestaFlow,  // TODO
-  // REPORTE: reporteFlow,    // TODO
+  ENCUESTA: encuestaFlow,
+  REPORTE: reporteFlow,
 };
 
 /**
@@ -115,4 +115,6 @@ module.exports = {
 
   // Flujos individuales (para compatibilidad hacia atrás)
   consultaFlow,
+  encuestaFlow,
+  reporteFlow,
 };

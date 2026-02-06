@@ -1,188 +1,707 @@
 openapi: 3.0.3
 info:
-  title: AC FIXBOT API
+  title: AC FixBot - WhatsApp Chatbot API
   description: |
-    API para el sistema de reportes de fallas de equipos de refrigeracion y vehiculos via WhatsApp.
+    API para el chatbot de WhatsApp de Arca Continental (AC FixBot).
+    Gestiona reportes de refrigeradores y vehículos mediante conversación automatizada con IA.
 
-    ## Autenticacion
+    ## Autenticación
 
-    - **Webhook WhatsApp**: Firma X-Hub-Signature-256 (HMAC-SHA256)
-    - **Endpoints Admin**: Header `X-API-Key` o query param `apiKey`
-    - **Azure Functions**: Header `x-functions-key`
+    | Endpoint | Mecanismo |
+    |----------|-----------|
+    | Webhook | Firma HMAC-SHA256 vía `X-Hub-Signature-256` |
+    | Admin API | Azure Function Key vía `?code=` o `x-functions-key` |
+    | Health / Conversations | Acceso anónimo |
 
     ## Rate Limiting
 
-    - Health Check: 100 requests/minuto por IP
-    - Webhook: Sin limite (procesado por Meta)
+    | Endpoint | Límite |
+    |----------|--------|
+    | Health | 100 req/IP/min |
+    | Admin | 60 req/IP/min |
+    | Webhook (por usuario) | 20 msg/min, 200 msg/hr |
+    | Webhook imágenes | 10/min, 100/hr |
+    | Webhook audios | 5/min, 50/hr |
 
-  version: 2.0.0
+    Los endpoints protegidos devuelven headers `X-RateLimit-Remaining` y `Retry-After` (en 429).
+
+    ## Headers de Seguridad
+
+    Todas las respuestas incluyen: `X-Content-Type-Options: nosniff`,
+    `X-Frame-Options: DENY`, `Strict-Transport-Security`, `Content-Security-Policy`,
+    `Referrer-Policy`, `Permissions-Policy`.
+
+    ## Códigos de Error Comunes
+
+    | Código | Descripción |
+    |--------|-------------|
+    | 401 | Firma HMAC-SHA256 inválida o ausente |
+    | 403 | Token de verificación incorrecto |
+    | 413 | Payload excede 10 MB |
+    | 415 | Content-Type no es application/json |
+    | 429 | Rate limit excedido |
+    | 500 | Error interno (IA, base de datos, etc.) |
+  version: 2.1.0
   contact:
-    name: Arca Continental
-  license:
-    name: ISC
+    name: AC FixBot Team
 
 servers:
-  - url: https://{environment}.azurewebsites.net/api
-    description: Azure Functions
+  - url: https://{functionApp}.azurewebsites.net
+    description: Azure Functions (Producción / Staging)
     variables:
-      environment:
-        default: acfixbot-dev
-        enum:
-          - acfixbot-dev
-          - acfixbot-prod
+      functionApp:
+        default: acfixbot-prod
+        description: Nombre de la Function App en Azure
+  - url: http://localhost:7071
+    description: Desarrollo local (Azure Functions Core Tools)
 
 tags:
-  - name: Health
-    description: Monitoreo y estado del sistema
   - name: Webhook
-    description: Integracion con WhatsApp Business API
-  - name: Tickets
-    description: Gestion de tickets de soporte
+    description: Ingesta de mensajes de WhatsApp (Meta Business API)
+  - name: Health
+    description: Health check del sistema
+  - name: Conversations
+    description: Consulta y gestión de conversaciones
   - name: Admin
-    description: Operaciones administrativas
+    description: Endpoints administrativos (requieren Function Key)
 
+# ─────────────────────────────────────────────
+# PATHS
+# ─────────────────────────────────────────────
 paths:
-  /health:
+  # ── Webhook ────────────────────────────────
+  /api/whatsapp-webhook:
     get:
-      tags:
-        - Health
-      summary: Health Check
-      description: |
-        Verifica el estado de salud del sistema incluyendo:
-        - Conexion a base de datos
-        - Variables de entorno
-        - Uso de memoria
-        - Circuit breakers
-        - Servicios externos
-      operationId: healthCheck
-      responses:
-        '200':
-          description: Sistema saludable
-          headers:
-            X-RateLimit-Remaining:
-              description: Requests restantes en la ventana actual
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HealthResponse'
-        '429':
-          description: Rate limit excedido
-          headers:
-            Retry-After:
-              description: Segundos hasta poder reintentar
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RateLimitError'
-        '503':
-          description: Sistema no saludable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HealthResponse'
-
-  /whatsapp-webhook:
-    get:
-      tags:
-        - Webhook
-      summary: Verificacion del Webhook
-      description: |
-        Endpoint de verificacion requerido por Meta para registrar el webhook.
-        Meta envia un challenge que debe ser devuelto si el token es valido.
+      tags: [Webhook]
       operationId: verifyWebhook
+      summary: Verificación del webhook (challenge de Meta)
+      description: |
+        Meta envía una solicitud GET para verificar la URL del webhook.
+        Si `hub.verify_token` coincide con `WHATSAPP_VERIFY_TOKEN`, se devuelve `hub.challenge`.
       parameters:
         - name: hub.mode
           in: query
           required: true
-          description: Debe ser 'subscribe'
           schema:
             type: string
             enum: [subscribe]
+          description: Siempre `subscribe`.
         - name: hub.verify_token
           in: query
           required: true
-          description: Token de verificacion configurado en Meta
           schema:
             type: string
+          description: Token de verificación configurado en `WHATSAPP_VERIFY_TOKEN`.
         - name: hub.challenge
           in: query
           required: true
-          description: Numero aleatorio a devolver si la verificacion es exitosa
           schema:
             type: string
+          description: Challenge string que debe devolverse como respuesta.
       responses:
         '200':
-          description: Verificacion exitosa
+          description: Verificación exitosa — devuelve el challenge como entero.
           content:
             text/plain:
               schema:
                 type: integer
-                description: El valor de hub.challenge
+              example: 1234567890
         '403':
-          description: Token de verificacion invalido
+          description: Token de verificación inválido.
           content:
             text/plain:
               schema:
                 type: string
-                example: Forbidden
+              example: Forbidden
 
     post:
-      tags:
-        - Webhook
-      summary: Recibir mensajes de WhatsApp
-      description: |
-        Recibe y procesa mensajes entrantes de WhatsApp Business API.
-
-        **Tipos de mensaje soportados:**
-        - `text`: Mensajes de texto
-        - `image`: Imagenes (con OCR para codigos SAP)
-        - `interactive`: Respuestas a botones
-        - `location`: Ubicacion GPS
-
-        **Nota:** Siempre responde 200 para evitar reintentos de Meta.
+      tags: [Webhook]
       operationId: receiveMessage
-      security:
-        - webhookSignature: []
+      summary: Recibir mensajes entrantes de WhatsApp
+      description: |
+        Endpoint principal de ingesta. Recibe notificaciones de Meta cuando un usuario
+        envía un mensaje (texto, imagen, audio, ubicación o botón interactivo).
+
+        ### Flujo de procesamiento
+        1. Validación de firma HMAC-SHA256 (`X-Hub-Signature-256`)
+        2. Deduplicación por Message ID (cache en memoria + registro atómico en DB)
+        3. Rate limiting por número de teléfono del usuario
+        4. Enrutamiento por tipo de mensaje al handler correspondiente
+        5. En caso de error, el mensaje se envía al Dead Letter Queue (DLQ)
+
+        ### Tipos de mensaje soportados
+        | Tipo | Handler | Descripción |
+        |------|---------|-------------|
+        | `text` | `textHandler` | Procesamiento con IA (detección de intención) |
+        | `image` | `imageHandler` | OCR / Azure Vision para códigos SAP |
+        | `audio` | `audioHandler` | Transcripción con Azure Speech |
+        | `interactive` | `buttonHandler` | Respuestas de botones (encuestas, confirmaciones) |
+        | `location` | `locationHandler` | Geolocalización del usuario |
+
+        ### Idempotencia
+        Mensajes duplicados se detectan y devuelven `200 OK` sin reprocesar.
+        Siempre responde `200` para evitar reintentos de Meta.
+      parameters:
+        - $ref: '#/components/parameters/XHubSignature'
+        - $ref: '#/components/parameters/CorrelationId'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/WebhookPayload'
+              $ref: '#/components/schemas/WhatsAppWebhookPayload'
+            examples:
+              textMessage:
+                summary: Mensaje de texto
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    - id: "123456789"
+                      changes:
+                        - value:
+                            messaging_product: whatsapp
+                            contacts:
+                              - profile:
+                                  name: "María García"
+                                wa_id: "5218001234567"
+                            messages:
+                              - from: "5218001234567"
+                                id: "wamid.ABGGFlA5Fm..."
+                                timestamp: "1706745600"
+                                type: text
+                                text:
+                                  body: "Necesito reportar un refrigerador dañado"
+              imageMessage:
+                summary: Mensaje con imagen
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    - id: "123456789"
+                      changes:
+                        - value:
+                            messaging_product: whatsapp
+                            contacts:
+                              - profile:
+                                  name: "María García"
+                                wa_id: "5218001234567"
+                            messages:
+                              - from: "5218001234567"
+                                id: "wamid.ABGGFlB6Gn..."
+                                timestamp: "1706745700"
+                                type: image
+                                image:
+                                  id: "media_123456"
+                                  mime_type: "image/jpeg"
+                                  sha256: "abc123..."
+              buttonReply:
+                summary: Respuesta de botón (encuesta)
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    - id: "123456789"
+                      changes:
+                        - value:
+                            messaging_product: whatsapp
+                            contacts:
+                              - profile:
+                                  name: "María García"
+                                wa_id: "5218001234567"
+                            messages:
+                              - from: "5218001234567"
+                                id: "wamid.ABGGFlC7Ho..."
+                                timestamp: "1706745800"
+                                type: interactive
+                                interactive:
+                                  type: button_reply
+                                  button_reply:
+                                    id: "btn_rating_5"
+                                    title: "⭐⭐⭐⭐⭐ Excelente"
       responses:
         '200':
-          description: Mensaje recibido (siempre 200)
+          description: |
+            Mensaje recibido exitosamente.
+            Se devuelve `200` tanto para mensajes procesados, duplicados o encolados en DLQ.
           headers:
             x-correlation-id:
-              description: ID de correlacion para tracing
               schema:
                 type: string
+                format: uuid
+              description: ID de correlación para tracing distribuido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookResponse'
+        '401':
+          description: |
+            **Firma HMAC-SHA256 inválida o ausente.**
+            Se calcula como `HMAC-SHA256(raw_body, WHATSAPP_APP_SECRET)` y se compara
+            con timing-safe equality contra el header `X-Hub-Signature-256`.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: Invalid signature
+        '413':
+          description: Payload excede el tamaño máximo permitido (10 MB).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Request body excede tamaño máximo de 10MB"
+        '415':
+          description: Content-Type no es `application/json`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Content-Type invalido. Esperado: application/json"
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  # ── Health ─────────────────────────────────
+  /api/health:
+    get:
+      tags: [Health]
+      operationId: getHealth
+      summary: Health check del sistema
+      description: |
+        Verifica el estado de todos los subsistemas:
+        - Base de datos (conexión, tablas, pool stats)
+        - Configuración (variables de entorno requeridas)
+        - Memoria (heap usage)
+        - Circuit breakers (IA, WhatsApp)
+        - Dead Letter Queue (mensajes pendientes/fallidos)
+        - Servicios externos (WhatsApp API, proveedor de IA)
+        - Métricas operativas
+
+        El estado general es `healthy`, `degraded` (algún servicio caído) o `unhealthy`.
+
+        **Rate limit:** 100 req/IP/min.
+      responses:
+        '200':
+          description: Estado del sistema.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  # ── Conversations ──────────────────────────
+  /api/conversations:
+    get:
+      tags: [Conversations]
+      operationId: listConversations
+      summary: Listar conversaciones activas
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 1000
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Lista de conversaciones.
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  status:
-                    type: string
-                    example: received
-        '401':
-          description: Firma invalida
+                  success:
+                    type: boolean
+                    example: true
+                  conversations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Conversation'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/conversations/chat/{telefono}:
+    get:
+      tags: [Conversations]
+      operationId: getChatHistory
+      summary: Obtener historial de chat de una conversación
+      parameters:
+        - $ref: '#/components/parameters/Telefono'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 1000
+      responses:
+        '200':
+          description: Sesión con su historial de mensajes.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  session:
+                    $ref: '#/components/schemas/Conversation'
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ChatMessage'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
-  /ticket-resolve:
+  /api/conversations/search/{query}:
+    get:
+      tags: [Conversations]
+      operationId: searchConversations
+      summary: Buscar conversaciones por teléfono
+      parameters:
+        - name: query
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 3
+          description: Término de búsqueda (mínimo 3 caracteres, busca en campo Teléfono).
+      responses:
+        '200':
+          description: Resultados de búsqueda.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Conversation'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/conversations/kpis:
+    get:
+      tags: [Conversations]
+      operationId: getKpis
+      summary: Obtener KPIs y datos del dashboard
+      description: |
+        Devuelve métricas clave de rendimiento y datos para gráficas:
+        - Reportes de hoy/semana con tendencia
+        - Tasa de resolución y satisfacción
+        - Sesiones activas y con agente
+        - Distribución por estado y tipo de reporte
+        - Tendencia de los últimos 7 días
+      responses:
+        '200':
+          description: KPIs y datos de gráficas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KpiResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/conversations/takeover/{telefono}:
     post:
-      tags:
-        - Tickets
-      summary: Resolver ticket
-      description: Marca un ticket de soporte como RESUELTO
+      tags: [Conversations]
+      operationId: takeoverConversation
+      summary: Tomar control de una conversación (modo agente)
+      description: Un agente humano toma control de la conversación, deshabilitando la IA.
+      parameters:
+        - $ref: '#/components/parameters/Telefono'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agenteId, agenteNombre]
+              properties:
+                agenteId:
+                  type: string
+                  example: "agent-001"
+                agenteNombre:
+                  type: string
+                  example: "Juan Pérez"
+      responses:
+        '200':
+          description: Conversación tomada exitosamente.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  estadoAnterior:
+                    type: string
+                    example: REFRIGERADOR_ACTIVO
+        '400':
+          description: Conversación ya tomada por otro agente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Conversación ya tomada por agent-002"
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/conversations/release/{telefono}:
+    post:
+      tags: [Conversations]
+      operationId: releaseConversation
+      summary: Liberar una conversación del modo agente
+      parameters:
+        - $ref: '#/components/parameters/Telefono'
+      responses:
+        '200':
+          description: Conversación liberada, estado restaurado.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  estadoRestaurado:
+                    type: string
+                    example: INICIO
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/conversations/send/{telefono}:
+    post:
+      tags: [Conversations]
+      operationId: sendAgentMessage
+      summary: Enviar mensaje como agente humano
+      description: |
+        Envía un mensaje de WhatsApp al usuario como agente humano.
+        La conversación **debe estar en modo agente** (post-takeover).
+      parameters:
+        - $ref: '#/components/parameters/Telefono'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mensaje, agenteId]
+              properties:
+                mensaje:
+                  type: string
+                  example: "Hola, soy un agente. ¿En qué puedo ayudarte?"
+                agenteId:
+                  type: string
+                  example: "agent-001"
+      responses:
+        '200':
+          description: Mensaje enviado exitosamente.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        '400':
+          description: Conversación no está en modo agente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "La conversación no está en modo agente. Primero debe tomar la conversación."
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ── Admin: Cache ───────────────────────────
+  /api/admin/cache:
+    get:
+      tags: [Admin]
+      operationId: getCacheStats
+      summary: Obtener estadísticas de cache
+      security:
+        - functionKey: []
+      parameters:
+        - name: type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [stats]
+      responses:
+        '200':
+          description: Estadísticas de cache.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  action:
+                    type: string
+                    example: get_stats
+                  details:
+                    type: object
+                    properties:
+                      equipoCache:
+                        $ref: '#/components/schemas/CacheStats'
+                      sessionCache:
+                        $ref: '#/components/schemas/CacheStats'
+              example:
+                success: true
+                action: get_stats
+                details:
+                  equipoCache:
+                    size: 2048
+                    entries: 15
+                    ttlMs: 900000
+                  sessionCache:
+                    size: 1024
+                    entries: 23
+                    ttlMs: 300000
+        '429':
+          $ref: '#/components/responses/AdminRateLimited'
+
+    post:
+      tags: [Admin]
+      operationId: manageCacheAction
+      summary: Gestionar cache (limpiar o disparar timeout)
+      security:
+        - functionKey: []
+      parameters:
+        - name: type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [equipos, sesiones, all, trigger_timeout]
+          description: |
+            - `equipos` — Limpiar cache de equipos (opcionalmente por código)
+            - `sesiones` — Limpiar cache de sesiones (opcionalmente por teléfono)
+            - `all` — Limpiar todo el cache
+            - `trigger_timeout` — Disparar procesamiento manual de timeouts de sesiones
+        - name: codigo
+          in: query
+          schema:
+            type: string
+          description: Código de equipo específico (solo con `type=equipos`).
+          example: "4045101"
+        - name: telefono
+          in: query
+          schema:
+            type: string
+          description: Teléfono específico (solo con `type=sesiones`).
+          example: "5218001234567"
+      responses:
+        '200':
+          description: Acción ejecutada exitosamente.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  timestamp:
+                    type: string
+                    format: date-time
+                  action:
+                    type: string
+                  details:
+                    type: object
+              examples:
+                clearAllCache:
+                  summary: Limpiar todo el cache
+                  value:
+                    success: true
+                    timestamp: "2026-02-06T12:00:00.000Z"
+                    action: clear_all_cache
+                    details:
+                      equipos_deleted: 15
+                      sesiones_deleted: 23
+                      total_deleted: 38
+                      message: "Cache limpiado: 15 equipos + 23 sesiones"
+                triggerTimeout:
+                  summary: Disparar procesamiento de timeouts
+                  value:
+                    success: true
+                    timestamp: "2026-02-06T12:00:00.000Z"
+                    action: trigger_timeout
+                    details:
+                      sessionsProcessed: 5
+                      messagesCreated: 5
+                      errors: 0
+        '429':
+          $ref: '#/components/responses/AdminRateLimited'
+
+  # ── Admin: Metrics ─────────────────────────
+  /api/admin/metrics:
+    get:
+      tags: [Admin]
+      operationId: getMetrics
+      summary: Obtener métricas del sistema (tiempo real o históricas)
+      security:
+        - functionKey: []
+      parameters:
+        - name: operation
+          in: query
+          schema:
+            type: string
+          description: Filtrar por tipo de operación (`message_handling`, `database_query`, `whatsapp_send`, etc.).
+        - name: historical
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Si `true`, devuelve métricas históricas.
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Fecha para métricas históricas (requiere `historical=true`).
+          example: "2026-02-06"
+      responses:
+        '200':
+          description: Métricas del sistema.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RealTimeMetrics'
+                  - $ref: '#/components/schemas/HistoricalMetrics'
+                discriminator:
+                  propertyName: type
+        '429':
+          $ref: '#/components/responses/AdminRateLimited'
+
+  # ── Admin: Tickets ─────────────────────────
+  /api/admin/tickets/resolve:
+    post:
+      tags: [Admin]
       operationId: resolveTicket
+      summary: Marcar un ticket como resuelto
       security:
         - functionKey: []
       requestBody:
@@ -191,131 +710,415 @@ paths:
           application/json:
             schema:
               type: object
-              required:
-                - ticketId
+              required: [ticketId]
               properties:
                 ticketId:
                   type: string
-                  pattern: '^TKT-[A-F0-9]{8}$'
-                  description: ID del ticket (TKT- + 8 caracteres hex)
-                  example: TKT-2EF04F2C
+                  pattern: '^TKT-[0-9a-fA-F]{8}$'
+                  description: ID del ticket — formato `TKT-XXXXXXXX` (8 hex chars).
+                  example: "TKT-A1B2C3D4"
       responses:
         '200':
-          description: Ticket resuelto exitosamente
+          description: Ticket resuelto exitosamente.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TicketResolveResponse'
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Ticket TKT-A1B2C3D4 marcado como resuelto"
+                  ticketId:
+                    type: string
+                  estadoAnterior:
+                    type: string
+                    enum: [PENDIENTE, EN_PROCESO]
+                  estadoNuevo:
+                    type: string
+                    enum: [RESUELTO]
+                  timestamp:
+                    type: string
+                    format: date-time
         '400':
-          description: Request invalido o ticket ya resuelto/cancelado
+          description: |
+            Formato de ticketId inválido o ticket ya resuelto/cancelado.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidFormat:
+                  summary: Formato inválido
+                  value:
+                    success: false
+                    error: "Formato de ticketId invalido. Formato esperado: TKT-XXXXXXXX (8 caracteres hex)"
+                    timestamp: "2026-02-06T00:00:00.000Z"
+                alreadyResolved:
+                  summary: Ticket ya resuelto
+                  value:
+                    success: false
+                    error: "El ticket TKT-A1B2C3D4 ya está resuelto"
+                    ticketId: "TKT-A1B2C3D4"
+                    estadoActual: "RESUELTO"
+                    timestamp: "2026-02-06T00:00:00.000Z"
         '404':
-          description: Ticket no encontrado
+          description: Ticket no encontrado.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-        '500':
-          description: Error interno
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "No se encontró el ticket: TKT-A1B2C3D4"
+                timestamp: "2026-02-06T00:00:00.000Z"
+        '429':
+          $ref: '#/components/responses/AdminRateLimited'
 
-  /admin-cache:
-    get:
-      tags:
-        - Admin
-      summary: Administrar cache
-      description: |
-        Gestiona el cache en memoria del sistema.
-
-        **Operaciones disponibles:**
-        - `stats`: Ver estadisticas
-        - `equipos`: Limpiar cache de equipos
-        - `sesiones`: Limpiar cache de sesiones
-        - `all`: Limpiar todo
-        - `trigger_timeout`: Ejecutar limpieza de sesiones expiradas
-      operationId: manageCache
-      security:
-        - apiKey: []
-      parameters:
-        - name: type
-          in: query
-          required: true
-          description: Tipo de operacion
-          schema:
-            type: string
-            enum: [stats, equipos, sesiones, all, trigger_timeout]
-        - name: codigo
-          in: query
-          description: Codigo SAP del equipo (solo para type=equipos)
-          schema:
-            type: string
-        - name: telefono
-          in: query
-          description: Telefono de la sesion (solo para type=sesiones)
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Operacion exitosa
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CacheResponse'
-        '400':
-          description: Tipo de operacion invalido
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '401':
-          description: API key invalida o faltante
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
+# ─────────────────────────────────────────────
+# COMPONENTS
+# ─────────────────────────────────────────────
 components:
   securitySchemes:
     webhookSignature:
       type: apiKey
       in: header
       name: X-Hub-Signature-256
-      description: Firma HMAC-SHA256 del body con formato 'sha256=<hash>'
-
+      description: |
+        Firma HMAC-SHA256 del cuerpo de la solicitud usando `WHATSAPP_APP_SECRET`.
+        Formato: `sha256=<hex_digest>`. Obligatorio en producción.
+        Se valida con comparación timing-safe.
     functionKey:
       type: apiKey
-      in: header
-      name: x-functions-key
-      description: Azure Functions key
+      in: query
+      name: code
+      description: |
+        Azure Function Key para endpoints administrativos.
+        Enviable como `?code=<key>` o header `x-functions-key: <key>`.
+        Gestionado en Azure Portal > Function App > App Keys.
 
-    apiKey:
-      type: apiKey
+  parameters:
+    XHubSignature:
+      name: X-Hub-Signature-256
       in: header
-      name: X-API-Key
-      description: API key administrativa
+      required: true
+      schema:
+        type: string
+        pattern: '^sha256=[a-f0-9]{64}$'
+      description: Firma HMAC-SHA256 del body. Formato `sha256=<hex>`.
+      example: "sha256=a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+
+    CorrelationId:
+      name: x-correlation-id
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: ID de correlación para tracing distribuido. Se genera automáticamente si no se envía.
+
+    Telefono:
+      name: telefono
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Número de teléfono del usuario en formato E.164.
+      example: "5218001234567"
+
+  responses:
+    RateLimited:
+      description: |
+        **429 — Rate limit excedido.**
+        El cliente ha enviado demasiadas solicitudes en la ventana de tiempo.
+        Debe esperar el tiempo indicado en `Retry-After` antes de reintentar.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Segundos de espera antes de reintentar.
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+            example: 0
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: rate_limited
+              message:
+                type: string
+                example: Too many requests
+              retryAfterMs:
+                type: integer
+                example: 60000
+
+    AdminRateLimited:
+      description: |
+        **429 — Rate limit del Admin API excedido** (60 req/IP/min).
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+            example: 0
+        X-RateLimit-Reset:
+          schema:
+            type: integer
+          description: Segundos hasta el reinicio de la ventana.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+                example: false
+              error:
+                type: string
+                example: "Demasiadas solicitudes. Espera antes de reintentar."
+              retryAfter:
+                type: integer
+                example: 45
+
+    InternalError:
+      description: |
+        **500 — Error interno del servidor.**
+        Puede ser causado por fallo en el proveedor de IA (Gemini/Azure OpenAI),
+        error de base de datos, o excepción no controlada. El equipo es notificado
+        automáticamente vía Application Insights.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Ocurrió un error inesperado. Nuestro equipo ha sido notificado."
+            timestamp: "2026-02-06T00:00:00.000Z"
 
   schemas:
+    # ── WhatsApp Webhook Payload (Meta) ──────
+    WhatsAppWebhookPayload:
+      type: object
+      required: [object, entry]
+      description: |
+        Payload estándar de Meta Webhooks para WhatsApp Business API.
+        Referencia: https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/components
+      properties:
+        object:
+          type: string
+          enum: [whatsapp_business_account]
+        entry:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookEntry'
+
+    WebhookEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ID de la cuenta de WhatsApp Business.
+          example: "123456789"
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookChange'
+
+    WebhookChange:
+      type: object
+      properties:
+        value:
+          $ref: '#/components/schemas/WebhookValue'
+        field:
+          type: string
+          example: messages
+        timestamp:
+          type: string
+
+    WebhookValue:
+      type: object
+      properties:
+        messaging_product:
+          type: string
+          enum: [whatsapp]
+        metadata:
+          type: object
+          properties:
+            display_phone_number:
+              type: string
+              example: "5215512345678"
+            phone_number_id:
+              type: string
+              example: "987654321"
+        contacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/WhatsAppContact'
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/WhatsAppMessage'
+        statuses:
+          type: array
+          description: Notificaciones de estado de mensajes enviados.
+          items:
+            $ref: '#/components/schemas/WhatsAppStatus'
+
+    WhatsAppContact:
+      type: object
+      properties:
+        profile:
+          type: object
+          properties:
+            name:
+              type: string
+              description: Nombre de perfil del usuario.
+              example: "María García"
+        wa_id:
+          type: string
+          description: WhatsApp ID (número de teléfono).
+          example: "5218001234567"
+
+    WhatsAppMessage:
+      type: object
+      required: [from, id, timestamp, type]
+      description: |
+        Mensaje entrante de WhatsApp. Según el valor de `type`, estará presente
+        el campo correspondiente (`text`, `image`, `audio`, `interactive`, `location`).
+      properties:
+        from:
+          type: string
+          description: Número del remitente (E.164).
+          example: "5218001234567"
+        id:
+          type: string
+          description: ID único del mensaje (usado para deduplicación).
+          example: "wamid.ABGGFlA5FmkIAhB..."
+        timestamp:
+          type: string
+          description: Timestamp UNIX.
+          example: "1706745600"
+        type:
+          type: string
+          enum: [text, image, audio, interactive, location, sticker, video, document, contacts, reaction]
+        text:
+          type: object
+          description: Presente cuando `type=text`.
+          properties:
+            body:
+              type: string
+              example: "Necesito reportar un refrigerador dañado"
+        image:
+          type: object
+          description: Presente cuando `type=image`.
+          properties:
+            id:
+              type: string
+              description: Media ID para descargar vía API de Meta.
+              example: "media_123456"
+            mime_type:
+              type: string
+              example: "image/jpeg"
+            sha256:
+              type: string
+        audio:
+          type: object
+          description: Presente cuando `type=audio`.
+          properties:
+            id:
+              type: string
+              example: "media_789012"
+            mime_type:
+              type: string
+              example: "audio/ogg; codecs=opus"
+            sha256:
+              type: string
+        interactive:
+          type: object
+          description: Presente cuando `type=interactive` (respuesta a botones).
+          properties:
+            type:
+              type: string
+              enum: [button_reply, list_reply]
+            button_reply:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: ID del botón seleccionado.
+                  example: "btn_rating_5"
+                title:
+                  type: string
+                  description: Texto visible del botón.
+                  example: "⭐⭐⭐⭐⭐ Excelente"
+        location:
+          type: object
+          description: Presente cuando `type=location`.
+          properties:
+            latitude:
+              type: number
+              format: double
+              example: 25.6866
+            longitude:
+              type: number
+              format: double
+              example: -100.3161
+            name:
+              type: string
+            address:
+              type: string
+
+    WhatsAppStatus:
+      type: object
+      description: Notificación de estado de un mensaje enviado.
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [sent, delivered, read, failed]
+        timestamp:
+          type: string
+        recipient_id:
+          type: string
+
+    # ── Webhook Response ─────────────────────
+    WebhookResponse:
+      type: object
+      properties:
+        status:
+          type: integer
+          example: 200
+        body:
+          type: string
+          example: OK
+
+    # ── Health ───────────────────────────────
     HealthResponse:
       type: object
       properties:
         status:
           type: string
-          enum: [healthy, unhealthy, degraded]
+          enum: [healthy, degraded, unhealthy]
         timestamp:
           type: string
           format: date-time
         version:
           type: string
+          example: "2.1.0"
         environment:
           type: string
+          enum: [production, development]
         responseTimeMs:
-          type: integer
+          type: number
         checks:
           type: object
           properties:
@@ -328,32 +1131,53 @@ components:
               properties:
                 status:
                   type: string
+                  enum: [healthy, warning]
                 heapUsedMB:
-                  type: integer
+                  type: number
                 heapTotalMB:
-                  type: integer
+                  type: number
                 heapPercentage:
-                  type: integer
+                  type: number
             uptime:
               type: object
               properties:
                 status:
                   type: string
+                  example: healthy
                 uptimeSeconds:
-                  type: integer
+                  type: number
             circuitBreakers:
               type: object
               properties:
                 status:
                   type: string
+                  enum: [healthy, degraded]
                 services:
                   type: object
+                  properties:
+                    ai:
+                      type: object
+                      properties:
+                        status:
+                          type: string
+                          enum: [closed, open]
+                        provider:
+                          type: string
+                          enum: [gemini, azure-openai]
+                        enabled:
+                          type: boolean
+                    whatsapp:
+                      type: object
+                      properties:
+                        status:
+                          type: string
+                          enum: [closed, open]
             deadLetter:
               type: object
               properties:
                 status:
                   type: string
-                  enum: [healthy, warning, unknown]
+                  enum: [healthy, warning]
                 total:
                   type: integer
                 pending:
@@ -363,139 +1187,309 @@ components:
                 message:
                   type: string
             externalServices:
-              type: object
-              properties:
-                status:
-                  type: string
-                services:
-                  type: object
+              $ref: '#/components/schemas/HealthCheck'
+            whatsappApi:
+              $ref: '#/components/schemas/HealthCheck'
+            aiProvider:
+              $ref: '#/components/schemas/HealthCheck'
+            metrics:
+              $ref: '#/components/schemas/HealthCheck'
 
     HealthCheck:
       type: object
       properties:
         status:
           type: string
-          enum: [healthy, unhealthy, warning, degraded, unknown]
+          enum: [healthy, degraded, unhealthy, skipped]
         message:
           type: string
         responseTimeMs:
-          type: integer
-
-    WebhookPayload:
-      type: object
-      properties:
-        object:
-          type: string
-          example: whatsapp_business_account
-        entry:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: string
-              changes:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    value:
-                      type: object
-                      properties:
-                        messages:
-                          type: array
-                          items:
-                            $ref: '#/components/schemas/WhatsAppMessage'
-                        statuses:
-                          type: array
-                          items:
-                            type: object
-
-    WhatsAppMessage:
-      type: object
-      properties:
-        from:
-          type: string
-          description: Numero de telefono del remitente
-        id:
-          type: string
-          description: ID unico del mensaje
-        type:
-          type: string
-          enum: [text, image, interactive, location, sticker, audio, video, document]
-        text:
-          type: object
-          properties:
-            body:
-              type: string
-        image:
-          type: object
-          properties:
-            id:
-              type: string
-        interactive:
-          type: object
-          properties:
-            button_reply:
-              type: object
-              properties:
-                id:
-                  type: string
-        location:
-          type: object
-          properties:
-            latitude:
-              type: number
-            longitude:
-              type: number
-            address:
-              type: string
-
-    TicketResolveResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-        message:
-          type: string
-        ticketId:
-          type: string
-        estadoAnterior:
-          type: string
-        estadoNuevo:
-          type: string
-        timestamp:
-          type: string
-          format: date-time
-
-    CacheResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-        action:
-          type: string
-        message:
-          type: string
+          type: number
         details:
           type: object
+          additionalProperties: true
+
+    # ── Conversations ────────────────────────
+    Conversation:
+      type: object
+      properties:
+        Telefono:
+          type: string
+          example: "5218001234567"
+        NombreUsuario:
+          type: string
+          example: "María García"
+        Estado:
+          type: string
+          enum: [INICIO, REFRIGERADOR_ACTIVO, VEHICULO_ACTIVO, ENCUESTA_ACTIVA, AGENTE_ACTIVO]
+        EstadoNombre:
+          type: string
+          example: "Reporte de refrigerador en curso"
+        TipoReporteId:
+          type: integer
+          nullable: true
+          enum: [1, 2, null]
+        TipoReporte:
+          type: string
+          nullable: true
+          enum: [REFRIGERADOR, VEHICULO, null]
+        FechaUltimoMensaje:
+          type: string
+          format: date-time
+        FechaCreacion:
+          type: string
+          format: date-time
+        ContadorMensajes:
+          type: integer
+        AgenteId:
+          type: string
+          nullable: true
+        AgenteNombre:
+          type: string
+          nullable: true
+        FechaTomaAgente:
+          type: string
+          format: date-time
+          nullable: true
+        TotalMensajes:
+          type: integer
+        UltimoMensaje:
+          type: string
+          nullable: true
+
+    ChatMessage:
+      type: object
+      properties:
+        MensajeId:
+          type: integer
+        SesionId:
+          type: integer
+        Tipo:
+          type: string
+          enum: [U, B]
+          description: "`U` = Usuario, `B` = Bot/Agente"
+        Contenido:
+          type: string
+        TipoContenido:
+          type: string
+          enum: [TEXTO, IMAGEN, AUDIO, UBICACION, BOTON]
+        IntencionDetectada:
+          type: string
+          nullable: true
+        ConfianzaIA:
+          type: number
+          format: double
+          nullable: true
+          minimum: 0
+          maximum: 1
+        AgenteId:
+          type: string
+          nullable: true
+        FechaCreacion:
+          type: string
+          format: date-time
+
+    # ── KPIs ─────────────────────────────────
+    KpiResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        kpis:
+          type: object
+          properties:
+            reportesHoy:
+              type: integer
+            reportesSemana:
+              type: integer
+            tendenciaReportes:
+              type: number
+              description: Porcentaje de cambio vs semana anterior.
+            tasaResolucion:
+              type: number
+              description: Porcentaje de resolución (0-100).
+            satisfaccion:
+              type: number
+              description: Promedio de satisfacción (0-5).
+            sesionesActivas:
+              type: integer
+            sesionesConAgente:
+              type: integer
+            mensajesHoy:
+              type: integer
+            mensajesEntrantes:
+              type: integer
+            mensajesSalientes:
+              type: integer
+        charts:
+          type: object
+          properties:
+            porEstado:
+              type: array
+              items:
+                type: object
+                properties:
+                  Estado:
+                    type: string
+                    enum: [PENDIENTE, EN_PROCESO, RESUELTO, CANCELADO]
+                  EstadoNombre:
+                    type: string
+                  Total:
+                    type: integer
+            porTipo:
+              type: array
+              items:
+                type: object
+                properties:
+                  TipoReporte:
+                    type: string
+                    enum: [REFRIGERADOR, VEHICULO]
+                  TipoNombre:
+                    type: string
+                  Total:
+                    type: integer
+            tendencia7dias:
+              type: array
+              items:
+                type: object
+                properties:
+                  Fecha:
+                    type: string
+                    format: date
+                  Total:
+                    type: integer
         timestamp:
           type: string
           format: date-time
 
-    RateLimitError:
+    # ── Admin: Cache ─────────────────────────
+    CacheStats:
       type: object
       properties:
-        status:
-          type: string
-          example: rate_limited
-        message:
-          type: string
-          example: Too many requests
-        retryAfterMs:
+        size:
           type: integer
+          description: Tamaño en bytes.
+        entries:
+          type: integer
+          description: Número de entradas.
+        ttlMs:
+          type: integer
+          description: TTL en milisegundos.
+          example: 900000
 
-    Error:
+    # ── Admin: Metrics ───────────────────────
+    RealTimeMetrics:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [real-time]
+        data:
+          type: object
+          properties:
+            timestamp:
+              type: string
+              format: date-time
+            environment:
+              type: string
+            version:
+              type: string
+            summary:
+              type: object
+              properties:
+                totalOperations:
+                  type: integer
+                cache:
+                  type: object
+                  properties:
+                    hitRate:
+                      type: number
+                    missRate:
+                      type: number
+            operations:
+              type: object
+              additionalProperties:
+                type: integer
+            timings:
+              type: object
+              additionalProperties:
+                type: object
+                properties:
+                  min:
+                    type: number
+                  max:
+                    type: number
+                  avg:
+                    type: number
+            percentiles:
+              type: object
+              additionalProperties:
+                type: object
+                properties:
+                  p50:
+                    type: number
+                  p95:
+                    type: number
+                  p99:
+                    type: number
+            slaCompliance:
+              type: object
+              additionalProperties:
+                type: object
+                properties:
+                  slaMs:
+                    type: integer
+                  compliance:
+                    type: number
+            errorRates:
+              type: object
+              additionalProperties:
+                type: number
+
+    HistoricalMetrics:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [historical]
+        data:
+          type: object
+          properties:
+            available:
+              type: boolean
+            date:
+              type: string
+              format: date
+            count:
+              type: integer
+            metrics:
+              type: array
+              items:
+                type: object
+                properties:
+                  timestamp:
+                    type: string
+                    format: date-time
+                  operation:
+                    type: string
+                  duration:
+                    type: number
+            errors:
+              type: array
+              items:
+                type: object
+                properties:
+                  timestamp:
+                    type: string
+                    format: date-time
+                  type:
+                    type: string
+                  message:
+                    type: string
+
+    # ── Error Response ───────────────────────
+    ErrorResponse:
       type: object
       properties:
         success:
@@ -503,6 +1497,7 @@ components:
           example: false
         error:
           type: string
+          description: Mensaje de error descriptivo.
         timestamp:
           type: string
           format: date-time

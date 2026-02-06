@@ -13,7 +13,7 @@ const { logger } = require('../services/infrastructure/errorHandler');
  * @typedef {Object} StaticFlowDefinition
  * @property {string} nombre - Nombre único del flujo
  * @property {string[]} estados - Estados que maneja este flujo
- * @property {Object.<string, string>} botones - Mapeo buttonId -> método handler
+ * @property {Object.<string, string|{handler: string, params?: *}>} botones - Mapeo buttonId -> handler name o config
  * @property {Function} [iniciar] - Método para iniciar el flujo
  * @property {Function} [procesar] - Método para procesar mensajes
  * @property {Object} handlers - Handlers específicos por estado

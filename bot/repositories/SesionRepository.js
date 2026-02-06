@@ -10,6 +10,7 @@ const config = require('../../core/config');
 const { logger } = require('../../core/services/infrastructure/errorHandler');
 const metrics = require('../../core/services/infrastructure/metricsService');
 const { ConcurrencyError } = require('../../core/errors');
+const appInsights = require('../../core/services/infrastructure/appInsightsService');
 const {
   ESTADO,
   ESTADO_ID,
@@ -166,16 +167,16 @@ class SesionRepository extends BaseRepository {
     reporteId = null,
     expectedVersion = null
   ) {
-    // Variables para optimistic update (accesibles en catch)
-    let cached = null;
-    let previousCacheState = null;
-
     try {
       const estadoId = getEstadoId(estadoCodigo);
       if (!estadoId) {
         logger.error(`Estado inválido: ${estadoCodigo}`);
         return;
       }
+
+      // Capturar estado anterior para telemetría (read-only, sin mutación)
+      const cachedEntry = this.cache.get(telefono);
+      const previousEstado = cachedEntry?.data?.Estado || 'unknown';
 
       // Determinar TipoReporteId basado en datosTemp o estado
       let tipoReporteId = null;
@@ -194,116 +195,87 @@ class SesionRepository extends BaseRepository {
         datosTemp = null;
       }
 
-      // ========================================
-      // OPTIMISTIC UPDATE: Actualizar cache ANTES de BD
-      // Evita race conditions cuando hay timeouts de SQL
-      // ========================================
-      cached = this.cache.get(telefono);
-      previousCacheState = cached ? { ...cached.data } : null;
-      if (cached) {
-        cached.data.Estado = estadoCodigo;
-        cached.data.EstadoId = estadoId;
-        cached.data.DatosTemp = datosTemp ? JSON.stringify(datosTemp) : null;
-        cached.data.EquipoIdTemp = equipoIdTemp;
-        cached.timestamp = Date.now();
-      }
-
+      // OPTIMIZACIÓN: Un solo roundtrip SQL con batch (SELECT + UPDATE + INSERT historial)
       await this.executeQuery(async () => {
         const pool = await this.getPool();
 
-        // Obtener estado anterior para historial
-        const currentSession = await pool
-          .request()
-          .input('telefono', sql.NVarChar, telefono)
-          .query(
-            `SELECT SesionId, EstadoId, TipoReporteId FROM SesionesChat WHERE Telefono = @telefono`
-          );
-
-        const estadoAnteriorId = currentSession.recordset[0]?.EstadoId;
-        const tipoReporteIdAnterior = currentSession.recordset[0]?.TipoReporteId;
-
-        // Si no hay tipoReporteId nuevo, mantener el anterior
-        if (!tipoReporteId && tipoReporteIdAnterior) {
-          tipoReporteId = tipoReporteIdAnterior;
-        }
-
-        // Si es estado terminal, limpiar tipoReporteId
-        if (esEstadoTerminal(estadoCodigo)) {
-          tipoReporteId = null;
-        }
-
-        // Actualizar sesión con optimistic locking
-        const updateRequest = pool
+        const esTerminal = esEstadoTerminal(estadoCodigo);
+        const request = pool
           .request()
           .input('telefono', sql.NVarChar, telefono)
           .input('estadoId', sql.Int, estadoId)
           .input('tipoReporteId', sql.Int, tipoReporteId)
           .input('datosTemp', sql.NVarChar, datosTemp ? JSON.stringify(datosTemp) : null)
-          .input('equipoIdTemp', sql.Int, equipoIdTemp);
+          .input('equipoIdTemp', sql.Int, equipoIdTemp)
+          .input('origenAccion', sql.NVarChar, origenAccion)
+          .input('descripcion', sql.NVarChar, descripcion)
+          .input('reporteId', sql.Int, reporteId)
+          .input('esTerminal', sql.Bit, esTerminal ? 1 : 0);
 
-        let updateQuery;
-        if (expectedVersion !== null && expectedVersion !== undefined) {
-          // CON optimistic locking: verificar versión y incrementar
-          updateRequest.input('expectedVersion', sql.Int, expectedVersion);
-          updateQuery = `
-                        UPDATE SesionesChat
-                        SET EstadoId = @estadoId,
-                            TipoReporteId = @tipoReporteId,
-                            DatosTemp = @datosTemp,
-                            EquipoIdTemp = @equipoIdTemp,
-                            UltimaActividad = GETDATE(),
-                            Version = ISNULL(Version, 0) + 1
-                        WHERE Telefono = @telefono
-                          AND ISNULL(Version, 0) = @expectedVersion
-                    `;
-        } else {
-          // SIN optimistic locking: actualizar sin verificar versión (legacy behavior)
-          updateQuery = `
-                        UPDATE SesionesChat
-                        SET EstadoId = @estadoId,
-                            TipoReporteId = @tipoReporteId,
-                            DatosTemp = @datosTemp,
-                            EquipoIdTemp = @equipoIdTemp,
-                            UltimaActividad = GETDATE(),
-                            Version = ISNULL(Version, 0) + 1
-                        WHERE Telefono = @telefono
-                    `;
-        }
+        // Construir batch SQL dinámico según optimistic locking
+        const versionClause =
+          expectedVersion !== null && expectedVersion !== undefined
+            ? (request.input('expectedVersion', sql.Int, expectedVersion),
+              'AND ISNULL(Version, 0) = @expectedVersion')
+            : '';
 
-        const updateResult = await updateRequest.query(updateQuery);
+        const batchQuery = `
+          -- 1. Capturar estado anterior en una sola lectura
+          DECLARE @estadoAnteriorId INT, @tipoReporteIdAnterior INT;
+          SELECT @estadoAnteriorId = EstadoId, @tipoReporteIdAnterior = TipoReporteId
+          FROM SesionesChat WHERE Telefono = @telefono;
 
-        // Si usamos optimistic locking y no se actualizó ninguna fila = race condition
-        if (
-          expectedVersion !== null &&
-          expectedVersion !== undefined &&
-          updateResult.rowsAffected[0] === 0
-        ) {
+          -- Resolver TipoReporteId: nuevo > anterior > null si terminal
+          DECLARE @tipoReporteFinal INT = CASE
+            WHEN @esTerminal = 1 THEN NULL
+            WHEN @tipoReporteId IS NOT NULL THEN @tipoReporteId
+            ELSE @tipoReporteIdAnterior
+          END;
+
+          -- 2. UPDATE sesión (con o sin optimistic locking)
+          UPDATE SesionesChat
+          SET EstadoId = @estadoId,
+              TipoReporteId = @tipoReporteFinal,
+              DatosTemp = @datosTemp,
+              EquipoIdTemp = @equipoIdTemp,
+              UltimaActividad = GETDATE(),
+              Version = ISNULL(Version, 0) + 1
+          WHERE Telefono = @telefono ${versionClause};
+
+          -- 3. INSERT historial (solo si UPDATE afectó filas)
+          IF @@ROWCOUNT > 0
+            INSERT INTO HistorialSesiones
+              (Telefono, TipoReporteId, EstadoAnteriorId, EstadoNuevoId, OrigenAccion, Descripcion, ReporteId)
+            VALUES
+              (@telefono, @tipoReporteFinal, @estadoAnteriorId, @estadoId, @origenAccion, @descripcion, @reporteId);
+
+          -- Devolver filas afectadas del UPDATE para verificar optimistic locking
+          SELECT @@ROWCOUNT AS HistorialInserted, @tipoReporteFinal AS TipoReporteFinal;
+        `;
+
+        const batchResult = await request.query(batchQuery);
+
+        // Verificar optimistic locking: si UPDATE no afectó filas = race condition
+        const historialInserted = batchResult.recordset?.[0]?.HistorialInserted ?? 0;
+        if (expectedVersion !== null && expectedVersion !== undefined && historialInserted === 0) {
           throw new ConcurrencyError(telefono, expectedVersion, 'updateSession');
         }
 
-        // Guardar en historial
-        await pool
-          .request()
-          .input('telefono', sql.NVarChar, telefono)
-          .input('tipoReporteId', sql.Int, tipoReporteId)
-          .input('estadoAnteriorId', sql.Int, estadoAnteriorId)
-          .input('estadoNuevoId', sql.Int, estadoId)
-          .input('origenAccion', sql.NVarChar, origenAccion)
-          .input('descripcion', sql.NVarChar, descripcion)
-          .input('reporteId', sql.Int, reporteId).query(`
-                        INSERT INTO HistorialSesiones
-                            (Telefono, TipoReporteId, EstadoAnteriorId, EstadoNuevoId, OrigenAccion, Descripcion, ReporteId)
-                        VALUES
-                            (@telefono, @tipoReporteId, @estadoAnteriorId, @estadoNuevoId, @origenAccion, @descripcion, @reporteId)
-                    `);
-
         logger.debug(`Sesión actualizada: ${telefono} -> ${estadoCodigo}`);
+        return batchResult.recordset?.[0];
       });
 
-      // Actualizar TipoReporteId en cache (se determina después de leer BD)
-      if (cached && tipoReporteId !== undefined) {
-        cached.data.TipoReporteId = tipoReporteId;
-      }
+      // Cache-aside: Invalidar cache tras DB write exitoso
+      // Próximo getSession() re-populate desde BD (1 extra read, elimina phantom reads)
+      this.invalidateCache(telefono);
+
+      // App Insights: rastrear transiciones de estado del flujo
+      appInsights.trackEvent('flow_state_change', {
+        from: previousEstado,
+        to: estadoCodigo,
+        origen: origenAccion,
+        telefono,
+      });
     } catch (error) {
       logger.error('Error actualizando sesión', error, {
         telefono,
@@ -311,17 +283,10 @@ class SesionRepository extends BaseRepository {
         operation: 'updateSession',
       });
 
-      // Revertir cache si falló el update a BD
-      if (previousCacheState && cached) {
-        logger.warn('Revirtiendo cache por error en BD', { telefono, estadoCodigo });
-        cached.data = previousCacheState;
-      } else {
-        // Invalidar cache para forzar lectura fresca
-        this.invalidateCache(telefono);
-      }
+      // Invalidar cache para forzar lectura fresca desde BD
+      this.invalidateCache(telefono);
 
       // IMPORTANTE: Re-lanzar el error para que el llamador pueda manejarlo
-      // Esto evita que errores silenciosos causen inconsistencias
       throw error;
     }
   }
@@ -344,46 +309,37 @@ class SesionRepository extends BaseRepository {
     confianzaIA = null
   ) {
     try {
+      // OPTIMIZACIÓN: Un solo roundtrip SQL (SELECT SesionId + INSERT + UPDATE contador)
       await this.executeQuery(async () => {
         const pool = await this.getPool();
+        const esUsuario = tipo === TIPO_MENSAJE.USUARIO;
 
-        // Obtener SesionId
-        const sessionResult = await pool
-          .request()
-          .input('telefono', sql.NVarChar, telefono)
-          .query(`SELECT SesionId FROM SesionesChat WHERE Telefono = @telefono`);
-
-        const sesionId = sessionResult.recordset[0]?.SesionId;
-        if (!sesionId) {
-          logger.warn(`No se encontró sesión para guardar mensaje: ${telefono}`);
-          return;
-        }
-
-        // Guardar mensaje
         await pool
           .request()
-          .input('sesionId', sql.Int, sesionId)
           .input('telefono', sql.NVarChar, telefono)
           .input('tipo', sql.Char, tipo)
           .input('contenido', sql.NVarChar, contenido?.substring(0, 2000))
           .input('tipoContenido', sql.NVarChar, tipoContenido)
           .input('intencionDetectada', sql.NVarChar, intencionDetectada)
-          .input('confianzaIA', sql.Decimal(5, 4), confianzaIA).query(`
-                        INSERT INTO MensajesChat
-                            (SesionId, Telefono, Tipo, Contenido, TipoContenido, IntencionDetectada, ConfianzaIA)
-                        VALUES
-                            (@sesionId, @telefono, @tipo, @contenido, @tipoContenido, @intencionDetectada, @confianzaIA)
-                    `);
+          .input('confianzaIA', sql.Decimal(5, 4), confianzaIA)
+          .input('esUsuario', sql.Bit, esUsuario ? 1 : 0).query(`
+            DECLARE @sesionId INT;
+            SELECT @sesionId = SesionId FROM SesionesChat WHERE Telefono = @telefono;
 
-        // Si es mensaje de usuario, incrementar contador
-        if (tipo === TIPO_MENSAJE.USUARIO) {
-          await pool.request().input('telefono', sql.NVarChar, telefono).query(`
-                            UPDATE SesionesChat
-                            SET ContadorMensajes = ContadorMensajes + 1,
-                                UltimaActividad = GETDATE()
-                            WHERE Telefono = @telefono
-                        `);
-        }
+            IF @sesionId IS NOT NULL
+            BEGIN
+              INSERT INTO MensajesChat
+                (SesionId, Telefono, Tipo, Contenido, TipoContenido, IntencionDetectada, ConfianzaIA)
+              VALUES
+                (@sesionId, @telefono, @tipo, @contenido, @tipoContenido, @intencionDetectada, @confianzaIA);
+
+              IF @esUsuario = 1
+                UPDATE SesionesChat
+                SET ContadorMensajes = ContadorMensajes + 1,
+                    UltimaActividad = GETDATE()
+                WHERE Telefono = @telefono;
+            END
+          `);
       });
     } catch (error) {
       logger.error('Error guardando mensaje', error, { telefono, tipo });
@@ -560,7 +516,8 @@ class SesionRepository extends BaseRepository {
                             tr.Codigo AS TipoReporte,
                             s.DatosTemp,
                             s.EquipoIdTemp,
-                            s.UltimaActividad
+                            s.UltimaActividad,
+                            ISNULL(s.Version, 0) AS Version
                         FROM SesionesChat s
                         INNER JOIN CatEstadoSesion es ON s.EstadoId = es.EstadoId
                         LEFT JOIN CatTipoReporte tr ON s.TipoReporteId = tr.TipoReporteId
@@ -576,18 +533,35 @@ class SesionRepository extends BaseRepository {
   }
 
   /**
-   * Cierra una sesión por timeout
+   * Cierra una sesión por timeout.
+   * Usa UPDATE atómico con Version para evitar lectura previa redundante.
+   * Si otro proceso modificó la sesión (ConcurrencyError), se reintentará en el próximo ciclo.
    * @param {string} telefono - Número de teléfono
+   * @param {number} expectedVersion - Versión esperada (del query de sesiones expiradas)
    */
-  async closeSession(telefono) {
-    await this.updateSession(
-      telefono,
-      ESTADO.TIMEOUT,
-      null,
-      null,
-      ORIGEN_ACCION.TIMER,
-      'Sesión cerrada por inactividad'
-    );
+  async closeSession(telefono, expectedVersion) {
+    try {
+      await this.updateSession(
+        telefono,
+        ESTADO.TIMEOUT,
+        null,
+        null,
+        ORIGEN_ACCION.TIMER,
+        'Sesión cerrada por inactividad',
+        null,
+        expectedVersion
+      );
+    } catch (error) {
+      if (error instanceof ConcurrencyError) {
+        // Usuario envió mensaje justo cuando el timer intentaba cerrar - ignorar,
+        // se reintentará en el próximo ciclo si sigue inactiva
+        logger.info(
+          `Concurrencia en closeSession para ${telefono}, se reintentará en próximo ciclo`
+        );
+        return;
+      }
+      throw error;
+    }
     this.invalidateCache(telefono);
   }
 
@@ -853,6 +827,44 @@ class SesionRepository extends BaseRepository {
       // Ignorar si la tabla no existe
       if (!error.message.includes('Invalid object name')) {
         logger.error('Error limpiando mensajes procesados', error);
+      }
+    }
+  }
+
+  /**
+   * Limpia registros de historial de sesiones con más de 3 meses de antigüedad.
+   * Usa borrado en lotes (TOP 5000) para evitar lock escalation con tablas grandes.
+   * Llamado periódicamente por el timer de cleanup.
+   */
+  async cleanOldHistorialSesiones() {
+    const BATCH_SIZE = 5000;
+    try {
+      let totalDeleted = 0;
+
+      // Borrar en lotes para evitar lock escalation
+
+      while (true) {
+        const result = await this.executeQuery(async () => {
+          const pool = await this.getPool();
+          return pool.request().input('batchSize', sql.Int, BATCH_SIZE).query(`
+                      DELETE TOP (@batchSize) FROM HistorialSesiones
+                      WHERE FechaAccion < DATEADD(MONTH, -3, GETDATE())
+                  `);
+        });
+        const deleted = result?.rowsAffected?.[0] || 0;
+        totalDeleted += deleted;
+
+        if (deleted < BATCH_SIZE) {
+          break;
+        }
+      }
+
+      if (totalDeleted > 0) {
+        logger.info(`Limpieza de historial: ${totalDeleted} registros eliminados (>3 meses)`);
+      }
+    } catch (error) {
+      if (!error.message.includes('Invalid object name')) {
+        logger.error('Error limpiando historial de sesiones', error);
       }
     }
   }

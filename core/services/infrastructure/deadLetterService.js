@@ -165,6 +165,35 @@ async function markAsProcessed(deadLetterId) {
 }
 
 /**
+ * Marca un mensaje como omitido (no se puede reprocesar)
+ * @param {number} deadLetterId - ID del registro en dead letter
+ * @param {string} reason - Razón por la que se omitió
+ * @returns {Promise<boolean>}
+ */
+async function markAsSkipped(deadLetterId, reason) {
+  try {
+    await executeWithRetry(async () => {
+      const pool = await getPool();
+      await pool
+        .request()
+        .input('id', sql.Int, deadLetterId)
+        .input('reason', sql.NVarChar, (reason || 'Skipped').substring(0, 1000)).query(`
+          UPDATE DeadLetterMessages
+          SET Estado = 'SKIPPED',
+              ErrorMessage = @reason,
+              FechaActualizacion = GETDATE()
+          WHERE DeadLetterId = @id
+        `);
+    });
+    logger.info('[DeadLetter] Mensaje marcado como omitido', { deadLetterId, reason });
+    return true;
+  } catch (error) {
+    logger.error('[DeadLetter] Error marcando mensaje como omitido', error, { deadLetterId });
+    return false;
+  }
+}
+
+/**
  * Incrementa el contador de reintentos y actualiza estado
  * @param {number} deadLetterId - ID del registro
  * @param {Error} error - Error del reintento fallido
@@ -324,6 +353,7 @@ function getMode() {
 module.exports = {
   saveFailedMessage,
   markAsProcessed,
+  markAsSkipped,
   recordRetryFailure,
   getMessagesForRetry,
   cleanOldMessages,

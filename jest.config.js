@@ -1,43 +1,60 @@
 /**
- * Jest Configuration for AC FixBot
+ * AC FIXBOT - Jest Configuration
+ * Multi-project: unit, integration, e2e
  */
+const baseConfig = {
+  testEnvironment: 'node',
+  setupFiles: ['<rootDir>/tests/setup/envSetup.js'],
+  setupFilesAfterEnv: ['<rootDir>/tests/setup/testSetup.js'],
+  modulePathIgnorePatterns: ['<rootDir>/node_modules/'],
+};
+
 module.exports = {
-    testEnvironment: 'node',
-    roots: ['<rootDir>/tests'],
-    testMatch: ['**/*.test.js'],
-    collectCoverageFrom: [
-        'controllers/**/*.js',
-        'services/**/*.js',
-        'repositories/**/*.js',
-        'utils/**/*.js',
-        'config/**/*.js',
-        'api-whatsapp-webhook/**/*.js',
-        'api-ticket-resolve/**/*.js',
-        'api-admin-cache/**/*.js',
-        'api-health/**/*.js',
-        'middleware/**/*.js',
-        'session-cleanup-timer/**/*.js',
-        'survey-sender-timer/**/*.js',
-        'constants/**/*.js',
-        '!**/node_modules/**',
-        '!**/providers/**',
-        '!**/*.test.js',
-        '!**/tests/**'
-    ],
-    coverageDirectory: 'coverage',
-    coverageReporters: ['text', 'lcov', 'html'],
-    coverageThreshold: {
-        global: {
-            branches: 55,
-            functions: 60,
-            lines: 65,
-            statements: 65
-        }
+  projects: [
+    {
+      ...baseConfig,
+      displayName: 'unit',
+      roots: ['<rootDir>/tests/unit'],
+      testMatch: ['**/*.test.js'],
+      clearMocks: true,
+      restoreMocks: true,
+      testTimeout: 5000,
     },
-    setupFiles: ['<rootDir>/tests/setupMocks.js'],
-    setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
-    modulePathIgnorePatterns: ['<rootDir>/node_modules/'],
-    testTimeout: 10000,
-    verbose: true,
-    clearMocks: true
+    {
+      ...baseConfig,
+      displayName: 'integration',
+      roots: ['<rootDir>/tests/integration'],
+      testMatch: ['**/*.test.js'],
+      clearMocks: true,
+      testTimeout: 15000,
+    },
+    {
+      ...baseConfig,
+      displayName: 'e2e',
+      roots: ['<rootDir>/tests/e2e'],
+      testMatch: ['**/*.e2e.test.js'],
+      testTimeout: 30000,
+      maxWorkers: 1,
+    },
+  ],
+  collectCoverageFrom: [
+    'api-whatsapp-webhook/**/*.js',
+    'bot/**/*.js',
+    'core/**/*.js',
+    'timer-*/**/*.js',
+    '!**/node_modules/**',
+    '!**/tests/**',
+    '!**/coverage/**',
+    '!**/__mocks__/**',
+  ],
+  coverageDirectory: 'coverage',
+  coverageReporters: ['text', 'lcov', 'html'],
+  coverageThreshold: {
+    global: {
+      branches: 60,
+      functions: 65,
+      lines: 75,
+      statements: 75,
+    },
+  },
 };

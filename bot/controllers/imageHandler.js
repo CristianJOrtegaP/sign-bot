@@ -6,14 +6,13 @@
 const whatsapp = require('../../core/services/external/whatsappService');
 const db = require('../../core/services/storage/databaseService');
 const backgroundProcessor = require('../../core/services/processing/backgroundProcessor');
-const rateLimiter = require('../../core/services/infrastructure/rateLimiter');
-const {
-  ESTADO,
-  TIPO_REPORTE: _TIPO_REPORTE,
-  ORIGEN_ACCION,
-  esEstadoTerminal,
-} = require('../constants/sessionStates');
+const { ESTADO, TIPO_REPORTE: _TIPO_REPORTE } = require('../constants/sessionStates');
 const { safeParseJSON } = require('../../core/utils/helpers');
+const {
+  enforceRateLimit,
+  reactivateSessionIfTerminal,
+} = require('./messageHandler/utils/handlerMiddleware');
+const correlation = require('../../core/services/infrastructure/correlationService');
 
 /**
  * Límites de tamaño de imagen para seguridad
@@ -79,40 +78,22 @@ async function handleImage(from, imageData, messageId, context) {
     }
   }
 
-  // Verificar rate limit para imágenes
-  const rateLimitCheck = rateLimiter.checkRateLimit(from, 'image');
-  if (!rateLimitCheck.allowed) {
+  // Verificar rate limit (middleware compartido)
+  const rateLimitResult = await enforceRateLimit(from, 'image');
+  if (!rateLimitResult.allowed) {
     context.log(`⚠️ Rate limit de imágenes excedido para ${from}`);
-    await whatsapp.sendAndSaveText(from, `⏱️ ${rateLimitCheck.reason}`);
     return;
   }
-
-  // Registrar solicitud de imagen
-  rateLimiter.recordRequest(from, 'image');
 
   // Mostrar "Escribiendo..." (fire-and-forget, no bloquea el flujo)
   whatsapp.sendTypingIndicator(from, messageId).catch(() => {});
 
   // Obtener sesión del usuario (FORZAR LECTURA FRESCA sin caché)
-  // Esto evita race conditions donde el caché tiene estado antiguo
   const session = await db.getSessionFresh(from);
   context.log(`[ImageHandler] Estado inicial de sesión (fresh): ${session.Estado}`);
 
-  // Si la sesión está en estado terminal, reiniciar a INICIO
-  // Esto asegura que cada nueva imagen comience con sesión limpia
-  if (esEstadoTerminal(session.Estado)) {
-    context.log(`[ImageHandler] Reiniciando sesión desde estado terminal: ${session.Estado}`);
-    await db.updateSession(
-      from,
-      ESTADO.INICIO,
-      null,
-      null,
-      ORIGEN_ACCION.USUARIO,
-      `Sesión reiniciada desde ${session.Estado} por imagen`
-    );
-    session.Estado = ESTADO.INICIO;
-    session.DatosTemp = null;
-  }
+  // Reactivar sesión si está en estado terminal (con optimistic locking correcto)
+  await reactivateSessionIfTerminal(from, session, 'imagen', context);
 
   // Extraer caption de la imagen (texto que acompaña la imagen)
   const caption = imageData.caption || '';
@@ -164,9 +145,12 @@ async function handleImage(from, imageData, messageId, context) {
     context.log(`[ImageHandler] Usando procesamiento OCR para código de barras`);
     await whatsapp.sendAndSaveText(from, '🔍 Analizando código de barras... Un momento por favor.');
 
-    backgroundProcessor.processImageInBackground(from, imageData.id, context).catch((err) => {
-      context.log.error('Error en procesamiento background OCR:', err);
-    });
+    const correlationId = correlation.getCorrelationId();
+    backgroundProcessor
+      .processImageInBackground(from, imageData.id, context, { correlationId })
+      .catch((err) => {
+        context.log.error('Error en procesamiento background OCR:', err);
+      });
   } else {
     // Nuevo flujo: AI Vision para análisis general (vehículos y cualquier otro caso)
     context.log(`[ImageHandler] Usando procesamiento AI Vision`);
@@ -175,8 +159,9 @@ async function handleImage(from, imageData, messageId, context) {
       '🤖 Analizando imagen con inteligencia artificial... Un momento por favor.'
     );
 
+    const correlationId = correlation.getCorrelationId();
     backgroundProcessor
-      .processImageWithAIVision(from, imageData.id, caption, context)
+      .processImageWithAIVision(from, imageData.id, caption, context, { correlationId })
       .catch((err) => {
         context.log.error('Error en procesamiento background AI Vision:', err);
       });

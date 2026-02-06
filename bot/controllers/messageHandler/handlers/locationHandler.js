@@ -5,15 +5,16 @@
 
 const whatsapp = require('../../../../core/services/external/whatsappService');
 const db = require('../../../../core/services/storage/databaseService');
-const rateLimiter = require('../../../../core/services/infrastructure/rateLimiter');
 const security = require('../../../../core/services/infrastructure/securityService');
-const flexibleFlowManager = require('../../flows/flexibleFlowManager');
+const { enforceRateLimit } = require('../utils/handlerMiddleware');
+const flexibleFlowManager = require('../../../flows/reporteFlow');
 const {
   ESTADO,
   TIPO_MENSAJE,
   TIPO_CONTENIDO,
   esEstadoFlexible,
 } = require('../../../constants/sessionStates');
+const { ConcurrencyError } = require('../../../../core/errors');
 
 /**
  * Procesa un mensaje de ubicación
@@ -41,54 +42,67 @@ async function handleLocation(from, location, messageId, context) {
   // Usar coordenadas sanitizadas
   location = { ...location, ...locationValidation.sanitized };
 
-  // Verificar rate limit
-  const rateLimitCheck = rateLimiter.checkRateLimit(from, 'message');
-  if (!rateLimitCheck.allowed) {
+  // Verificar rate limit (middleware compartido)
+  const rateLimitResult = await enforceRateLimit(from, 'message');
+  if (!rateLimitResult.allowed) {
     context.log(`⚠️ Rate limit excedido para ${from}`);
-    await whatsapp.sendText(from, `⏱️ ${rateLimitCheck.reason}`);
     return;
   }
 
-  // Registrar solicitud
-  rateLimiter.recordRequest(from, 'message');
-
-  // Guardar mensaje de ubicación en BD
+  // PERFORMANCE: Paralelizar saveMessage + getSession (~80ms ahorro)
   const ubicacionStr = location?.address || `${location?.latitude}, ${location?.longitude}`;
-  await db.saveMessage(from, TIPO_MENSAJE.USUARIO, ubicacionStr, TIPO_CONTENIDO.UBICACION);
+  const [saveResult, sessionResult] = await Promise.allSettled([
+    db.saveMessage(from, TIPO_MENSAJE.USUARIO, ubicacionStr, TIPO_CONTENIDO.UBICACION),
+    db.getSessionFresh(from),
+  ]);
 
-  // Obtener sesión del usuario (FORZAR LECTURA FRESCA sin caché)
-  // Esto evita race conditions donde el caché tiene estado antiguo
-  const session = await db.getSessionFresh(from);
-  context.log(`Estado actual de sesión (fresh): ${session.Estado}`);
-
-  // FASE 2b: Si estamos en estado flexible VEHICULO_ACTIVO, procesar ubicación
-  if (session.Estado === ESTADO.VEHICULO_ACTIVO) {
-    context.log(`[FASE 2b] Procesando ubicación en estado flexible: ${session.Estado}`);
-    const ubicacionObj = {
-      latitud: location.latitude,
-      longitud: location.longitude,
-      // Solo usar direccion si WhatsApp la proporciona, sino dejar null para que se haga geocoding inverso
-      direccion: location.address || null,
-      nombre: location.name || null,
-    };
-    const handled = await flexibleFlowManager.procesarUbicacion(
-      from,
-      ubicacionObj,
-      session,
-      context
-    );
-    if (handled) {
-      return;
-    }
+  if (saveResult.status === 'rejected') {
+    context.log.warn(`⚠️ Error guardando mensaje de ubicación: ${saveResult.reason?.message}`);
+  }
+  if (sessionResult.status === 'rejected') {
+    context.log.error(`❌ Error obteniendo sesión: ${sessionResult.reason?.message}`);
+    throw sessionResult.reason;
   }
 
-  // FASE 2b: Si no estamos en estado flexible, informar al usuario
-  if (!esEstadoFlexible(session.Estado)) {
-    context.log(`Ubicación recibida pero no esperada en estado ${session.Estado}`);
-    await whatsapp.sendAndSaveText(
-      from,
-      'Gracias por tu ubicación, pero en este momento no la necesitamos.'
-    );
+  const session = sessionResult.value;
+  context.log(`Estado actual de sesión (fresh): ${session.Estado}`);
+
+  try {
+    // FASE 2b: Si estamos en estado flexible VEHICULO_ACTIVO, procesar ubicación
+    if (session.Estado === ESTADO.VEHICULO_ACTIVO) {
+      context.log(`[FASE 2b] Procesando ubicación en estado flexible: ${session.Estado}`);
+      const ubicacionObj = {
+        latitud: location.latitude,
+        longitud: location.longitude,
+        // Solo usar direccion si WhatsApp la proporciona, sino dejar null para que se haga geocoding inverso
+        direccion: location.address || null,
+        nombre: location.name || null,
+      };
+      const handled = await flexibleFlowManager.procesarUbicacion(
+        from,
+        ubicacionObj,
+        session,
+        context
+      );
+      if (handled) {
+        return;
+      }
+    }
+
+    // FASE 2b: Si no estamos en estado flexible, informar al usuario
+    if (!esEstadoFlexible(session.Estado)) {
+      context.log(`Ubicación recibida pero no esperada en estado ${session.Estado}`);
+      await whatsapp.sendAndSaveText(
+        from,
+        'Gracias por tu ubicación, pero en este momento no la necesitamos.'
+      );
+    }
+  } catch (error) {
+    if (error instanceof ConcurrencyError) {
+      context.log(`⚡ Conflicto de concurrencia procesando ubicación de ${from}`);
+      return;
+    }
+    throw error;
   }
 }
 

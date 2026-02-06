@@ -158,6 +158,54 @@ async function sendToDeadLetter(messageData, error) {
 }
 
 /**
+ * Envía un mensaje a la cola principal para procesamiento asíncrono
+ * Usado por el webhook para desacoplar recepción de procesamiento.
+ * @param {Object} payload - Datos del mensaje a encolar
+ * @param {Object} payload.message - Mensaje de WhatsApp completo
+ * @param {string} payload.from - Número de teléfono
+ * @param {string} payload.messageId - ID del mensaje de WhatsApp
+ * @param {string} payload.correlationId - Correlation ID para tracing
+ * @returns {Promise<boolean>} - true si se encoló exitosamente, false si hay que procesar sync
+ */
+async function sendToQueue(payload) {
+  // Si no hay sender disponible, indicar que se debe procesar sync
+  if (usingFallback || !isConnected || !sender) {
+    return false;
+  }
+
+  try {
+    const message = {
+      body: payload,
+      messageId: payload.messageId,
+      correlationId: payload.correlationId,
+      subject: payload.message?.type || 'unknown',
+      applicationProperties: {
+        source: 'acfixbot-webhook',
+        phoneNumber: payload.from,
+        messageType: payload.message?.type || 'unknown',
+        enqueuedAt: new Date().toISOString(),
+      },
+      timeToLive: config.serviceBus.messageTimeToLiveMs,
+    };
+
+    await sender.sendMessages(message);
+
+    logger.info('[ServiceBus] Mensaje encolado para procesamiento async', {
+      messageId: payload.messageId,
+      type: payload.message?.type,
+      from: payload.from,
+    });
+
+    return true;
+  } catch (error) {
+    logger.error('[ServiceBus] Error encolando mensaje, fallback a sync', error, {
+      messageId: payload.messageId,
+    });
+    return false;
+  }
+}
+
+/**
  * Recibe mensajes de la cola para reprocesamiento
  * @param {number} maxMessages - Máximo de mensajes a recibir
  * @param {number} maxWaitTimeMs - Tiempo máximo de espera
@@ -335,6 +383,7 @@ function isUsingFallback() {
 
 module.exports = {
   connect,
+  sendToQueue,
   sendToDeadLetter,
   receiveMessages,
   completeMessage,

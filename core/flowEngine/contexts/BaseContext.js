@@ -97,55 +97,85 @@ class BaseContext {
   // ==============================================================
 
   /**
-   * Cambia el estado de la sesión
+   * Cambia el estado de la sesión con optimistic locking
    * @param {string} nuevoEstado - Nuevo estado
    * @param {Object|null} datos - Datos temporales (se hace JSON.stringify)
    * @param {string} motivo - Motivo del cambio
    */
   async cambiarEstado(nuevoEstado, datos = null, motivo = '') {
+    const version = this._getVersion();
     await db.updateSession(
       this.from,
       nuevoEstado,
       datos,
       null,
       ORIGEN_ACCION.BOT,
-      motivo || `Cambio a ${nuevoEstado}`
+      motivo || `Cambio a ${nuevoEstado}`,
+      null,
+      version
     );
+    this._incrementVersion();
     this._logAccion('cambiarEstado', { nuevoEstado, motivo });
   }
 
   /**
-   * Actualiza solo los datos temporales sin cambiar estado
+   * Actualiza solo los datos temporales sin cambiar estado (con optimistic locking)
    * @param {Object} datos - Nuevos datos temporales
    * @param {string} motivo - Motivo de la actualización
    */
   async actualizarDatos(datos, motivo = '') {
+    const version = this._getVersion();
     await db.updateSession(
       this.from,
       this.session.Estado,
       datos,
       this.session.EquipoId,
       ORIGEN_ACCION.BOT,
-      motivo || 'Actualización de datos'
+      motivo || 'Actualización de datos',
+      null,
+      version
     );
+    this._incrementVersion();
     this._logAccion('actualizarDatos', { motivo });
   }
 
   /**
-   * Finaliza el flujo y resetea a INICIO
+   * Finaliza el flujo y resetea a INICIO (con optimistic locking)
    * @param {string} motivo - Motivo de finalización
    */
   async finalizar(motivo = 'Flujo completado') {
-    await db.updateSession(this.from, 'INICIO', null, null, ORIGEN_ACCION.BOT, motivo);
+    const version = this._getVersion();
+    await db.updateSession(
+      this.from,
+      'INICIO',
+      null,
+      null,
+      ORIGEN_ACCION.BOT,
+      motivo,
+      null,
+      version
+    );
+    this._incrementVersion();
     this._logAccion('finalizar', { motivo });
   }
 
   /**
-   * Cancela el flujo actual
+   * Cancela el flujo actual (con optimistic locking)
    * @param {string} motivo - Motivo de cancelación
    */
   async cancelar(motivo = 'Flujo cancelado por usuario') {
-    await db.updateSession(this.from, 'CANCELADO', null, null, ORIGEN_ACCION.USUARIO, motivo);
+    const version = this._getVersion();
+    await db.updateSession(
+      this.from,
+      'CANCELADO',
+      null,
+      null,
+      ORIGEN_ACCION.USUARIO,
+      motivo,
+      null,
+      version
+    );
+    this._incrementVersion();
     this._logAccion('cancelar', { motivo });
   }
 
@@ -219,8 +249,9 @@ class BaseContext {
   /**
    * Log de advertencia
    * @param {string} mensaje - Mensaje de advertencia
+   * @param {Object} [metadata] - Datos adicionales para logging
    */
-  warn(mensaje) {
+  warn(mensaje, _metadata) {
     if (this.context?.log?.warn) {
       this.context.log.warn(`[${this.flowName}] ⚠️ ${mensaje}`);
     } else if (this.context?.log) {
@@ -275,6 +306,26 @@ class BaseContext {
   // ==============================================================
   // MÉTODOS INTERNOS
   // ==============================================================
+
+  /**
+   * Obtiene la versión actual de la sesión para optimistic locking
+   * @returns {number|null} Versión actual o null si no hay sesión
+   * @private
+   */
+  _getVersion() {
+    return this.session?.Version ?? null;
+  }
+
+  /**
+   * Incrementa la versión local después de un update exitoso
+   * Mantiene la sesión en memoria sincronizada con BD
+   * @private
+   */
+  _incrementVersion() {
+    if (this.session && this.session.Version !== undefined && this.session.Version !== null) {
+      this.session.Version++;
+    }
+  }
 
   /**
    * Log interno de acciones para debugging

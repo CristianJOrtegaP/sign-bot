@@ -6,14 +6,21 @@
  */
 
 const EncuestaRepository = require('../bot/repositories/EncuestaRepository');
-const encuestaFlow = require('../bot/controllers/flows/encuestaFlow');
+const SesionRepository = require('../bot/repositories/SesionRepository');
+const encuestaFlow = require('../bot/flows/encuestaFlow');
 const { logger } = require('../core/services/infrastructure/errorHandler');
 const { sleep } = require('../core/utils/promises');
+const appInsights = require('../core/services/infrastructure/appInsightsService');
+
+const ESTADOS_TERMINALES = ['INICIO', 'CANCELADO', 'FINALIZADO', 'TIMEOUT'];
 
 // Configuracion por defecto
 const DEFAULT_MINUTOS_ESPERA = 1440; // Esperar 1440 minutos (24 horas) desde resolucion
 const MAX_ENCUESTAS_POR_EJECUCION = 50; // Limitar para no saturar
 const PAUSA_ENTRE_ENVIOS_MS = 1000; // 1 segundo entre envios
+const DEFAULT_HORA_INICIO_ENVIO = 8; // No enviar antes de las 8 AM
+const DEFAULT_HORA_FIN_ENVIO = 20; // No enviar despues de las 8 PM
+const DEFAULT_TIMEZONE_OFFSET = -6; // UTC-6 (Mexico Centro)
 
 module.exports = async function (context, myTimer) {
   const timestamp = new Date().toISOString();
@@ -27,9 +34,23 @@ module.exports = async function (context, myTimer) {
   context.log('============================================================');
   context.log('Inicio:', timestamp);
 
+  // Validar ventana horaria para no enviar en horarios inadecuados
+  const tzOffset = parseInt(process.env.TIMEZONE_OFFSET_HOURS || DEFAULT_TIMEZONE_OFFSET, 10);
+  const horaLocal = (((new Date().getUTCHours() + tzOffset) % 24) + 24) % 24;
+  const horaInicio = parseInt(process.env.SURVEY_HORA_INICIO || DEFAULT_HORA_INICIO_ENVIO, 10);
+  const horaFin = parseInt(process.env.SURVEY_HORA_FIN || DEFAULT_HORA_FIN_ENVIO, 10);
+
+  if (horaLocal < horaInicio || horaLocal >= horaFin) {
+    context.log(
+      `Fuera de ventana de envio (${horaInicio}:00 - ${horaFin}:00). Hora local: ${horaLocal}:00. Saltando.`
+    );
+    return;
+  }
+
   const stats = {
     reportesPendientes: 0,
     encuestasEnviadas: 0,
+    omitidas: 0,
     errores: 0,
     duracionMs: 0,
   };
@@ -64,6 +85,23 @@ module.exports = async function (context, myTimer) {
     // Procesar cada reporte
     for (const reporte of reportesAProcesar) {
       try {
+        // Segunda capa de defensa: verificar que el usuario no tenga sesion activa
+        try {
+          const sesion = await SesionRepository.getSession(reporte.TelefonoReportante, true);
+          if (sesion && !ESTADOS_TERMINALES.includes(sesion.Estado)) {
+            stats.omitidas++;
+            context.log(
+              `   Sesion activa (${sesion.Estado}) para ${reporte.TelefonoReportante}, posponiendo encuesta`
+            );
+            continue;
+          }
+        } catch (_sesionError) {
+          // Si falla la verificacion de sesion, continuar con el envio (el SP ya filtro)
+          logger.warn('Error verificando sesion activa, continuando', {
+            telefono: reporte.TelefonoReportante,
+          });
+        }
+
         context.log(
           `Enviando encuesta para ticket: ${reporte.NumeroTicket} -> ${reporte.TelefonoReportante}`
         );
@@ -137,6 +175,8 @@ module.exports = async function (context, myTimer) {
     logResumen(context, timestamp, stats);
   }
 
+  // Flush AppInsights antes de que termine la function
+  await appInsights.flush();
   context.log('Survey trigger completado:', new Date().toISOString());
 };
 
@@ -151,6 +191,7 @@ function logResumen(context, timestamp, stats) {
   context.log('Timestamp:            ', timestamp);
   context.log('Reportes pendientes:  ', stats.reportesPendientes);
   context.log('Encuestas enviadas:   ', stats.encuestasEnviadas);
+  context.log('Omitidas (sesion):    ', stats.omitidas);
   context.log('Errores:              ', stats.errores);
   context.log('Duracion:             ', stats.duracionMs, 'ms');
   context.log('============================================================');

@@ -1,25 +1,34 @@
 /**
- * Tests - Flow Manager (FASE 2b)
- * Pruebas del orquestador central de flujos con arquitectura flexible
+ * Unit Test: FlowManager
+ * Orquestador central de flujos de conversación
  */
 
-// Mocks
+jest.mock('../../core/services/infrastructure/appInsightsService', () =>
+  require('../__mocks__/appInsightsService.mock')
+);
 jest.mock('../../core/services/external/whatsappService', () =>
-  require('../__mocks__/whatsappService')
+  require('../__mocks__/whatsappService.mock')
 );
 jest.mock('../../core/services/storage/databaseService', () =>
-  require('../__mocks__/databaseService')
+  require('../__mocks__/databaseService.mock')
 );
-jest.mock('../../core/config', () => require('../__mocks__/config'));
+jest.mock('../../core/services/infrastructure/metricsService', () =>
+  require('../__mocks__/metricsService.mock')
+);
+jest.mock('../../core/services/infrastructure/errorHandler', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(), ai: jest.fn() },
+}));
 
-jest.mock('../../bot/controllers/flows/flexibleFlowManager', () => ({
+// Mock flows
+jest.mock('../../bot/flows/reporteFlow', () => ({
   iniciarFlujo: jest.fn().mockResolvedValue(undefined),
   procesarMensaje: jest.fn().mockResolvedValue(true),
   procesarBoton: jest.fn().mockResolvedValue(true),
+  procesarImagen: jest.fn().mockResolvedValue(true),
   procesarUbicacion: jest.fn().mockResolvedValue(true),
+  esEstadoFlexible: jest.fn(() => true),
 }));
-
-jest.mock('../../bot/controllers/flows/encuestaFlow', () => ({
+jest.mock('../../bot/flows/encuestaFlow', () => ({
   handleInvitacion: jest.fn().mockResolvedValue(undefined),
   handleRespuestaPregunta: jest.fn().mockResolvedValue(undefined),
   handleComentarioDecision: jest.fn().mockResolvedValue(undefined),
@@ -29,379 +38,281 @@ jest.mock('../../bot/controllers/flows/encuestaFlow', () => ({
   handleBotonRating: jest.fn().mockResolvedValue(undefined),
   handleBotonSiComentario: jest.fn().mockResolvedValue(undefined),
   handleBotonNoComentario: jest.fn().mockResolvedValue(undefined),
+  iniciarEncuesta: jest.fn().mockResolvedValue(true),
 }));
-
-jest.mock('../../bot/controllers/flows/consultaEstadoFlow', () => ({
-  iniciarFlujo: jest.fn().mockResolvedValue(undefined),
+jest.mock('../../bot/flows/consultaFlow', () => ({
   handleTicketInput: jest.fn().mockResolvedValue(undefined),
+  iniciarFlujo: jest.fn().mockResolvedValue(undefined),
+  consultarTicketDirecto: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('../../bot/flows', () => ({
+  registry: {
+    tieneHandlerParaEstado: jest.fn(() => false),
+    procesarMensaje: jest.fn().mockResolvedValue(false),
+    procesarBoton: jest.fn().mockResolvedValue(false),
+    obtenerHandlerBoton: jest.fn(() => null),
+  },
+  inicializarFlujos: jest.fn(),
 }));
 
-const FlowManager = require('../../bot/controllers/flows/FlowManager');
-const flexibleFlowManager = require('../../bot/controllers/flows/flexibleFlowManager');
-const encuestaFlow = require('../../bot/controllers/flows/encuestaFlow');
-const consultaEstadoFlow = require('../../bot/controllers/flows/consultaEstadoFlow');
+const {
+  processSessionState,
+  processButton,
+  cancelarFlujo,
+  iniciarFlujoConDatos,
+  getTipoReportePorEstado,
+} = require('../../bot/controllers/flows/FlowManager');
+const flexibleFlowManager = require('../../bot/flows/reporteFlow');
+const consultaFlow = require('../../bot/flows/consultaFlow');
 const whatsapp = require('../../core/services/external/whatsappService');
 const db = require('../../core/services/storage/databaseService');
+const { registry } = require('../../bot/flows');
+const { ConcurrencyError } = require('../../core/errors');
+const { createSession } = require('../factories/sessionFactory');
 
-describe('FlowManager (FASE 2b)', () => {
-  let mockContext;
-  const testPhone = '+5215540829614';
+describe('FlowManager', () => {
+  let context;
 
   beforeEach(() => {
+    context = global.createMockContext();
     jest.clearAllMocks();
-    whatsapp.__reset();
-    db.__reset();
-
-    mockContext = {
-      log: jest.fn(),
-      log_error: jest.fn(),
-    };
+    registry.tieneHandlerParaEstado.mockReturnValue(false);
+    registry.obtenerHandlerBoton.mockReturnValue(null);
   });
 
-  describe('processSessionState', () => {
-    test('debe delegar estados flexibles a flexibleFlowManager', async () => {
-      const session = {
-        Estado: 'REFRIGERADOR_ACTIVO',
-        DatosTemp: JSON.stringify({ tipoReporte: 'REFRIGERADOR' }),
-      };
+  // ===========================================================
+  // PROCESS SESSION STATE
+  // ===========================================================
+  describe('processSessionState()', () => {
+    test('debe retornar false para estados flexibles (delega a messageHandler)', async () => {
+      const session = createSession({ Estado: 'REFRIGERADOR_ACTIVO' });
 
-      const result = await FlowManager.processSessionState(
-        testPhone,
-        '1234567',
-        session,
-        mockContext
-      );
-
-      // Estados flexibles retornan false para que messageHandler los maneje
-      expect(result).toBe(false);
-    });
-
-    test('debe delegar estado VEHICULO_ACTIVO a flexibleFlowManager', async () => {
-      const session = {
-        Estado: 'VEHICULO_ACTIVO',
-        DatosTemp: JSON.stringify({ tipoReporte: 'VEHICULO' }),
-      };
-
-      const result = await FlowManager.processSessionState(
-        testPhone,
-        'texto',
-        session,
-        mockContext
-      );
+      const result = await processSessionState('+52155', 'texto', session, context);
 
       expect(result).toBe(false);
+      expect(registry.procesarMensaje).not.toHaveBeenCalled();
     });
 
-    test('debe procesar estado ENCUESTA_PREGUNTA_1', async () => {
-      const session = {
-        Estado: 'ENCUESTA_PREGUNTA_1',
-        DatosTemp: JSON.stringify({ encuestaId: 1 }),
-      };
+    test('debe usar FlowEngine para estados migrados', async () => {
+      registry.tieneHandlerParaEstado.mockReturnValue(true);
+      registry.procesarMensaje.mockResolvedValue(true);
+      const session = createSession({ Estado: 'ENCUESTA_PREGUNTA_1' });
 
-      const result = await FlowManager.processSessionState(testPhone, '5', session, mockContext);
+      const result = await processSessionState('+52155', 'texto', session, context);
 
       expect(result).toBe(true);
-      expect(encuestaFlow.handleRespuestaPregunta).toHaveBeenCalled();
+      expect(registry.procesarMensaje).toHaveBeenCalledWith('+52155', 'texto', session, context);
     });
 
-    test('debe procesar estado CONSULTA_ESPERA_TICKET', async () => {
-      const session = {
-        Estado: 'CONSULTA_ESPERA_TICKET',
-        DatosTemp: null,
-      };
+    test('debe retornar false si no hay handler para el estado', async () => {
+      const session = createSession({ Estado: 'ESTADO_DESCONOCIDO' });
 
-      const result = await FlowManager.processSessionState(
-        testPhone,
-        'TKT-12345678',
-        session,
-        mockContext
-      );
-
-      expect(result).toBe(true);
-      expect(consultaEstadoFlow.handleTicketInput).toHaveBeenCalled();
-    });
-
-    test('debe retornar false para estado no registrado', async () => {
-      const session = { Estado: 'ESTADO_DESCONOCIDO' };
-
-      const result = await FlowManager.processSessionState(
-        testPhone,
-        'texto',
-        session,
-        mockContext
-      );
+      const result = await processSessionState('+52155', 'texto', session, context);
 
       expect(result).toBe(false);
     });
 
-    test('debe retornar false para estado INICIO', async () => {
-      const session = { Estado: 'INICIO' };
+    test('debe propagar errores del FlowEngine', async () => {
+      registry.tieneHandlerParaEstado.mockReturnValue(true);
+      registry.procesarMensaje.mockRejectedValue(new Error('FlowEngine error'));
+      const session = createSession({ Estado: 'ENCUESTA_PREGUNTA_1' });
 
-      const result = await FlowManager.processSessionState(
-        testPhone,
-        'texto',
-        session,
-        mockContext
+      await expect(processSessionState('+52155', 'texto', session, context)).rejects.toThrow(
+        'FlowEngine error'
       );
-
-      expect(result).toBe(false);
     });
   });
 
-  describe('processButton', () => {
-    test('debe iniciar flujo flexible para refrigerador', async () => {
-      const session = { Estado: 'INICIO' };
+  // ===========================================================
+  // PROCESS BUTTON
+  // ===========================================================
+  describe('processButton()', () => {
+    test('debe usar FlowEngine para botones migrados', async () => {
+      registry.obtenerHandlerBoton.mockReturnValue({ flujo: 'ENCUESTA', handler: 'test' });
+      registry.procesarBoton.mockResolvedValue(true);
+      const session = createSession({ Estado: 'ENCUESTA_PREGUNTA_1' });
 
-      const result = await FlowManager.processButton(
-        testPhone,
-        'btn_tipo_refrigerador',
-        session,
-        mockContext
-      );
-
-      expect(result).toBe(true);
-      expect(flexibleFlowManager.iniciarFlujo).toHaveBeenCalledWith(
-        testPhone,
-        'REFRIGERADOR',
-        {},
-        mockContext
-      );
-    });
-
-    test('debe iniciar flujo flexible para vehículo', async () => {
-      const session = { Estado: 'INICIO' };
-
-      const result = await FlowManager.processButton(
-        testPhone,
-        'btn_tipo_vehiculo',
-        session,
-        mockContext
-      );
+      const result = await processButton('+52155', 'btn_enc', session, context);
 
       expect(result).toBe(true);
-      expect(flexibleFlowManager.iniciarFlujo).toHaveBeenCalledWith(
-        testPhone,
-        'VEHICULO',
-        {},
-        mockContext
-      );
+      expect(registry.procesarBoton).toHaveBeenCalledWith('+52155', 'btn_enc', session, context);
     });
 
-    test('debe iniciar flujo de consulta', async () => {
-      const session = { Estado: 'INICIO' };
+    test('debe ejecutar cancelarFlujo para btn_cancelar', async () => {
+      const session = createSession({ Estado: 'REFRIGERADOR_ACTIVO', Version: 2 });
+      db.getSessionFresh.mockResolvedValue(session);
 
-      const result = await FlowManager.processButton(
-        testPhone,
-        'btn_consultar_ticket',
-        session,
-        mockContext
-      );
-
-      expect(result).toBe(true);
-      expect(consultaEstadoFlow.iniciarFlujo).toHaveBeenCalled();
-    });
-
-    test('debe procesar botón de cancelar', async () => {
-      const session = { Estado: 'REFRIGERADOR_ACTIVO' };
-
-      const result = await FlowManager.processButton(
-        testPhone,
-        'btn_cancelar',
-        session,
-        mockContext
-      );
+      const result = await processButton('+52155', 'btn_cancelar', session, context);
 
       expect(result).toBe(true);
       expect(db.updateSession).toHaveBeenCalledWith(
-        testPhone,
+        '+52155',
         'CANCELADO',
         null,
         null,
         'USUARIO',
-        expect.any(String)
+        expect.any(String),
+        null,
+        2
       );
       expect(whatsapp.sendText).toHaveBeenCalled();
     });
 
-    test('debe procesar botones flexibles (confirmar/modificar)', async () => {
-      const session = {
-        Estado: 'REFRIGERADOR_ACTIVO',
-        DatosTemp: JSON.stringify({ tipoReporte: 'REFRIGERADOR' }),
-      };
+    test('debe iniciar flujo flexible para btn_tipo_refrigerador', async () => {
+      const session = createSession({ Estado: 'INICIO' });
 
-      const result = await FlowManager.processButton(
-        testPhone,
+      const result = await processButton('+52155', 'btn_tipo_refrigerador', session, context);
+
+      expect(result).toBe(true);
+      expect(flexibleFlowManager.iniciarFlujo).toHaveBeenCalledWith(
+        '+52155',
+        'REFRIGERADOR',
+        {},
+        context
+      );
+    });
+
+    test('debe iniciar flujo flexible para btn_tipo_vehiculo', async () => {
+      const session = createSession({ Estado: 'INICIO' });
+
+      const result = await processButton('+52155', 'btn_tipo_vehiculo', session, context);
+
+      expect(result).toBe(true);
+      expect(flexibleFlowManager.iniciarFlujo).toHaveBeenCalledWith(
+        '+52155',
+        'VEHICULO',
+        {},
+        context
+      );
+    });
+
+    test('debe delegar btn_confirmar_datos a flexibleFlowManager', async () => {
+      const session = createSession({ Estado: 'REFRIGERADOR_ACTIVO' });
+
+      await processButton('+52155', 'btn_confirmar_datos', session, context);
+
+      expect(flexibleFlowManager.procesarBoton).toHaveBeenCalledWith(
+        '+52155',
         'btn_confirmar_datos',
         session,
-        mockContext
-      );
-
-      expect(result).toBe(true);
-      expect(flexibleFlowManager.procesarBoton).toHaveBeenCalled();
-    });
-
-    test('debe procesar botón de rating de encuesta', async () => {
-      const session = {
-        Estado: 'ENCUESTA_PREGUNTA_1',
-        DatosTemp: JSON.stringify({ encuestaId: 1 }),
-      };
-
-      const result = await FlowManager.processButton(
-        testPhone,
-        'btn_rating_5',
-        session,
-        mockContext
-      );
-
-      expect(result).toBe(true);
-      expect(encuestaFlow.handleBotonRating).toHaveBeenCalledWith(
-        testPhone,
-        5,
-        session,
-        mockContext
+        context
       );
     });
 
-    test('debe procesar botón de aceptar encuesta', async () => {
-      const session = {
-        Estado: 'ENCUESTA_INVITACION',
-        DatosTemp: JSON.stringify({ encuestaId: 1 }),
-      };
+    test('debe iniciar flujo de consulta para btn_consultar_ticket', async () => {
+      const session = createSession({ Estado: 'INICIO' });
 
-      const result = await FlowManager.processButton(
-        testPhone,
-        'btn_encuesta_aceptar',
-        session,
-        mockContext
-      );
+      const result = await processButton('+52155', 'btn_consultar_ticket', session, context);
 
       expect(result).toBe(true);
-      expect(encuestaFlow.handleBotonAceptar).toHaveBeenCalled();
+      expect(consultaFlow.iniciarFlujo).toHaveBeenCalledWith('+52155', context);
     });
 
-    test('debe retornar false para botón no registrado', async () => {
-      const session = { Estado: 'INICIO' };
+    test('debe retornar false para botón no registrado ni en FlowEngine', async () => {
+      const session = createSession({ Estado: 'INICIO' });
 
-      const result = await FlowManager.processButton(
-        testPhone,
-        'btn_desconocido',
-        session,
-        mockContext
-      );
+      const result = await processButton('+52155', 'btn_inexistente', session, context);
 
       expect(result).toBe(false);
     });
   });
 
-  describe('cancelarFlujo', () => {
-    test('debe cancelar flujo y enviar mensaje', async () => {
-      await FlowManager.cancelarFlujo(testPhone, mockContext);
+  // ===========================================================
+  // CANCELAR FLUJO
+  // ===========================================================
+  describe('cancelarFlujo()', () => {
+    test('debe cambiar estado a CANCELADO y enviar mensaje', async () => {
+      const session = createSession({ Estado: 'REFRIGERADOR_ACTIVO', Version: 5 });
+      db.getSessionFresh.mockResolvedValue(session);
+
+      await cancelarFlujo('+52155', context);
 
       expect(db.updateSession).toHaveBeenCalledWith(
-        testPhone,
+        '+52155',
         'CANCELADO',
         null,
         null,
         'USUARIO',
-        'Flujo cancelado por el usuario'
+        expect.stringContaining('cancelado'),
+        null,
+        5
       );
       expect(whatsapp.sendText).toHaveBeenCalled();
       expect(db.saveMessage).toHaveBeenCalled();
     });
-  });
 
-  describe('iniciarFlujoConDatos', () => {
-    test('debe iniciar flujo flexible de refrigerador con datos extraídos', async () => {
-      const datosExtraidos = {
-        problema: 'No enfría',
-        codigo_sap: '1234567',
-      };
+    test('debe manejar ConcurrencyError sin lanzar', async () => {
+      const session = createSession({ Version: 5 });
+      db.getSessionFresh.mockResolvedValue(session);
+      db.updateSession.mockRejectedValue(new ConcurrencyError('Version conflict'));
 
-      await FlowManager.iniciarFlujoConDatos(
-        testPhone,
-        'REFRIGERADOR',
-        datosExtraidos,
-        true,
-        mockContext
-      );
+      // No debe lanzar
+      await expect(cancelarFlujo('+52155', context)).resolves.toBeUndefined();
 
-      expect(flexibleFlowManager.iniciarFlujo).toHaveBeenCalledWith(
-        testPhone,
-        'REFRIGERADOR',
-        expect.objectContaining({
-          codigoSAP: expect.objectContaining({ valor: '1234567' }),
-          problema: expect.objectContaining({ valor: 'No enfría' }),
-        }),
-        mockContext
-      );
+      // Mensaje de cancelación enviado de todas formas
+      expect(whatsapp.sendText).toHaveBeenCalled();
     });
 
-    test('debe iniciar flujo flexible de vehículo con datos extraídos', async () => {
+    test('debe propagar errores que no son ConcurrencyError', async () => {
+      db.getSessionFresh.mockResolvedValue(createSession({ Version: 5 }));
+      db.updateSession.mockRejectedValue(new Error('DB down'));
+
+      await expect(cancelarFlujo('+52155', context)).rejects.toThrow('DB down');
+    });
+  });
+
+  // ===========================================================
+  // INICIAR FLUJO CON DATOS
+  // ===========================================================
+  describe('iniciarFlujoConDatos()', () => {
+    test('debe convertir datos extraídos a formato de campos', async () => {
       const datosExtraidos = {
-        problema: 'Motor falla',
-        numero_empleado: '123456',
+        codigo_sap: '1234567',
+        problema: 'No enfría',
+        numero_empleado: 'EMP001',
         ubicacion: 'Monterrey',
       };
 
-      await FlowManager.iniciarFlujoConDatos(
-        testPhone,
-        'VEHICULO',
-        datosExtraidos,
-        false,
-        mockContext
-      );
+      await iniciarFlujoConDatos('+52155', 'REFRIGERADOR', datosExtraidos, true, context);
 
       expect(flexibleFlowManager.iniciarFlujo).toHaveBeenCalledWith(
-        testPhone,
-        'VEHICULO',
+        '+52155',
+        'REFRIGERADOR',
         expect.objectContaining({
-          numeroEmpleado: expect.objectContaining({ valor: '123456' }),
-          problema: expect.objectContaining({ valor: 'Motor falla' }),
-          ubicacion: expect.objectContaining({ valor: 'Monterrey' }),
+          codigoSAP: expect.objectContaining({ valor: '1234567', fuente: 'ai', confianza: 80 }),
+          problema: expect.objectContaining({ valor: 'No enfría', fuente: 'ai', confianza: 70 }),
+          numeroEmpleado: expect.objectContaining({ valor: 'EMP001', fuente: 'ai', confianza: 80 }),
+          ubicacion: expect.objectContaining({ valor: 'Monterrey', fuente: 'ai', confianza: 80 }),
         }),
-        mockContext
+        context
       );
     });
-  });
 
-  describe('getFlow', () => {
-    test('debe retornar encuestaFlow para ENCUESTA', () => {
-      const flow = FlowManager.getFlow('ENCUESTA');
-      expect(flow).toBe(encuestaFlow);
-    });
+    test('debe omitir campos null en datos extraídos', async () => {
+      const datosExtraidos = { problema: 'No enfría', codigo_sap: null };
 
-    test('debe retornar consultaEstadoFlow para CONSULTA', () => {
-      const flow = FlowManager.getFlow('CONSULTA');
-      expect(flow).toBe(consultaEstadoFlow);
-    });
+      await iniciarFlujoConDatos('+52155', 'REFRIGERADOR', datosExtraidos, true, context);
 
-    test('debe retornar null para tipos de reporte (manejados por flexible)', () => {
-      expect(FlowManager.getFlow('REFRIGERADOR')).toBeNull();
-      expect(FlowManager.getFlow('VEHICULO')).toBeNull();
+      const camposEnviados = flexibleFlowManager.iniciarFlujo.mock.calls[0][2];
+      expect(camposEnviados.codigoSAP).toBeUndefined();
+      expect(camposEnviados.problema).toBeDefined();
     });
   });
 
-  describe('getTipoReportePorEstado', () => {
+  // ===========================================================
+  // GET TIPO REPORTE POR ESTADO
+  // ===========================================================
+  describe('getTipoReportePorEstado()', () => {
     test('debe retornar REFRIGERADOR para REFRIGERADOR_ACTIVO', () => {
-      expect(FlowManager.getTipoReportePorEstado('REFRIGERADOR_ACTIVO')).toBe('REFRIGERADOR');
+      expect(getTipoReportePorEstado('REFRIGERADOR_ACTIVO')).toBe('REFRIGERADOR');
     });
 
     test('debe retornar VEHICULO para VEHICULO_ACTIVO', () => {
-      expect(FlowManager.getTipoReportePorEstado('VEHICULO_ACTIVO')).toBe('VEHICULO');
+      expect(getTipoReportePorEstado('VEHICULO_ACTIVO')).toBe('VEHICULO');
     });
 
-    test('debe retornar ENCUESTA para estados de encuesta', () => {
-      expect(FlowManager.getTipoReportePorEstado('ENCUESTA_INVITACION')).toBe('ENCUESTA');
-      expect(FlowManager.getTipoReportePorEstado('ENCUESTA_PREGUNTA_1')).toBe('ENCUESTA');
-    });
-
-    test('debe retornar CONSULTA para estado de consulta', () => {
-      expect(FlowManager.getTipoReportePorEstado('CONSULTA_ESPERA_TICKET')).toBe('CONSULTA');
-    });
-
-    test('debe retornar null para estados no reconocidos', () => {
-      expect(FlowManager.getTipoReportePorEstado('INICIO')).toBeNull();
-      expect(FlowManager.getTipoReportePorEstado('UNKNOWN')).toBeNull();
+    test('debe retornar null para estados no relacionados a reportes', () => {
+      expect(getTipoReportePorEstado('INICIO')).toBeNull();
     });
   });
 });

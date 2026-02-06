@@ -108,6 +108,12 @@ module.exports = [
   // ===== Configuración específica para tests =====
   {
     files: ['tests/**/*.js', '**/*.test.js', '**/*.spec.js'],
+    languageOptions: {
+      globals: {
+        createMockContext: 'readonly',
+        delay: 'readonly',
+      },
+    },
     rules: {
       'max-nested-callbacks': 'off', // Tests de Jest tienen muchos callbacks anidados
       complexity: 'off', // Tests pueden ser largos

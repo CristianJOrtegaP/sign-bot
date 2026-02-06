@@ -117,13 +117,44 @@ class FlexibleFlowContext extends BaseContext {
 
   /**
    * Obtiene los campos faltantes
-   * @returns {Array<string>} Lista de nombres de campos faltantes
+   * @returns {Array<Object>} Lista de campos faltantes con nombre y descripción
    */
   getCamposFaltantes() {
     const campos = this.getCamposRequeridos();
     return Object.entries(campos)
       .filter(([_, info]) => !info.completo)
-      .map(([nombre, _]) => nombre);
+      .map(([nombre, info]) => ({
+        nombre,
+        descripcion: info.descripcion || nombre,
+        requerido: info.requerido !== false,
+      }));
+  }
+
+  /**
+   * Obtiene los datos temporales (alias de getDatos)
+   * @returns {Object}
+   */
+  getDatosTemp() {
+    return this.getDatos();
+  }
+
+  /**
+   * Establece el campo que se está solicitando actualmente
+   * @param {string} nombreCampo - Nombre del campo
+   */
+  async setCampoSolicitado(nombreCampo) {
+    const datos = this.getDatos();
+    datos.campoSolicitado = nombreCampo;
+    await this.actualizarDatos(datos, `Solicitando campo: ${nombreCampo}`);
+    this.log(`Campo solicitado establecido: ${nombreCampo}`);
+  }
+
+  /**
+   * Obtiene el campo que se está solicitando
+   * @returns {string|null}
+   */
+  getCampoSolicitado() {
+    return this.getDatos().campoSolicitado || null;
   }
 
   /**
@@ -200,14 +231,18 @@ class FlexibleFlowContext extends BaseContext {
   async solicitarConfirmacion(estadoConfirmacion, datosAConfirmar) {
     const datos = this.getDatos();
     datos.datosAConfirmar = datosAConfirmar;
+    const version = this._getVersion();
     await db.updateSession(
       this.from,
       estadoConfirmacion,
       datos,
       this.session.EquipoId,
       ORIGEN_ACCION.BOT,
-      'Esperando confirmación del usuario'
+      'Esperando confirmación del usuario',
+      null,
+      version
     );
+    this._incrementVersion();
     this.log(`Solicitando confirmación en estado: ${estadoConfirmacion}`);
   }
 

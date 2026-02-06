@@ -367,6 +367,85 @@ function checkMetricsService() {
 }
 
 /**
+ * Check 11: Redis Cache
+ */
+function checkRedis() {
+  try {
+    const redisService = require('../core/services/cache/redisService');
+    const stats = redisService.getStats();
+
+    if (!config.redis?.enabled) {
+      return { status: 'skipped', message: 'Redis disabled' };
+    }
+
+    if (redisService.isUsingFallback()) {
+      return {
+        status: 'degraded',
+        message: 'Using local memory fallback',
+        details: stats,
+      };
+    }
+
+    return {
+      status: 'healthy',
+      message: 'Redis connected',
+      details: stats,
+    };
+  } catch (error) {
+    return { status: 'degraded', message: error.message };
+  }
+}
+
+/**
+ * Check 12: Service Bus
+ */
+function checkServiceBus() {
+  if (!config.isServiceBusEnabled) {
+    return { status: 'skipped', message: 'Service Bus disabled' };
+  }
+
+  try {
+    const serviceBusService = require('../core/services/messaging/serviceBusService');
+    const stats = serviceBusService.getStats();
+
+    if (serviceBusService.isUsingFallback()) {
+      return {
+        status: 'degraded',
+        message: 'Using synchronous fallback',
+        details: stats,
+      };
+    }
+
+    return {
+      status: 'healthy',
+      message: 'Service Bus connected',
+      details: stats,
+    };
+  } catch (error) {
+    return { status: 'degraded', message: error.message };
+  }
+}
+
+/**
+ * Check 13: Background Processor
+ */
+function checkBackgroundProcessor() {
+  try {
+    const backgroundProcessor = require('../core/services/processing/backgroundProcessor');
+    const stats = backgroundProcessor.getProcessingStats();
+    const utilization = stats.max > 0 ? stats.active / stats.max : 0;
+
+    return {
+      status: utilization >= 0.9 ? 'warning' : 'healthy',
+      message: utilization >= 0.9 ? 'Near capacity' : 'OK',
+      details: stats,
+    };
+  } catch (error) {
+    return { status: 'unknown', message: error.message };
+  }
+}
+
+/**
  * Handle rate limiting check
  */
 function handleRateLimit(context, clientIp, rateLimit) {
@@ -417,6 +496,9 @@ module.exports = async function (context, req) {
   const circuitBreakerCheck = checkCircuitBreakers();
   const externalServicesCheck = checkExternalServices();
   const metricsCheck = checkMetricsService();
+  const redisCheck = checkRedis();
+  const serviceBusCheck = checkServiceBus();
+  const bgProcessorCheck = checkBackgroundProcessor();
 
   // Determinar estado global (FASE 2: Considerar checks activos)
   const isUnhealthy =
@@ -428,7 +510,10 @@ module.exports = async function (context, req) {
     dbCheck.status === 'degraded' ||
     deadLetterCheck.status === 'warning' ||
     circuitBreakerCheck.status === 'degraded' ||
-    aiCheck.status === 'degraded';
+    aiCheck.status === 'degraded' ||
+    redisCheck.status === 'degraded' ||
+    serviceBusCheck.status === 'degraded' ||
+    bgProcessorCheck.status === 'warning';
 
   const health = {
     status: isUnhealthy ? 'unhealthy' : isDegraded ? 'degraded' : 'healthy',
@@ -448,6 +533,9 @@ module.exports = async function (context, req) {
       whatsappApi: whatsappCheck,
       aiProvider: aiCheck,
       metrics: metricsCheck,
+      redis: redisCheck,
+      serviceBus: serviceBusCheck,
+      backgroundProcessor: bgProcessorCheck,
     },
   };
 

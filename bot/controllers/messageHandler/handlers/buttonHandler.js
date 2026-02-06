@@ -7,19 +7,21 @@ const whatsapp = require('../../../../core/services/external/whatsappService');
 const db = require('../../../../core/services/storage/databaseService');
 const MSG = require('../../../constants/messages');
 const FlowManager = require('../../flows/FlowManager');
-const flexibleFlowManager = require('../../flows/flexibleFlowManager');
+const flexibleFlowManager = require('../../../flows/reporteFlow');
 const EncuestaRepository = require('../../../repositories/EncuestaRepository');
 const {
   ESTADO,
   TIPO_MENSAJE,
   TIPO_CONTENIDO,
-  ORIGEN_ACCION,
+  ORIGEN_ACCION: _ORIGEN_ACCION,
   esEstadoTerminal,
   esEstadoFlexible,
 } = require('../../../constants/sessionStates');
 
 const { ENCUESTA_BUTTONS, FLEXIBLE_BUTTONS } = require('../constants');
 const { sendWelcome } = require('../utils/reportHandlers');
+const { reactivateSessionIfTerminal } = require('../utils/handlerMiddleware');
+const { ConcurrencyError } = require('../../../../core/errors');
 
 /**
  * Procesa la presión de un botón interactivo de WhatsApp
@@ -37,20 +39,31 @@ async function handleButton(from, buttonId, messageId, context) {
     whatsapp.sendTypingIndicator(from, messageId).catch(() => {});
   }
 
-  // Guardar la acción del botón como mensaje
-  await db.saveMessage(from, TIPO_MENSAJE.USUARIO, buttonId, TIPO_CONTENIDO.BOTON);
+  // PERFORMANCE: Paralelizar saveMessage + getSession (~80ms ahorro)
+  const isFlexibleBtn = FLEXIBLE_BUTTONS.has(buttonId);
+  const sessionPromise = isFlexibleBtn
+    ? (context.log(`🔄 Botón flexible ${buttonId} - leyendo sesión fresca`),
+      db.getSessionFresh(from))
+    : db.getSession(from);
 
-  // Para botones flexibles, SIEMPRE leer sesión fresca para evitar caché desactualizado
-  // Esto es crítico porque AI Vision puede haber actualizado la sesión en background
-  let session;
-  if (FLEXIBLE_BUTTONS.has(buttonId)) {
-    context.log(`🔄 Botón flexible ${buttonId} - leyendo sesión fresca`);
-    session = await db.getSessionFresh(from);
+  const [saveResult, sessionResult] = await Promise.allSettled([
+    db.saveMessage(from, TIPO_MENSAJE.USUARIO, buttonId, TIPO_CONTENIDO.BOTON),
+    sessionPromise,
+  ]);
+
+  if (saveResult.status === 'rejected') {
+    context.log.warn(`⚠️ Error guardando mensaje de botón: ${saveResult.reason?.message}`);
+  }
+  if (sessionResult.status === 'rejected') {
+    context.log.error(`❌ Error obteniendo sesión: ${sessionResult.reason?.message}`);
+    throw sessionResult.reason;
+  }
+
+  const session = sessionResult.value;
+  if (isFlexibleBtn) {
     context.log(
       `📋 Estado fresco: ${session.Estado}, DatosTemp: ${session.DatosTemp ? 'presente' : 'vacío'}`
     );
-  } else {
-    session = await db.getSession(from);
   }
 
   // Si la sesión está en estado terminal, manejar según tipo de botón
@@ -83,41 +96,41 @@ async function handleButton(from, buttonId, messageId, context) {
       // Botón de flujo flexible en estado terminal - ya tenemos sesión fresca
       context.log(`📋 Botón flexible en estado terminal, continuando con sesión fresca`);
     } else {
-      // Botón normal - reactivar sesión a INICIO
-      context.log(`🔄 Reactivando sesión de ${from} desde estado ${session.Estado} (botón)`);
-      await db.updateSession(
-        from,
-        ESTADO.INICIO,
-        null,
-        null,
-        ORIGEN_ACCION.USUARIO,
-        `Sesión reactivada desde ${session.Estado} por botón`
-      );
-      session.Estado = ESTADO.INICIO;
+      // Botón normal - reactivar sesión a INICIO (middleware unificado)
+      await reactivateSessionIfTerminal(from, session, 'botón', context);
     }
   }
 
-  await db.updateLastActivity(from);
+  // Fire-and-forget: no bloquea el flujo principal
+  db.updateLastActivity(from).catch(() => {});
 
-  // FASE 2b: Si estamos en estado flexible, procesar botón con flexibleFlowManager
-  if (esEstadoFlexible(session.Estado)) {
-    context.log(`[FASE 2b] Procesando botón en estado flexible: ${session.Estado}`);
-    const handledFlexible = await flexibleFlowManager.procesarBoton(
-      from,
-      buttonId,
-      session,
-      context
-    );
-    if (handledFlexible) {
+  try {
+    // FASE 2b: Si estamos en estado flexible, procesar botón con flexibleFlowManager
+    if (esEstadoFlexible(session.Estado)) {
+      context.log(`[FASE 2b] Procesando botón en estado flexible: ${session.Estado}`);
+      const handledFlexible = await flexibleFlowManager.procesarBoton(
+        from,
+        buttonId,
+        session,
+        context
+      );
+      if (handledFlexible) {
+        return;
+      }
+    }
+
+    const handled = await FlowManager.processButton(from, buttonId, session, context);
+
+    if (!handled) {
+      context.log(`Botón no reconocido: ${buttonId}`);
+      await sendWelcome(from);
+    }
+  } catch (error) {
+    if (error instanceof ConcurrencyError) {
+      context.log(`⚡ Conflicto de concurrencia procesando botón ${buttonId} de ${from}`);
       return;
     }
-  }
-
-  const handled = await FlowManager.processButton(from, buttonId, session, context);
-
-  if (!handled) {
-    context.log(`Botón no reconocido: ${buttonId}`);
-    await sendWelcome(from);
+    throw error;
   }
 }
 

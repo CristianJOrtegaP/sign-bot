@@ -9,6 +9,7 @@ const config = require('../../config');
 const metrics = require('../infrastructure/metricsService');
 const { logger } = require('../infrastructure/errorHandler');
 const { sleep } = require('../../utils/promises');
+const { getBreaker, SERVICES } = require('../infrastructure/circuitBreaker');
 
 // Configuración del cliente desde config centralizado
 const endpoint = config.vision.endpoint;
@@ -154,6 +155,14 @@ async function extractTextFromImage(imageBuffer) {
       throw new OCRError(OCR_ERROR_TYPES.IMAGE_TOO_LARGE);
     }
 
+    // Circuit breaker gate check (después de validaciones de input)
+    const visionBreaker = getBreaker(SERVICES.AZURE_VISION);
+    const cbCheck = visionBreaker.canExecute();
+    if (!cbCheck.allowed) {
+      logger.warn('[Vision] Circuit breaker abierto, rechazando OCR');
+      throw new OCRError(OCR_ERROR_TYPES.SERVICE_ERROR);
+    }
+
     // Iniciar operación de lectura
     let result;
     try {
@@ -161,6 +170,7 @@ async function extractTextFromImage(imageBuffer) {
         language: config.vision.ocr.language,
       });
     } catch (apiError) {
+      visionBreaker.recordFailure(apiError);
       throw classifyApiError(apiError);
     }
 
@@ -180,6 +190,7 @@ async function extractTextFromImage(imageBuffer) {
       try {
         readResult = await client.getReadResult(operationId);
       } catch (pollError) {
+        visionBreaker.recordFailure(pollError);
         throw classifyApiError(pollError);
       }
       logger.debug('Estado OCR', { status: readResult.status, attempt: attempts });
@@ -192,6 +203,7 @@ async function extractTextFromImage(imageBuffer) {
     // Si se agotó el tiempo, lanzar error tipado
     if (attempts >= maxAttempts && readResult.status !== 'succeeded') {
       metrics.recordError('ocr_timeout', `Timeout después de ${attempts} intentos`);
+      visionBreaker.recordFailure(new Error('OCR timeout'));
       throw new OCRError(OCR_ERROR_TYPES.TIMEOUT);
     }
 
@@ -237,6 +249,7 @@ async function extractTextFromImage(imageBuffer) {
       throw new OCRError(OCR_ERROR_TYPES.NO_TEXT_FOUND);
     }
 
+    visionBreaker.recordSuccess();
     timer.end({ result: 'success', lines: lines.length, attempts });
     return { lines, metadata };
   } catch (error) {

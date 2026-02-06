@@ -134,6 +134,7 @@ async function getSessionWithVersion(telefono) {
  * @param {string} origenAccion - Origen de la acción (opcional)
  * @param {string} descripcion - Descripción de la acción (opcional)
  * @param {number} reporteId - ID del reporte si se generó uno (opcional)
+ * @param {number} expectedVersion - Versión esperada para optimistic locking (opcional)
  */
 async function updateSession(
   telefono,
@@ -142,7 +143,8 @@ async function updateSession(
   equipoIdTemp = null,
   origenAccion = 'BOT',
   descripcion = null,
-  reporteId = null
+  reporteId = null,
+  expectedVersion = null
 ) {
   return SesionRepository.updateSession(
     telefono,
@@ -151,7 +153,8 @@ async function updateSession(
     equipoIdTemp,
     origenAccion,
     descripcion,
-    reporteId
+    reporteId,
+    expectedVersion
   );
 }
 
@@ -384,6 +387,7 @@ module.exports = {
     SesionRepository.registerMessageAtomic(messageId, telefono),
   isMessageProcessed: (messageId) => SesionRepository.isMessageProcessed(messageId), // Deprecated
   cleanOldProcessedMessages: () => SesionRepository.cleanOldProcessedMessages(),
+  cleanOldHistorialSesiones: () => SesionRepository.cleanOldHistorialSesiones(),
 
   // Funciones de administración de caché
   clearEquipoCache,

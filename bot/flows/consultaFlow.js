@@ -37,7 +37,7 @@ const consultaFlow = {
   /**
    * Inicia el flujo de consulta
    * Muestra lista de tickets del usuario
-   * @param {import('../../core/flowEngine/FlowContext').FlowContext} ctx
+   * @param {import('../../core/flowEngine/contexts/StaticFlowContext')} ctx
    */
   async iniciar(ctx) {
     ctx.log('Iniciando flujo de consulta');
@@ -74,7 +74,7 @@ const consultaFlow = {
 
   /**
    * Procesa la entrada del usuario cuando espera un ticket
-   * @param {import('../../core/flowEngine/FlowContext').FlowContext} ctx
+   * @param {import('../../core/flowEngine/contexts/StaticFlowContext')} ctx
    * @param {string} mensaje - Texto del usuario
    */
   async procesarTicketInput(ctx, mensaje) {
@@ -115,7 +115,7 @@ const consultaFlow = {
 
   /**
    * Consulta directa de un ticket (sin cambio de estado previo)
-   * @param {import('../../core/flowEngine/FlowContext').FlowContext} ctx
+   * @param {import('../../core/flowEngine/contexts/StaticFlowContext')} ctx
    * @param {string} numeroTicket
    */
   async consultarDirecto(ctx, numeroTicket) {
@@ -127,7 +127,7 @@ const consultaFlow = {
   /**
    * Muestra el detalle de un ticket
    * @private
-   * @param {import('../../core/flowEngine/FlowContext').FlowContext} ctx
+   * @param {import('../../core/flowEngine/contexts/StaticFlowContext')} ctx
    * @param {string} numeroTicket
    */
   async _mostrarDetalleTicket(ctx, numeroTicket) {
@@ -165,4 +165,36 @@ const consultaFlow = {
   },
 };
 
+// ============================================================
+// FUNCIONES STANDALONE (para uso directo sin FlowEngine)
+// Usadas por textHandler para consultas directas de tickets
+// ============================================================
+
+const { createStaticFlowContext } = require('../../core/flowEngine');
+
+/**
+ * Inicia el flujo de consulta (standalone)
+ * @param {string} from - Número de teléfono del usuario
+ * @param {Object} context - Contexto de Azure Functions
+ */
+async function iniciarFlujo(from, context) {
+  const session = await db.getSession(from);
+  const ctx = createStaticFlowContext(from, session, context, { flowName: 'CONSULTA' });
+  await consultaFlow.iniciar(ctx);
+}
+
+/**
+ * Consulta directa de un ticket específico (standalone)
+ * @param {string} from - Número de teléfono del usuario
+ * @param {string} numeroTicket - Número de ticket a consultar
+ * @param {Object} context - Contexto de Azure Functions
+ */
+async function consultarTicketDirecto(from, numeroTicket, context) {
+  const session = await db.getSession(from);
+  const ctx = createStaticFlowContext(from, session, context, { flowName: 'CONSULTA' });
+  await consultaFlow.consultarDirecto(ctx, numeroTicket);
+}
+
 module.exports = consultaFlow;
+module.exports.iniciarFlujo = iniciarFlujo;
+module.exports.consultarTicketDirecto = consultarTicketDirecto;

@@ -5,6 +5,7 @@
  */
 
 const axios = require('axios');
+const https = require('https');
 const config = require('../../config');
 const { logger, ExternalServiceError } = require('../infrastructure/errorHandler');
 const { getBreaker, SERVICES } = require('../infrastructure/circuitBreaker');
@@ -15,6 +16,12 @@ const MAX_RETRIES = config.whatsapp.retry.maxRetries;
 
 // Circuit breaker para WhatsApp
 const whatsappBreaker = getBreaker(SERVICES.WHATSAPP);
+
+// Agente HTTPS reutilizable con keep-alive para connection pooling
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 10 });
+
+// Instancia singleton de axios (inicializada lazy)
+let axiosInstance = null;
 
 /**
  * Obtiene la configuración de WhatsApp de forma lazy (al momento de uso)
@@ -30,18 +37,22 @@ function getWhatsAppConfig() {
 }
 
 /**
- * Crea un cliente axios con la configuración actual
- * Se crea de forma lazy para asegurar que las variables de entorno estén cargadas
+ * Obtiene la instancia singleton de axios, creándola lazy
+ * Reutiliza conexiones TCP vía httpsAgent con keep-alive
  */
-function createAxiosInstance() {
-  const { accessToken } = getWhatsAppConfig();
-  return axios.create({
-    timeout: HTTP_TIMEOUT,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  });
+function getAxiosInstance() {
+  if (!axiosInstance) {
+    const { accessToken } = getWhatsAppConfig();
+    axiosInstance = axios.create({
+      timeout: HTTP_TIMEOUT,
+      httpsAgent,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+  return axiosInstance;
 }
 
 /**
@@ -130,7 +141,7 @@ async function executeWithRetry(fn, retries = MAX_RETRIES, attempt = 0) {
 async function sendText(to, text) {
   try {
     const { apiUrl, phoneNumberId } = getWhatsAppConfig();
-    const axiosInstance = createAxiosInstance();
+    const axiosInstance = getAxiosInstance();
 
     const response = await executeWithRetry(() =>
       axiosInstance.post(`${apiUrl}/${phoneNumberId}/messages`, {
@@ -160,7 +171,7 @@ async function sendText(to, text) {
 async function sendButtons(to, bodyText, buttons) {
   try {
     const { apiUrl, phoneNumberId } = getWhatsAppConfig();
-    const axiosInstance = createAxiosInstance();
+    const axiosInstance = getAxiosInstance();
 
     // Formatear botones para la API de WhatsApp
     const formattedButtons = formatButtons(buttons);
@@ -216,18 +227,19 @@ function formatButtons(buttons) {
 async function downloadMedia(mediaId) {
   try {
     const { apiUrl, accessToken } = getWhatsAppConfig();
-    const axiosInstance = createAxiosInstance();
+    const axiosInstance = getAxiosInstance();
 
     // Paso 1: Obtener URL del archivo
     const mediaInfo = await executeWithRetry(() => axiosInstance.get(`${apiUrl}/${mediaId}`));
 
     const mediaUrl = mediaInfo.data.url;
 
-    // Paso 2: Descargar el archivo (con timeout extendido para archivos grandes)
+    // Paso 2: Descargar el archivo (con timeout extendido y connection pooling)
     const mediaResponse = await axios.get(mediaUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
+      httpsAgent,
       responseType: 'arraybuffer',
       timeout: config.whatsapp.timeout.mediaDownloadMs,
     });
@@ -252,7 +264,7 @@ async function downloadMedia(mediaId) {
 async function sendTypingIndicator(to, messageId) {
   try {
     const { apiUrl, phoneNumberId } = getWhatsAppConfig();
-    const axiosInstance = createAxiosInstance();
+    const axiosInstance = getAxiosInstance();
 
     logger.debug(`Enviando typing indicator`, { to, messageId });
 
@@ -289,7 +301,7 @@ async function sendTypingIndicator(to, messageId) {
 async function sendInteractiveMessage(to, headerText, bodyText, buttons) {
   try {
     const { apiUrl, phoneNumberId } = getWhatsAppConfig();
-    const axiosInstance = createAxiosInstance();
+    const axiosInstance = getAxiosInstance();
 
     // Formatear botones para la API de WhatsApp (reutilizar función)
     const formattedButtons = formatButtons(buttons);
@@ -337,7 +349,7 @@ async function sendInteractiveMessage(to, headerText, bodyText, buttons) {
 async function sendListMessage(to, headerText, bodyText, buttonText, rows) {
   try {
     const { apiUrl, phoneNumberId } = getWhatsAppConfig();
-    const axiosInstance = createAxiosInstance();
+    const axiosInstance = getAxiosInstance();
 
     // Formatear rows para la API de WhatsApp
     const formattedRows = rows.map((row) => ({

@@ -21,55 +21,57 @@ let providerConfig = null;
  * Inicializa el servicio de IA con el provider configurado
  */
 function initializeProvider() {
-    const providerName = config.ai.provider;
+  const providerName = config.ai.provider;
 
-    // Validar que el provider existe
-    if (!providers[providerName]) {
-        const availableProviders = Object.keys(providers).join(', ');
-        throw new Error(`Provider de IA '${providerName}' no reconocido. Disponibles: ${availableProviders}`);
-    }
+  // Validar que el provider existe
+  if (!providers[providerName]) {
+    const availableProviders = Object.keys(providers).join(', ');
+    throw new Error(
+      `Provider de IA '${providerName}' no reconocido. Disponibles: ${availableProviders}`
+    );
+  }
 
-    activeProvider = providers[providerName];
+  activeProvider = providers[providerName];
 
-    // Configurar según el provider
-    if (providerName === 'gemini') {
-        providerConfig = {
-            apiKey: config.ai.gemini.apiKey,
-            model: config.ai.gemini.model
-        };
-    } else if (providerName === 'azure-openai') {
-        providerConfig = {
-            endpoint: config.ai.azureOpenAI.endpoint,
-            apiKey: config.ai.azureOpenAI.apiKey,
-            deploymentName: config.ai.azureOpenAI.deploymentName
-        };
-    }
+  // Configurar según el provider
+  if (providerName === 'gemini') {
+    providerConfig = {
+      apiKey: config.ai.gemini.apiKey,
+      model: config.ai.gemini.model,
+    };
+  } else if (providerName === 'azure-openai') {
+    providerConfig = {
+      endpoint: config.ai.azureOpenAI.endpoint,
+      apiKey: config.ai.azureOpenAI.apiKey,
+      deploymentName: config.ai.azureOpenAI.deploymentName,
+    };
+  }
 
-    // Inicializar el provider
-    activeProvider.initialize(providerConfig);
+  // Inicializar el provider
+  activeProvider.initialize(providerConfig);
 
-    logger.ai(`Provider inicializado: ${providerName}`);
+  logger.ai(`Provider inicializado: ${providerName}`);
 }
 
 /**
  * Obtiene el provider activo, inicializándolo si es necesario
  */
 function getProvider() {
-    if (!activeProvider) {
-        initializeProvider();
-    }
-    return activeProvider;
+  if (!activeProvider) {
+    initializeProvider();
+  }
+  return activeProvider;
 }
 
 /**
  * Obtiene el circuit breaker apropiado según el provider
  */
 function getCircuitBreaker() {
-    const providerName = config.ai.provider;
-    if (providerName === 'azure-openai') {
-        return getBreaker(SERVICES.AZURE_OPENAI);
-    }
-    return getBreaker(SERVICES.GEMINI);
+  const providerName = config.ai.provider;
+  if (providerName === 'azure-openai') {
+    return getBreaker(SERVICES.AZURE_OPENAI);
+  }
+  return getBreaker(SERVICES.GEMINI);
 }
 
 /**
@@ -79,23 +81,23 @@ function getCircuitBreaker() {
  * @param {string} operationName - Nombre de la operación (para logs)
  */
 async function executeWithCircuitBreaker(operation, fallbackValue, operationName) {
-    const breaker = getCircuitBreaker();
-    const check = breaker.canExecute();
+  const breaker = getCircuitBreaker();
+  const check = breaker.canExecute();
 
-    if (!check.allowed) {
-        logger.warn(`[AI] Circuit breaker open for ${operationName}: ${check.reason}`);
-        return fallbackValue;
-    }
+  if (!check.allowed) {
+    logger.warn(`[AI] Circuit breaker open for ${operationName}: ${check.reason}`);
+    return fallbackValue;
+  }
 
-    try {
-        const result = await operation();
-        breaker.recordSuccess();
-        return result;
-    } catch (error) {
-        breaker.recordFailure(error);
-        logger.error(`[AI] Error in ${operationName}`, error);
-        return fallbackValue;
-    }
+  try {
+    const result = await operation();
+    breaker.recordSuccess();
+    return result;
+  } catch (error) {
+    breaker.recordFailure(error);
+    logger.error(`[AI] Error in ${operationName}`, error);
+    return fallbackValue;
+  }
 }
 
 /**
@@ -104,16 +106,16 @@ async function executeWithCircuitBreaker(operation, fallbackValue, operationName
  * @returns {Object} - Objeto con la intención detectada
  */
 async function detectIntent(userMessage) {
-    const fallback = { intencion: 'DESCONOCIDO', confianza: 0, metodo: 'circuit_breaker_fallback' };
+  const fallback = { intencion: 'DESCONOCIDO', confianza: 0, metodo: 'circuit_breaker_fallback' };
 
-    return executeWithCircuitBreaker(
-        () => {
-            const provider = getProvider();
-            return provider.detectIntent(userMessage, config.ai);
-        },
-        fallback,
-        'detectIntent'
-    );
+  return executeWithCircuitBreaker(
+    () => {
+      const provider = getProvider();
+      return provider.detectIntent(userMessage, config.ai);
+    },
+    fallback,
+    'detectIntent'
+  );
 }
 
 /**
@@ -122,16 +124,16 @@ async function detectIntent(userMessage) {
  * @returns {Object} - Intención interpretada con confianza
  */
 async function interpretTerm(userText) {
-    const fallback = { intencion: 'DESCONOCIDO', confianza: 0, metodo: 'circuit_breaker_fallback' };
+  const fallback = { intencion: 'DESCONOCIDO', confianza: 0, metodo: 'circuit_breaker_fallback' };
 
-    return executeWithCircuitBreaker(
-        () => {
-            const provider = getProvider();
-            return provider.interpretTerm(userText, config.ai);
-        },
-        fallback,
-        'interpretTerm'
-    );
+  return executeWithCircuitBreaker(
+    () => {
+      const provider = getProvider();
+      return provider.interpretTerm(userText, config.ai);
+    },
+    fallback,
+    'interpretTerm'
+  );
 }
 
 /**
@@ -140,16 +142,16 @@ async function interpretTerm(userText) {
  * @returns {Object} - Datos estructurados extraídos
  */
 async function extractStructuredData(userMessage) {
-    const fallback = { confianza: 0, datos_encontrados: [], metodo: 'circuit_breaker_fallback' };
+  const fallback = { confianza: 0, datos_encontrados: [], metodo: 'circuit_breaker_fallback' };
 
-    return executeWithCircuitBreaker(
-        () => {
-            const provider = getProvider();
-            return provider.extractStructuredData(userMessage, config.ai);
-        },
-        fallback,
-        'extractStructuredData'
-    );
+  return executeWithCircuitBreaker(
+    () => {
+      const provider = getProvider();
+      return provider.extractStructuredData(userMessage, config.ai);
+    },
+    fallback,
+    'extractStructuredData'
+  );
 }
 
 /**
@@ -160,16 +162,16 @@ async function extractStructuredData(userMessage) {
  * @returns {Object} - Todos los datos extraídos
  */
 async function extractAllData(userMessage, contextoActual = null) {
-    const fallback = { confianza: 0, datos_encontrados: [], metodo: 'circuit_breaker_fallback' };
+  const fallback = { confianza: 0, datos_encontrados: [], metodo: 'circuit_breaker_fallback' };
 
-    return executeWithCircuitBreaker(
-        () => {
-            const provider = getProvider();
-            return provider.extractAllData(userMessage, config.ai, contextoActual);
-        },
-        fallback,
-        'extractAllData'
-    );
+  return executeWithCircuitBreaker(
+    () => {
+      const provider = getProvider();
+      return provider.extractAllData(userMessage, config.ai, contextoActual);
+    },
+    fallback,
+    'extractAllData'
+  );
 }
 
 /**
@@ -177,8 +179,8 @@ async function extractAllData(userMessage, contextoActual = null) {
  * @returns {string} - Nombre del provider
  */
 function getProviderName() {
-    const provider = getProvider();
-    return provider.getName();
+  const provider = getProvider();
+  return provider.getName();
 }
 
 /**
@@ -188,25 +190,26 @@ function getProviderName() {
  * @returns {Object} - Datos extraídos de la imagen
  */
 async function analyzeImageWithVision(imageBuffer, userText = '') {
-    const fallback = {
-        tipo_equipo: null,
-        codigo_sap: null,
-        numero_empleado: null,
-        problema: null,
-        informacion_visual: '',
-        codigos_visibles: [],
-        confianza: 0,
-        datos_encontrados: []
-    };
+  const fallback = {
+    tipo_equipo: null,
+    codigo_sap: null,
+    numero_empleado: null,
+    problema: null,
+    informacion_visual: '',
+    codigos_visibles: [],
+    confianza: 0,
+    calidad_imagen: null,
+    datos_encontrados: [],
+  };
 
-    return executeWithCircuitBreaker(
-        () => {
-            const provider = getProvider();
-            return provider.analyzeImageWithVision(imageBuffer, userText, config.ai);
-        },
-        fallback,
-        'analyzeImageWithVision'
-    );
+  return executeWithCircuitBreaker(
+    () => {
+      const provider = getProvider();
+      return provider.analyzeImageWithVision(imageBuffer, userText, config.ai);
+    },
+    fallback,
+    'analyzeImageWithVision'
+  );
 }
 
 /**
@@ -214,16 +217,16 @@ async function analyzeImageWithVision(imageBuffer, userText = '') {
  * @returns {boolean}
  */
 function isEnabled() {
-    return config.ai.enabled;
+  return config.ai.enabled;
 }
 
 module.exports = {
-    detectIntent,
-    interpretTerm,
-    extractStructuredData,
-    extractAllData,
-    analyzeImageWithVision,
-    getProviderName,
-    isEnabled,
-    initializeProvider
+  detectIntent,
+  interpretTerm,
+  extractStructuredData,
+  extractAllData,
+  analyzeImageWithVision,
+  getProviderName,
+  isEnabled,
+  initializeProvider,
 };

@@ -1,0 +1,13 @@
+{
+  "bindings": [
+    {
+      "name": "queueMessage",
+      "type": "serviceBusTrigger",
+      "direction": "in",
+      "queueName": "acfixbot-messages",
+      "connection": "SERVICEBUS_CONNECTION_STRING",
+      "isSessionsEnabled": false
+    }
+  ],
+  "scriptFile": "index.js"
+}

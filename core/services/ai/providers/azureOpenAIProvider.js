@@ -12,6 +12,7 @@ let deploymentName = null;
 
 // Prompts del sistema (compartidos con otros providers)
 const PROMPTS = require('./prompts');
+const { sanitizeForLLM } = require('../../../utils/helpers');
 
 /**
  * Inicializa el provider de Azure OpenAI
@@ -29,11 +30,15 @@ function initialize(config) {
   }
 
   // SDK v2.x usa AzureOpenAI del paquete 'openai'
+  // timeout: Previene bloqueos — el SDK tiene default de 10 min, lo limitamos a 8s
+  // maxRetries: Limita retries internos del SDK para no exceder el budget del webhook
   client = new AzureOpenAI({
     endpoint: config.endpoint,
     apiKey: config.apiKey,
     apiVersion: '2024-08-01-preview',
     deployment: config.deploymentName,
+    timeout: 8000,
+    maxRetries: 1,
   });
   deploymentName = config.deploymentName;
 
@@ -59,8 +64,17 @@ async function sendMessage(systemPrompt, userMessage) {
     model: deploymentName,
     messages: messages,
     temperature: 0.3, // Baja temperatura para respuestas más consistentes
-    max_tokens: 500,
+    max_tokens: 200, // Respuestas JSON típicas: 80-150 tokens
   });
+
+  // Capturar uso de tokens para monitoreo de costos
+  if (response.usage) {
+    logger.info('Azure OpenAI - Token usage', {
+      prompt_tokens: response.usage.prompt_tokens,
+      completion_tokens: response.usage.completion_tokens,
+      total_tokens: response.usage.total_tokens,
+    });
+  }
 
   return response.choices[0]?.message?.content || '';
 }
@@ -90,7 +104,10 @@ function parseJsonResponse(response) {
  */
 async function detectIntent(userMessage, config) {
   try {
-    const response = await sendMessage(PROMPTS.DETECT_INTENT, userMessage);
+    const response = await sendMessage(
+      PROMPTS.DETECT_INTENT,
+      sanitizeForLLM(userMessage, { maxLength: 500 })
+    );
 
     logger.ai('Azure OpenAI detectIntent - Respuesta recibida', {
       responseLength: response.length,
@@ -133,7 +150,7 @@ async function interpretTerm(userText, config) {
   try {
     const response = await sendMessage(
       PROMPTS.INTERPRET_TERM,
-      `Interpreta este término: "${userText}"`
+      `Interpreta este término: ${sanitizeForLLM(userText, { maxLength: 200 })}`
     );
 
     logger.ai('Azure OpenAI interpretTerm - Respuesta recibida', {
@@ -175,7 +192,10 @@ async function interpretTerm(userText, config) {
  */
 async function extractStructuredData(userMessage, config) {
   try {
-    const response = await sendMessage(PROMPTS.EXTRACT_STRUCTURED, userMessage);
+    const response = await sendMessage(
+      PROMPTS.EXTRACT_STRUCTURED,
+      sanitizeForLLM(userMessage, { maxLength: 1000 })
+    );
 
     logger.ai('Azure OpenAI extractStructuredData - Respuesta recibida', {
       responseLength: response.length,
@@ -222,17 +242,36 @@ async function extractStructuredData(userMessage, config) {
  * @param {string} contextoActual - Estado actual del flujo (opcional)
  * @returns {Object} - Todos los datos extraídos
  */
+// Prefijos de estado válidos para inyectar en system prompt
+const VALID_STATE_PREFIXES = [
+  'INICIO',
+  'REFRIGERADOR_',
+  'VEHICULO_',
+  'CONFIRMAR_',
+  'ESPERA_',
+  'ENCUESTA_',
+  'CONSULTA_',
+  'AGENTE_',
+  'FINALIZADO',
+  'CANCELADO',
+  'TIMEOUT',
+];
+
 async function extractAllData(userMessage, config, contextoActual = null) {
   try {
     let prompt = PROMPTS.EXTRACT_ALL;
     if (contextoActual) {
-      prompt = prompt.replace(
-        'CONTEXTO: El usuario está reportando fallas',
-        `CONTEXTO: El usuario está reportando fallas. Estado actual del flujo: ${contextoActual}`
-      );
+      // Validar contextoActual contra whitelist de estados conocidos
+      const isValid = VALID_STATE_PREFIXES.some((p) => String(contextoActual).startsWith(p));
+      if (isValid) {
+        prompt = prompt.replace(
+          'CONTEXTO: El usuario está reportando fallas',
+          `CONTEXTO: El usuario está reportando fallas. Estado actual del flujo: ${contextoActual}`
+        );
+      }
     }
 
-    const response = await sendMessage(prompt, userMessage);
+    const response = await sendMessage(prompt, sanitizeForLLM(userMessage, { maxLength: 1000 }));
 
     logger.ai('Azure OpenAI extractAllData - Respuesta recibida', {
       responseLength: response.length,
@@ -341,8 +380,14 @@ Responde SIEMPRE con JSON en este formato:
   "informacion_visual": "descripción detallada de lo que ves en la imagen",
   "codigos_visibles": ["lista de códigos encontrados"],
   "confianza": 0-100,
+  "calidad_imagen": "alta|media|baja",
   "datos_encontrados": ["lista de campos encontrados: tipo_equipo, problema, codigo_sap, etc."]
-}`;
+}
+
+REGLAS para calidad_imagen:
+- "baja": imagen borrosa, muy oscura, sin enfoque, no se distinguen detalles relevantes
+- "media": imagen legible pero con problemas menores de enfoque o iluminación
+- "alta": imagen clara, bien enfocada y con buena iluminación`;
 
     const messages = [
       {
@@ -360,7 +405,7 @@ Responde SIEMPRE con JSON en este formato:
           },
           {
             type: 'text',
-            text: `Texto del usuario: "${userText || 'Sin texto adicional'}"`,
+            text: `Texto del usuario: ${sanitizeForLLM(userText || 'Sin texto adicional', { maxLength: 500 })}`,
           },
         ],
       },
@@ -372,10 +417,20 @@ Responde SIEMPRE con JSON en este formato:
       model: deploymentName,
       messages: messages,
       temperature: 0.3,
-      max_tokens: 1000,
+      max_tokens: 400, // Vision JSON: 100-250 tokens típicos
     });
 
     const content = response.choices[0]?.message?.content || '';
+
+    // Capturar uso de tokens para monitoreo de costos
+    if (response.usage) {
+      logger.info('Azure OpenAI Vision - Token usage', {
+        prompt_tokens: response.usage.prompt_tokens,
+        completion_tokens: response.usage.completion_tokens,
+        total_tokens: response.usage.total_tokens,
+      });
+    }
+
     logger.ai('Azure OpenAI Vision - Respuesta recibida', { responseLength: content.length });
 
     const parsed = parseJsonResponse(content);
@@ -399,6 +454,7 @@ Responde SIEMPRE con JSON en este formato:
         informacion_visual: parsed.informacion_visual || '',
         codigos_visibles: parsed.codigos_visibles || [],
         confianza: parsed.confianza || config.confidence.low,
+        calidad_imagen: parsed.calidad_imagen || null,
         datos_encontrados: parsed.datos_encontrados || [],
       };
     }
@@ -411,6 +467,7 @@ Responde SIEMPRE con JSON en este formato:
       informacion_visual: '',
       codigos_visibles: [],
       confianza: config.confidence.minimum,
+      calidad_imagen: null,
       datos_encontrados: [],
     };
   } catch (error) {
@@ -426,6 +483,7 @@ Responde SIEMPRE con JSON en este formato:
       informacion_visual: '',
       codigos_visibles: [],
       confianza: 0,
+      calidad_imagen: null,
       datos_encontrados: [],
     };
   }

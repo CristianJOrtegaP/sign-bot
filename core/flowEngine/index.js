@@ -65,9 +65,6 @@ const {
   registry,
 } = require('./StaticFlowRegistry');
 
-// Legacy - mantener compatibilidad con código existente
-const { FlowContext, createFlowContext } = require('./FlowContext');
-
 module.exports = {
   // ============================================================
   // NUEVA API (recomendada)
@@ -95,6 +92,6 @@ module.exports = {
   registry,
 
   // Alias - usar createStaticFlowContext en nuevo código
-  FlowContext,
-  createFlowContext,
+  FlowContext: StaticFlowContext,
+  createFlowContext: createStaticFlowContext,
 };

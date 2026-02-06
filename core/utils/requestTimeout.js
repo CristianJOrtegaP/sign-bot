@@ -36,6 +36,52 @@ class TimeoutError extends Error {
 }
 
 /**
+ * Presupuesto de timeout global para una cadena de operaciones.
+ * Evita que operaciones tardías arranquen sin tiempo suficiente.
+ */
+class TimeoutBudget {
+  /**
+   * @param {number} totalMs - Presupuesto total en ms (default 240000 = 4 min)
+   * @param {string} operationId - Identificador para logging
+   */
+  constructor(totalMs = 240000, operationId = 'unknown') {
+    this._startTime = Date.now();
+    this._totalMs = totalMs;
+    this._operationId = operationId;
+  }
+
+  /** Milisegundos restantes del presupuesto */
+  remaining() {
+    return Math.max(0, this._totalMs - (Date.now() - this._startTime));
+  }
+
+  /** Milisegundos transcurridos desde la creación */
+  elapsed() {
+    return Date.now() - this._startTime;
+  }
+
+  /** ¿Se agotó el presupuesto? */
+  isExpired() {
+    return this.remaining() <= 0;
+  }
+
+  /**
+   * Retorna el timeout efectivo: el menor entre lo solicitado y lo restante.
+   * Retorna 0 si el presupuesto restante es menor que minThresholdMs.
+   * @param {number} requestedMs - Timeout deseado para la operación
+   * @param {number} minThresholdMs - Mínimo viable para intentar la operación (default 1000)
+   * @returns {number} - Timeout a usar, o 0 si no hay tiempo suficiente
+   */
+  effectiveTimeout(requestedMs, minThresholdMs = 1000) {
+    const rem = this.remaining();
+    if (rem < minThresholdMs) {
+      return 0;
+    }
+    return Math.min(requestedMs, rem);
+  }
+}
+
+/**
  * Ejecuta una promesa con timeout
  * @param {Promise} promise - Promesa a ejecutar
  * @param {number} timeoutMs - Timeout en milisegundos
@@ -189,6 +235,7 @@ const timeouts = {
 
 module.exports = {
   TimeoutError,
+  TimeoutBudget,
   withTimeout,
   createAbortControllerWithTimeout,
   fetchWithTimeout,

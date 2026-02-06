@@ -14,7 +14,8 @@
 
 const deadLetterService = require('../core/services/infrastructure/deadLetterService');
 const alertingService = require('../core/services/infrastructure/alertingService');
-const messageHandler = require('../bot/handlers/messageHandler');
+const { handleText, handleButton } = require('../bot/controllers/messageHandler');
+const { handleImage } = require('../bot/controllers/imageHandler');
 
 // ==============================================================
 // CONFIGURACIÓN
@@ -39,37 +40,43 @@ async function reprocessMessage(dlMessage, context) {
   });
 
   try {
-    // Reconstruir el mensaje original
-    const reconstructedMessage = {
-      id: dlMessage.WhatsAppMessageId,
-      from: dlMessage.Telefono,
-      type: dlMessage.TipoMensaje,
-      timestamp: Math.floor(Date.now() / 1000).toString(),
-    };
-
-    // Agregar contenido según tipo
-    if (dlMessage.TipoMensaje === 'text') {
-      reconstructedMessage.text = {
-        body: dlMessage.Contenido,
-      };
-    } else if (dlMessage.TipoMensaje === 'image') {
-      try {
-        const content = JSON.parse(dlMessage.Contenido);
-        reconstructedMessage.image = content;
-      } catch {
-        throw new Error('No se pudo parsear contenido de imagen');
-      }
-    } else if (dlMessage.TipoMensaje === 'interactive') {
-      try {
-        const content = JSON.parse(dlMessage.Contenido);
-        reconstructedMessage.interactive = content;
-      } catch {
-        throw new Error('No se pudo parsear contenido interactivo');
+    // Imágenes >24h: media ID de WhatsApp ya expiró, no tiene sentido reintentar
+    if (dlMessage.TipoMensaje === 'image') {
+      const messageAge = Date.now() - new Date(dlMessage.FechaCreacion).getTime();
+      const hoursOld = messageAge / (1000 * 60 * 60);
+      if (hoursOld > 24) {
+        const reason = `Media ID expirado (${hoursOld.toFixed(1)}h > 24h)`;
+        context.log.warn(`[DLQ] ${reason}`, {
+          deadLetterId: dlMessage.DeadLetterId,
+          messageId: dlMessage.WhatsAppMessageId,
+        });
+        await deadLetterService.markAsSkipped(dlMessage.DeadLetterId, reason);
+        return { success: false, skipped: true };
       }
     }
 
-    // Procesar mensaje con timeout
-    const processingPromise = messageHandler.processMessage(reconstructedMessage);
+    // Dispatch al handler correcto según tipo de mensaje
+    let processingPromise;
+    const { WhatsAppMessageId: msgId, Telefono: from, TipoMensaje: tipo, Contenido } = dlMessage;
+
+    switch (tipo) {
+      case 'text':
+        processingPromise = handleText(from, Contenido, msgId, context);
+        break;
+      case 'image': {
+        const imageData = JSON.parse(Contenido);
+        processingPromise = handleImage(from, imageData, msgId, context);
+        break;
+      }
+      case 'interactive': {
+        const payload = JSON.parse(Contenido);
+        processingPromise = handleButton(from, payload, msgId, context);
+        break;
+      }
+      default:
+        throw new Error(`Tipo de mensaje no soportado para reprocessing: ${tipo}`);
+    }
+
     const timeoutPromise = new Promise((_resolve, reject) => {
       setTimeout(() => reject(new Error('Processing timeout')), PROCESSING_TIMEOUT_MS);
     });
@@ -111,6 +118,7 @@ async function processBatch(messages, context) {
   const results = {
     processed: 0,
     failed: 0,
+    skipped: 0,
     permanentlyFailed: 0,
     errors: [],
   };
@@ -120,6 +128,8 @@ async function processBatch(messages, context) {
 
     if (result.success) {
       results.processed++;
+    } else if (result.skipped) {
+      results.skipped++;
     } else {
       results.failed++;
       if (result.reachedMaxRetries) {
@@ -228,6 +238,7 @@ module.exports = async function (context, _myTimer) {
       duration_ms: duration,
       processed: results.processed,
       failed: results.failed,
+      skipped: results.skipped,
       permanentlyFailed: results.permanentlyFailed,
       total: messages.length,
     });

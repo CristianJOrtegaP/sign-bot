@@ -15,11 +15,18 @@ const { ESTADO, ORIGEN_ACCION, TIPO_REPORTE } = require('../../../bot/constants/
 const { safeParseJSON } = require('../../utils/helpers');
 const { OCRError } = vision;
 const fieldExtractor = require('../../../bot/services/fieldExtractor');
+const appInsights = require('../infrastructure/appInsightsService');
+const correlation = require('../infrastructure/correlationService');
+const config = require('../../config');
+const { Semaphore } = require('../../utils/semaphore');
+
+// Limitar concurrencia de procesamiento de imagen (OCR + Vision AI + DB)
+const limiter = new Semaphore(config.backgroundProcessor.maxConcurrent, 'BackgroundProcessor');
 // FASE 2b: Lazy load para evitar dependencia circular
 let flexibleFlowManager = null;
 function getFlexibleFlowManager() {
   if (!flexibleFlowManager) {
-    flexibleFlowManager = require('../../../bot/controllers/flows/flexibleFlowManager');
+    flexibleFlowManager = require('../../../bot/flows/reporteFlow');
   }
   return flexibleFlowManager;
 }
@@ -30,7 +37,12 @@ function getFlexibleFlowManager() {
  * @param {string} imageId - ID de la imagen en WhatsApp
  * @param {Object} context - Contexto de Azure Functions para logs
  */
-async function processImageInBackground(from, imageId, context) {
+async function _processImageInBackgroundCore(from, imageId, context, opts = {}) {
+  const startTime = Date.now();
+  // Propagar correlation ID si viene del handler
+  if (opts.correlationId) {
+    correlation.addToContext({ correlationId: opts.correlationId });
+  }
   try {
     context.log(`[Background] Iniciando procesamiento de imagen para ${from}`);
 
@@ -97,8 +109,8 @@ async function processImageInBackground(from, imageId, context) {
         // FASE 2b: Equipo encontrado - usar flujo flexible
         context.log(`[Background] ✅ Equipo encontrado: ${equipo.CodigoSAP} - ${equipo.Modelo}`);
 
-        // Obtener sesión actual
-        const session = await db.getSession(from);
+        // Obtener sesión actual (fresh para evitar datos stale en background)
+        const session = await db.getSessionFresh(from);
         const datosTemp = safeParseJSON(session.DatosTemp) || {};
 
         // Agregar URL de imagen a datosTemp
@@ -134,14 +146,16 @@ async function processImageInBackground(from, imageId, context) {
         const { datosActualizados, resumenActualizacion: _resumenActualizacion } =
           fieldManager.actualizarDatosTemp(datosTemp, camposNuevos);
 
-        // Cambiar a estado de confirmación
+        // Cambiar a estado de confirmación (con optimistic locking)
         await db.updateSession(
           from,
           ESTADO.REFRIGERADOR_CONFIRMAR_EQUIPO,
           datosActualizados,
           equipo.EquipoId,
           ORIGEN_ACCION.BOT,
-          `Código SAP detectado por OCR: ${codigoSAP}, esperando confirmación`
+          `Código SAP detectado por OCR: ${codigoSAP}, esperando confirmación`,
+          null,
+          session.Version
         );
 
         // Pedir confirmación al usuario con botones
@@ -187,9 +201,36 @@ async function processImageInBackground(from, imageId, context) {
       );
     }
 
+    // App Insights: rastrear procesamiento de imagen OCR
+    appInsights.trackEvent(
+      'image_processed',
+      {
+        metodo: 'OCR',
+        exito: true,
+        codigoDetectado: Boolean(codigoSAP),
+        codigoSAP: codigoSAP || null,
+      },
+      {
+        duracionMs: Date.now() - startTime,
+        lineasOCR: ocrResult?.lines?.length || 0,
+      }
+    );
+
     context.log(`[Background] ✅ Procesamiento completado para ${from}`);
   } catch (error) {
     context.log.error('[Background] ❌ Error procesando imagen:', error);
+
+    appInsights.trackEvent(
+      'image_processed',
+      {
+        metodo: 'OCR',
+        exito: false,
+        errorMessage: error.message,
+      },
+      {
+        duracionMs: Date.now() - startTime,
+      }
+    );
 
     // Si es un OCRError que no fue manejado antes
     if (error instanceof OCRError) {
@@ -214,7 +255,12 @@ async function processImageInBackground(from, imageId, context) {
  * @param {string} caption - Texto opcional que acompañó la imagen
  * @param {Object} context - Contexto de Azure Functions para logs
  */
-async function processImageWithAIVision(from, imageId, caption, context) {
+async function _processImageWithAIVisionCore(from, imageId, caption, context, opts = {}) {
+  const startTime = Date.now();
+  // Propagar correlation ID si viene del handler
+  if (opts.correlationId) {
+    correlation.addToContext({ correlationId: opts.correlationId });
+  }
   try {
     context.log(`[Background AI Vision] Iniciando análisis de imagen para ${from}`);
 
@@ -254,10 +300,57 @@ async function processImageWithAIVision(from, imageId, caption, context) {
       );
     }
 
-    // 3. Analizar imagen con AI Vision
+    // 3. Filtro de calidad: detectar imagen borrosa antes de gastar tokens
+    const blurResult = await imageProcessor.detectBlur(imageBuffer);
+    if (blurResult.isBlurry) {
+      context.log.warn(
+        `[Background AI Vision] Imagen borrosa detectada (score: ${blurResult.score}, umbral: ${blurResult.threshold})`
+      );
+      appInsights.trackEvent('image_blur_rejected', {
+        from,
+        score: blurResult.score,
+        threshold: blurResult.threshold,
+      });
+      await whatsapp.sendAndSaveText(
+        from,
+        '📷 La imagen parece estar *borrosa o desenfocada*.\n\n' +
+          '*Sugerencias para una mejor foto:*\n' +
+          '• Mantén la cámara estable al tomar la foto\n' +
+          '• Asegúrate de que haya buena iluminación\n' +
+          '• Enfoca el objeto antes de tomar la foto\n' +
+          '• Limpia el lente de la cámara\n\n' +
+          'Por favor, intenta enviar una nueva foto más clara.'
+      );
+      return;
+    }
+    context.log(`[Background AI Vision] Filtro de blur pasado (score: ${blurResult.score})`);
+
+    // 4. Analizar imagen con AI Vision
     context.log(`[Background AI Vision] Analizando imagen con AI...`);
     const analisisAI = await aiService.analyzeImageWithVision(imageBuffer, caption);
     context.log(`[Background AI Vision] Análisis completado:`, JSON.stringify(analisisAI));
+
+    // 4.1 Validar calidad reportada por IA
+    if (analisisAI.calidad_imagen === 'baja' && analisisAI.confianza < 30) {
+      context.log.warn(
+        `[Background AI Vision] IA reporta calidad baja con confianza ${analisisAI.confianza}`
+      );
+      appInsights.trackEvent('image_low_quality_ai', {
+        from,
+        calidad: analisisAI.calidad_imagen,
+        confianza: analisisAI.confianza,
+      });
+      await whatsapp.sendAndSaveText(
+        from,
+        '📷 No pude distinguir la información en la imagen con suficiente claridad.\n\n' +
+          '*Sugerencias:*\n' +
+          '• Toma la foto más de cerca\n' +
+          '• Mejora la iluminación\n' +
+          '• Evita ángulos muy inclinados\n\n' +
+          'Intenta enviar una nueva foto o proporciona los datos manualmente.'
+      );
+      return;
+    }
 
     // 3.5 NUEVO: Procesar caption con fieldExtractor para complementar AI Vision
     // AI Vision puede no reconocer patrones como "Vehículo 628329" = código SAP
@@ -289,8 +382,8 @@ async function processImageWithAIVision(from, imageId, caption, context) {
       }
     }
 
-    // 4. Obtener sesión actual
-    const session = await db.getSession(from);
+    // 4. Obtener sesión actual (fresh para evitar datos stale en background)
+    const session = await db.getSessionFresh(from);
     const datosTemp = safeParseJSON(session.DatosTemp) || {};
 
     // 5. Agregar URL de imagen a datosTemp
@@ -387,7 +480,9 @@ async function processImageWithAIVision(from, imageId, caption, context) {
         datosTemp,
         session.EquipoIdTemp,
         ORIGEN_ACCION.BOT,
-        'Datos extraídos de imagen con AI Vision'
+        'Datos extraídos de imagen con AI Vision',
+        null,
+        session.Version
       );
       context.log(`[Background AI Vision] ✅ Sesión actualizada exitosamente a ${nuevoEstado}`);
 
@@ -452,9 +547,40 @@ async function processImageWithAIVision(from, imageId, caption, context) {
       await whatsapp.sendAndSaveText(from, mensaje);
     }
 
+    // App Insights: rastrear procesamiento de imagen AI Vision
+    appInsights.trackEvent(
+      'image_processed',
+      {
+        metodo: 'AI_VISION',
+        exito: true,
+        tipoEquipo: datosTemp.tipoReporte || null,
+        codigoDetectado: codigoDetectado,
+        empleadoDetectado: empleadoDetectado,
+        problemaDetectado: problemaDetectado,
+      },
+      {
+        duracionMs: Date.now() - startTime,
+        confianza: analisisAI.confianza || 0,
+        datosDetectados: datosDetectados.length,
+      }
+    );
+
     context.log(`[Background AI Vision] ✅ Procesamiento completado para ${from}`);
   } catch (error) {
     context.log.error('[Background AI Vision] ❌ Error procesando imagen:', error);
+
+    appInsights.trackEvent(
+      'image_processed',
+      {
+        metodo: 'AI_VISION',
+        exito: false,
+        errorMessage: error.message,
+      },
+      {
+        duracionMs: Date.now() - startTime,
+      }
+    );
+
     await whatsapp.sendAndSaveText(
       from,
       '❌ Hubo un problema al analizar la imagen.\n\n' +
@@ -463,7 +589,54 @@ async function processImageWithAIVision(from, imageId, caption, context) {
   }
 }
 
+/**
+ * Wrapper con semáforo de concurrencia para processImageInBackground.
+ * Si el límite está alcanzado, notifica al usuario y retorna sin procesar.
+ */
+async function processImageInBackground(from, imageId, context, opts = {}) {
+  const result = limiter.tryRun(() => _processImageInBackgroundCore(from, imageId, context, opts));
+  if (result === null) {
+    context.log.warn(
+      `[Background] Capacidad de procesamiento alcanzada, rechazando imagen de ${from}`
+    );
+    const whatsappSvc = require('../external/whatsappService');
+    await whatsappSvc.sendAndSaveText(
+      from,
+      '⏳ Hay muchas imágenes procesándose en este momento.\nPor favor, intenta de nuevo en unos segundos.'
+    );
+    return;
+  }
+  return result;
+}
+
+/**
+ * Wrapper con semáforo de concurrencia para processImageWithAIVision.
+ * Si el límite está alcanzado, notifica al usuario y retorna sin procesar.
+ */
+async function processImageWithAIVision(from, imageId, caption, context, opts = {}) {
+  const result = limiter.tryRun(() =>
+    _processImageWithAIVisionCore(from, imageId, caption, context, opts)
+  );
+  if (result === null) {
+    context.log.warn(
+      `[Background AI Vision] Capacidad de procesamiento alcanzada, rechazando imagen de ${from}`
+    );
+    const whatsappSvc = require('../external/whatsappService');
+    await whatsappSvc.sendAndSaveText(
+      from,
+      '⏳ Hay muchas imágenes procesándose en este momento.\nPor favor, intenta de nuevo en unos segundos.'
+    );
+    return;
+  }
+  return result;
+}
+
+function getProcessingStats() {
+  return limiter.stats();
+}
+
 module.exports = {
   processImageInBackground,
   processImageWithAIVision,
+  getProcessingStats,
 };

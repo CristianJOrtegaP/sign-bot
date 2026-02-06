@@ -85,6 +85,11 @@ async function connect() {
     // Importar redis dinámicamente (puede no estar instalado)
     const redis = require('redis');
 
+    // Limpiar listeners de conexiones previas para evitar acumulación
+    if (redisClient) {
+      redisClient.removeAllListeners();
+    }
+
     // Crear cliente con configuración de Azure Redis
     redisClient = redis.createClient({
       socket: {

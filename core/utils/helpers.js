@@ -361,6 +361,43 @@ function sanitizeMessage(mensaje) {
   });
 }
 
+/**
+ * Sanitiza texto antes de enviarlo a un LLM como mensaje de usuario.
+ * Previene prompt injection eliminando caracteres de control, zero-width,
+ * fences de código y tags XML, y envuelve en delimitadores seguros.
+ * @param {string} text - Texto a sanitizar
+ * @param {Object} options
+ * @param {number} options.maxLength - Longitud máxima (default 1000)
+ * @param {boolean} options.wrapInDelimiters - Envolver en <user_input> (default true)
+ * @returns {string}
+ */
+function sanitizeForLLM(text, options = {}) {
+  const { maxLength = 1000, wrapInDelimiters = true } = options;
+  if (!text || typeof text !== 'string') {
+    return wrapInDelimiters ? '<user_input></user_input>' : '';
+  }
+
+  let s = text;
+  if (s.length > maxLength) {
+    s = s.substring(0, maxLength);
+  }
+  s = s.replace(/[\u200B-\u200D\uFEFF\u2060\u00AD]/g, ''); // zero-width chars
+  // eslint-disable-next-line no-control-regex -- Stripping control chars is intentional for input sanitization
+  s = s.replace(/[\u0000-\u0009\u000B\u000C\u000E-\u001F\u007F]/g, ''); // control chars (preserva \n)
+  s = s.replace(/`{3,}/g, "'''"); // backtick fences
+  s = s.replace(/---+/g, '- - -'); // markdown separadores
+  s = s.replace(
+    /<\/?[a-zA-Z_][a-zA-Z0-9_]*>/g,
+    (
+      m // XML-like tags
+    ) => m.replace(/</g, '\uFF1C').replace(/>/g, '\uFF1E')
+  );
+  if (wrapInDelimiters) {
+    return `<user_input>${s}</user_input>`;
+  }
+  return s;
+}
+
 module.exports = {
   generateTicketNumber,
   safeParseJSON,
@@ -370,6 +407,7 @@ module.exports = {
   sanitizeInput,
   sanitizeDescription,
   sanitizeMessage,
+  sanitizeForLLM,
   escapeHtml,
   stripDangerousTags,
 };
