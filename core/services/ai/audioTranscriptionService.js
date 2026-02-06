@@ -1,9 +1,11 @@
 /**
  * AC FIXBOT - Servicio de Transcripción de Audio
- * Soporta múltiples proveedores con fallback automático:
- * 1. Azure OpenAI Whisper (primario, si está configurado)
- * 2. Deepgram ($200 gratis, excelente calidad)
- * 3. Google Speech-to-Text (60 min/mes gratis)
+ * Proveedores Azure (Producción):
+ * 1. Azure OpenAI Whisper (primario)
+ * 2. Azure Speech Services (fallback, 5 hrs/mes gratis)
+ *
+ * Proveedor desarrollo (solo dev/test):
+ * 3. Google Speech-to-Text (60 min/mes gratis) - NO usar en producción
  *
  * Compatible con audios de WhatsApp (OGG/Opus)
  */
@@ -13,9 +15,9 @@ const config = require('../../config');
 const { logger } = require('../infrastructure/errorHandler');
 const { getBreaker, SERVICES } = require('../infrastructure/circuitBreaker');
 
-// Proveedores de transcripción
+// Proveedores de transcripción Azure (producción)
 const azureSpeechProvider = require('./transcriptionProviders/azureSpeechProvider');
-const deepgramProvider = require('./transcriptionProviders/deepgramProvider');
+// Google Speech solo para desarrollo/testing (NO usar en producción Arca Continental)
 const googleProvider = require('./transcriptionProviders/googleSpeechProvider');
 
 // Utilidades de procesamiento de audio
@@ -64,7 +66,7 @@ function getAvailableProviders() {
     });
   }
 
-  // 2. Azure Speech Services (5 hrs/mes gratis) - Recomendado para Azure
+  // 2. Azure Speech Services (5 hrs/mes gratis) - Fallback Azure
   if (audioConfig.azureSpeechKey && audioConfig.azureSpeechRegion) {
     providers.push({
       name: 'azure-speech',
@@ -73,21 +75,12 @@ function getAvailableProviders() {
     });
   }
 
-  // 3. Deepgram ($200 gratis)
-  if (audioConfig.deepgramApiKey) {
-    providers.push({
-      name: 'deepgram',
-      priority: 3,
-      description: 'Deepgram ($200 créditos gratis)',
-    });
-  }
-
-  // 4. Google Speech-to-Text (60 min/mes gratis)
-  if (audioConfig.googleApiKey) {
+  // 3. Google Speech-to-Text - SOLO PARA DESARROLLO (NO usar en producción)
+  if (audioConfig.googleApiKey && process.env.NODE_ENV !== 'production') {
     providers.push({
       name: 'google',
-      priority: 4,
-      description: 'Google Speech (60 min/mes gratis)',
+      priority: 3,
+      description: 'Google Speech (solo desarrollo)',
     });
   }
 
@@ -95,22 +88,26 @@ function getAvailableProviders() {
 }
 
 /**
- * Verifica si la transcripción está habilitada (cualquier proveedor)
+ * Verifica si la transcripción está habilitada
+ * Producción: Solo proveedores Azure
+ * Desarrollo: Azure + Google Speech
  * @returns {boolean}
  */
 function isEnabled() {
   const audioConfig = config.audio || {};
+  const isProduction = process.env.NODE_ENV === 'production';
 
-  // Azure Whisper
-  const azureEnabled = audioConfig.enabled === true && audioConfig.endpoint && audioConfig.apiKey;
+  // Azure Whisper (primario)
+  const azureWhisperEnabled =
+    audioConfig.enabled === true && audioConfig.endpoint && audioConfig.apiKey;
 
-  // Deepgram
-  const deepgramEnabled = Boolean(audioConfig.deepgramApiKey);
+  // Azure Speech Services (fallback)
+  const azureSpeechEnabled = Boolean(audioConfig.azureSpeechKey && audioConfig.azureSpeechRegion);
 
-  // Google
-  const googleEnabled = Boolean(audioConfig.googleApiKey);
+  // Google (solo desarrollo)
+  const googleEnabled = !isProduction && Boolean(audioConfig.googleApiKey);
 
-  return azureEnabled || deepgramEnabled || googleEnabled;
+  return azureWhisperEnabled || azureSpeechEnabled || googleEnabled;
 }
 
 /**
@@ -123,7 +120,7 @@ function isAzureEnabled() {
 }
 
 /**
- * Transcribe audio usando proveedores alternativos (Azure Speech, Deepgram o Google)
+ * Transcribe audio usando proveedores alternativos (Azure Speech o Google en dev)
  * @param {Buffer} audioBuffer - Buffer con el audio
  * @param {Object} options - Opciones de transcripción
  * @returns {Promise<Object>} - Resultado de transcripción
@@ -131,9 +128,10 @@ function isAzureEnabled() {
 async function transcribeWithAlternativeProvider(audioBuffer, options = {}) {
   const audioConfig = config.audio || {};
   const mimeType = options.mimeType || 'audio/ogg';
+  const isProduction = process.env.NODE_ENV === 'production';
   const errors = [];
 
-  // 1. Intentar Azure Speech Services primero (5 hrs/mes gratis, mismo ecosistema)
+  // 1. Intentar Azure Speech Services (fallback Azure - 5 hrs/mes gratis)
   if (audioConfig.azureSpeechKey && audioConfig.azureSpeechRegion) {
     logger.debug('Intentando transcripción con Azure Speech Services...');
     const result = await azureSpeechProvider.transcribe(audioBuffer, {
@@ -151,39 +149,19 @@ async function transcribeWithAlternativeProvider(audioBuffer, options = {}) {
     }
 
     errors.push({ provider: 'azure-speech', error: result.error, errorCode: result.errorCode });
-    logger.warn('Azure Speech falló, intentando siguiente proveedor', { error: result.error });
+    logger.warn('Azure Speech falló', { error: result.error });
   }
 
-  // 2. Intentar Deepgram ($200 en créditos gratis)
-  if (audioConfig.deepgramApiKey) {
-    logger.debug('Intentando transcripción con Deepgram...');
-    const result = await deepgramProvider.transcribe(audioBuffer, {
-      apiKey: audioConfig.deepgramApiKey,
-      mimeType,
-    });
-
-    if (result.success) {
-      logger.info('Transcripción exitosa con Deepgram', {
-        textLength: result.text?.length,
-        duration: result.duration,
-      });
-      return result;
-    }
-
-    errors.push({ provider: 'deepgram', error: result.error, errorCode: result.errorCode });
-    logger.warn('Deepgram falló, intentando siguiente proveedor', { error: result.error });
-  }
-
-  // 3. Intentar Google Speech como último recurso (60 min/mes gratis)
-  if (audioConfig.googleApiKey) {
-    logger.debug('Intentando transcripción con Google Speech...');
+  // 2. Google Speech - SOLO en desarrollo (NO en producción Arca Continental)
+  if (!isProduction && audioConfig.googleApiKey) {
+    logger.debug('Intentando transcripción con Google Speech (solo dev)...');
     const result = await googleProvider.transcribe(audioBuffer, {
       apiKey: audioConfig.googleApiKey,
       mimeType,
     });
 
     if (result.success) {
-      logger.info('Transcripción exitosa con Google Speech', {
+      logger.info('Transcripción exitosa con Google Speech (dev)', {
         textLength: result.text?.length,
         duration: result.duration,
       });
@@ -199,8 +177,8 @@ async function transcribeWithAlternativeProvider(audioBuffer, options = {}) {
     text: null,
     error:
       errors.length > 0
-        ? `Todos los proveedores fallaron: ${errors.map((e) => e.error).join(', ')}`
-        : 'No hay proveedores alternativos configurados',
+        ? `Proveedores Azure fallaron: ${errors.map((e) => e.error).join(', ')}`
+        : 'No hay proveedores Azure de audio configurados (AZURE_SPEECH_KEY, AZURE_SPEECH_REGION)',
     errors,
     duration: 0,
   };
@@ -208,10 +186,9 @@ async function transcribeWithAlternativeProvider(audioBuffer, options = {}) {
 
 /**
  * Transcribe un buffer de audio a texto
- * Usa múltiples proveedores con fallback automático:
- * 1. Azure OpenAI Whisper (si configurado)
- * 2. Deepgram ($200 gratis)
- * 3. Google Speech (60 min/mes gratis)
+ * Proveedores Azure (Producción Arca Continental):
+ * 1. Azure OpenAI Whisper (primario)
+ * 2. Azure Speech Services (fallback)
  *
  * @param {Buffer} audioBuffer - Buffer con el contenido del audio
  * @param {Object} options - Opciones adicionales
@@ -224,12 +201,12 @@ async function transcribeAudio(audioBuffer, options = {}) {
   const availableProviders = getAvailableProviders();
 
   if (availableProviders.length === 0) {
-    logger.warn('Transcripción de audio: ningún proveedor configurado');
+    logger.warn('Transcripción de audio: ningún proveedor Azure configurado');
     return {
       success: false,
       text: null,
       error:
-        'No hay proveedores de transcripción configurados. Configura DEEPGRAM_API_KEY o GOOGLE_SPEECH_API_KEY.',
+        'No hay proveedores de transcripción configurados. Configura AZURE_SPEECH_KEY y AZURE_SPEECH_REGION, o habilita AUDIO_TRANSCRIPTION_ENABLED con Azure OpenAI.',
       duration: 0,
     };
   }
@@ -427,9 +404,9 @@ async function transcribeAudio(audioBuffer, options = {}) {
     ) {
       errorMessage = 'Error al decodificar audio OGG/Opus';
       errorCode = 'DECODE_ERROR';
-      // Intentar fallback porque Deepgram/Azure Speech soportan OGG nativo
+      // Intentar fallback porque Azure Speech soporta OGG nativo
       shouldFallback = true;
-      logger.warn('Error decodificando audio, intentando proveedores alternativos', {
+      logger.warn('Error decodificando audio, intentando Azure Speech', {
         error: error.message,
       });
     } else {

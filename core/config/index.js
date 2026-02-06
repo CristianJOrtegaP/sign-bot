@@ -23,11 +23,11 @@ const OPTIONAL_ENV_VARS = [
   'AZURE_OPENAI_DEPLOYMENT', // Nombre del deployment (modelo)
   'AZURE_AUDIO_DEPLOYMENT', // Nombre del deployment de audio (gpt-4o-mini-audio)
   'AUDIO_TRANSCRIPTION_ENABLED', // Habilitar transcripción de audio (true/false)
-  // PROVEEDORES ALTERNATIVOS DE TRANSCRIPCIÓN (GRATIS)
-  'AZURE_SPEECH_KEY', // Azure Speech Services: 5 hrs/mes gratis
+  // TRANSCRIPCIÓN DE AUDIO AZURE
+  'AZURE_SPEECH_KEY', // Azure Speech Services: 5 hrs/mes gratis (fallback)
   'AZURE_SPEECH_REGION', // Región de Azure Speech (ej: eastus)
-  'DEEPGRAM_API_KEY', // Deepgram: $200 créditos gratis, excelente calidad
-  'GOOGLE_SPEECH_API_KEY', // Google Speech: 60 min/mes gratis
+  // Google Speech solo para desarrollo (NO usar en producción Arca Continental)
+  'GOOGLE_SPEECH_API_KEY', // Google Speech: 60 min/mes gratis - SOLO DEV
   'VISION_ENDPOINT',
   'VISION_KEY',
   'BLOB_CONNECTION_STRING',
@@ -344,20 +344,20 @@ const audio = {
   audioDeployment: process.env.AZURE_AUDIO_DEPLOYMENT || 'whisper',
 
   // ============================================================================
-  // PROVEEDORES ALTERNATIVOS GRATUITOS DE TRANSCRIPCIÓN
-  // Si Azure Whisper no está disponible o falla, se usan estos proveedores
+  // PROVEEDOR FALLBACK AZURE - Azure Speech Services
+  // Si Azure Whisper no está disponible o falla, se usa Azure Speech
   // ============================================================================
 
-  // Azure Speech Services: 5 horas gratis por mes (RECOMENDADO si ya usas Azure)
+  // Azure Speech Services: 5 horas gratis por mes (FALLBACK PRODUCCIÓN)
   // Crear recurso: https://portal.azure.com/#create/Microsoft.CognitiveServicesSpeechServices
   azureSpeechKey: process.env.AZURE_SPEECH_KEY,
   azureSpeechRegion: process.env.AZURE_SPEECH_REGION, // ej: eastus, westus2, southcentralus
 
-  // Deepgram: $200 en créditos gratis al registrarse
-  // Obtener API Key: https://console.deepgram.com/signup
-  deepgramApiKey: process.env.DEEPGRAM_API_KEY,
+  // ============================================================================
+  // PROVEEDOR DESARROLLO (NO usar en producción Arca Continental)
+  // ============================================================================
 
-  // Google Speech-to-Text: 60 minutos gratis por mes
+  // Google Speech-to-Text: 60 minutos gratis por mes - SOLO DESARROLLO
   // Obtener API Key: https://console.cloud.google.com/apis/credentials
   googleApiKey: process.env.GOOGLE_SPEECH_API_KEY,
 
