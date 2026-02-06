@@ -8,6 +8,7 @@
 /* global AbortController, fetch */
 
 const { logger } = require('../services/infrastructure/errorHandler');
+const { sleep } = require('./promises');
 
 /**
  * Configuración de timeouts por defecto (en ms)
@@ -139,17 +140,6 @@ async function fetchWithTimeout(url, options = {}, config = {}) {
 }
 
 /**
- * Helper para esperar un tiempo
- * @param {number} ms - Milisegundos a esperar
- * @returns {Promise<void>}
- */
-function sleep(ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
-/**
  * Wrapper para cualquier función async con timeout y nombre de operación
  * @param {Function} fn - Función async a ejecutar
  * @param {Object} options - Opciones
@@ -206,5 +196,4 @@ module.exports = {
   createServiceTimeoutWrapper,
   timeouts,
   DEFAULT_TIMEOUTS,
-  sleep,
 };

@@ -5,6 +5,7 @@
 
 const { logger } = require('../services/infrastructure/errorHandler');
 const { ConcurrencyError } = require('../errors');
+const { sleep } = require('./promises');
 
 /**
  * Implementa exponential backoff con jitter
@@ -21,17 +22,6 @@ function calculateBackoffDelay(attempt, baseDelayMs = 50, maxDelayMs = 1000) {
   const jitter = exponentialDelay * 0.25 * (Math.random() * 2 - 1);
 
   return Math.floor(exponentialDelay + jitter);
-}
-
-/**
- * Espera un tiempo determinado
- * @param {number} ms - Milisegundos a esperar
- * @returns {Promise<void>}
- */
-function sleep(ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
 }
 
 /**
@@ -157,5 +147,4 @@ module.exports = {
   withRetry,
   withSessionRetry,
   calculateBackoffDelay,
-  sleep,
 };

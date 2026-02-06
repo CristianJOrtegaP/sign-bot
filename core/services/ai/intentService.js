@@ -85,9 +85,8 @@ const PATTERNS = {
   SALUDO: /^(hola|hi|hey|buenos?\s*(d[ií]as?|tardes?|noches?)|buenas|saludos?|qu[eé]\s*tal)/i,
   CANCELAR:
     /^(cancelar|cancela|cancelarlo|no\s*quiero\s*(continuar|seguir)|dejarlo|olv[ií]dalo|olvida\s*esto|no\s*importa|ya\s*no|d[eé]jalo)$/i,
-  // eslint-disable-next-line security/detect-unsafe-regex -- Pattern is bounded with limited input, no catastrophic backtracking risk
   DESPEDIDA:
-    /^(adi[oó]s|adios|bye|chao|hasta\s*(luego|pronto|la\s*vista)|gracias?(\s+por\s+todo)?|nos\s*vemos|finalizar|salir|terminar)/i,
+    /^(adi[oó]s|adios|bye|chao|hasta luego|hasta pronto|hasta la vista|gracias|gracias por todo|nos vemos|finalizar|salir|terminar)/i,
   REPORTAR_FALLA:
     /(no\s*(enfr[ií]a|prende|funciona|enciende|sirve)|falla|problema|da[ñn]ado|descompuesto|roto|ruido|gotea|error|reportar)/i,
   TIPO_REFRIGERADOR:

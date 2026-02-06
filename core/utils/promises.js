@@ -224,19 +224,23 @@ async function allWithTimeoutAndFallback(operations) {
 
 /**
  * Crea una promesa que se resuelve después de un delay
- * Útil para testing o retry con backoff
+ * Útil para testing, retry con backoff, o pausas entre operaciones
  *
  * @param {number} ms - Milisegundos a esperar
  * @returns {Promise<void>}
  *
  * @example
- * await delay(1000); // Espera 1 segundo
+ * await sleep(1000); // Espera 1 segundo
+ * await delay(500);  // Alias de sleep
  */
-function delay(ms) {
+function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
 }
+
+// Alias para compatibilidad
+const delay = sleep;
 
 module.exports = {
   withTimeout,
@@ -244,6 +248,7 @@ module.exports = {
   withTimeoutAndFallbackFn,
   allWithTimeout,
   allWithTimeoutAndFallback,
-  delay,
+  sleep,
+  delay, // Alias de sleep para compatibilidad
   TimeoutError,
 };
