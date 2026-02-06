@@ -1,7 +1,7 @@
 /**
  * AC FIXBOT - Servicio de Detección de Intenciones
  * Detecta intenciones rápidamente con regex antes de llamar a IA
- * Soporta múltiples proveedores: Gemini (POC) / Azure OpenAI (Producción)
+ * Soporta múltiples proveedores: Gemini / Azure OpenAI
  */
 
 const aiService = require('./aiService');

@@ -231,7 +231,7 @@ sendTypingIndicator(to, messageId);
 ```javascript
 // core/config/index.js
 AI_PROVIDER = 'azure-openai'; // Producción
-AI_PROVIDER = 'gemini'; // POC / desarrollo
+AI_PROVIDER = 'gemini'; // desarrollo
 ```
 
 | Provider     | Modelo             | SDK                   | Timeout | Max Tokens | Temperatura |

@@ -52,7 +52,7 @@
 -- 3. Ejecutar este script completo
 --
 -- DATOS DE CONEXION (ejemplo):
--- Servidor: sql-acfixbot-poc.database.windows.net
+-- Servidor: sql-acfixbot.database.windows.net
 -- Base de datos: db-acfixbot
 -- Puerto: 1433
 --
@@ -1017,17 +1017,17 @@ SET IDENTITY_INSERT [dbo].[Reportes] ON;
 
 INSERT INTO [dbo].[Reportes] ([ReporteId], [NumeroTicket], [TelefonoReportante], [Descripcion], [ImagenUrl], [TipoReporteId], [EstadoReporteId], [FechaCreacion], [FechaActualizacion], [FechaResolucion], [EquipoId], [ClienteId], [CodigoSAPVehiculo], [NumeroEmpleado]) VALUES
 -- Reportes de Refrigeradores (TipoReporteId = 1)
-(1, 'TKT1737470001', '5218112345001', 'El refrigerador no enfria adecuadamente, temperatura interna de 15C', 'https://stacfixbotpoc.blob.core.windows.net/imagenes/ref001_temp.jpg', 1, @EstadoPendiente, DATEADD(day, -5, GETDATE()), DATEADD(day, -5, GETDATE()), NULL, 1, 1, NULL, NULL),
-(2, 'TKT1737470002', '5218112345002', 'Puerta no cierra correctamente, sello danado', 'https://stacfixbotpoc.blob.core.windows.net/imagenes/ref002_puerta.jpg', 1, @EstadoEnProceso, DATEADD(day, -4, GETDATE()), DATEADD(day, -3, GETDATE()), NULL, 2, 1, NULL, NULL),
+(1, 'TKT1737470001', '5218112345001', 'El refrigerador no enfria adecuadamente, temperatura interna de 15C', 'https://stacfixbot.blob.core.windows.net/imagenes/ref001_temp.jpg', 1, @EstadoPendiente, DATEADD(day, -5, GETDATE()), DATEADD(day, -5, GETDATE()), NULL, 1, 1, NULL, NULL),
+(2, 'TKT1737470002', '5218112345002', 'Puerta no cierra correctamente, sello danado', 'https://stacfixbot.blob.core.windows.net/imagenes/ref002_puerta.jpg', 1, @EstadoEnProceso, DATEADD(day, -4, GETDATE()), DATEADD(day, -3, GETDATE()), NULL, 2, 1, NULL, NULL),
 (3, 'TKT1737470003', '5218112345003', 'Luz interior no funciona', NULL, 1, @EstadoResuelto, DATEADD(day, -10, GETDATE()), DATEADD(day, -8, GETDATE()), DATEADD(day, -8, GETDATE()), 3, 2, NULL, NULL),
-(4, 'TKT1737470004', '5218112345004', 'Ruido excesivo del compresor', 'https://stacfixbotpoc.blob.core.windows.net/imagenes/ref004_ruido.jpg', 1, @EstadoPendiente, DATEADD(day, -2, GETDATE()), DATEADD(day, -2, GETDATE()), NULL, 4, 2, NULL, NULL),
-(5, 'TKT1737470005', '5218112345005', 'Formacion excesiva de hielo en el evaporador', 'https://stacfixbotpoc.blob.core.windows.net/imagenes/ref005_hielo.jpg', 1, @EstadoPendiente, DATEADD(day, -1, GETDATE()), DATEADD(day, -1, GETDATE()), NULL, 5, 3, NULL, NULL),
+(4, 'TKT1737470004', '5218112345004', 'Ruido excesivo del compresor', 'https://stacfixbot.blob.core.windows.net/imagenes/ref004_ruido.jpg', 1, @EstadoPendiente, DATEADD(day, -2, GETDATE()), DATEADD(day, -2, GETDATE()), NULL, 4, 2, NULL, NULL),
+(5, 'TKT1737470005', '5218112345005', 'Formacion excesiva de hielo en el evaporador', 'https://stacfixbot.blob.core.windows.net/imagenes/ref005_hielo.jpg', 1, @EstadoPendiente, DATEADD(day, -1, GETDATE()), DATEADD(day, -1, GETDATE()), NULL, 5, 3, NULL, NULL),
 -- Reportes de Vehiculos (TipoReporteId = 2)
-(6, 'TKT1737470006', '5218198765001', 'Fuga de aceite en el motor', 'https://stacfixbotpoc.blob.core.windows.net/imagenes/veh001_fuga.jpg', 2, @EstadoPendiente, DATEADD(day, -3, GETDATE()), DATEADD(day, -3, GETDATE()), NULL, NULL, NULL, 'VEH-MTY-001', 'EMP001'),
-(7, 'TKT1737470007', '5218198765002', 'Llanta ponchada delantera derecha', 'https://stacfixbotpoc.blob.core.windows.net/imagenes/veh002_llanta.jpg', 2, @EstadoEnProceso, DATEADD(day, -2, GETDATE()), DATEADD(day, -1, GETDATE()), NULL, NULL, NULL, 'VEH-MTY-002', 'EMP002'),
+(6, 'TKT1737470006', '5218198765001', 'Fuga de aceite en el motor', 'https://stacfixbot.blob.core.windows.net/imagenes/veh001_fuga.jpg', 2, @EstadoPendiente, DATEADD(day, -3, GETDATE()), DATEADD(day, -3, GETDATE()), NULL, NULL, NULL, 'VEH-MTY-001', 'EMP001'),
+(7, 'TKT1737470007', '5218198765002', 'Llanta ponchada delantera derecha', 'https://stacfixbot.blob.core.windows.net/imagenes/veh002_llanta.jpg', 2, @EstadoEnProceso, DATEADD(day, -2, GETDATE()), DATEADD(day, -1, GETDATE()), NULL, NULL, NULL, 'VEH-MTY-002', 'EMP002'),
 (8, 'TKT1737470008', '5218198765003', 'Bateria descargada, no enciende', NULL, 2, @EstadoResuelto, DATEADD(day, -7, GETDATE()), DATEADD(day, -6, GETDATE()), DATEADD(day, -6, GETDATE()), NULL, NULL, 'VEH-MTY-003', 'EMP003'),
-(9, 'TKT1737470009', '5218198765004', 'Sistema de refrigeracion con falla, sobrecalentamiento', 'https://stacfixbotpoc.blob.core.windows.net/imagenes/veh004_temp.jpg', 2, @EstadoPendiente, DATEADD(day, -1, GETDATE()), DATEADD(day, -1, GETDATE()), NULL, NULL, NULL, 'VEH-MTY-004', 'EMP004'),
-(10, 'TKT1737470010', '5218198765005', 'Frenos hacen ruido al frenar', 'https://stacfixbotpoc.blob.core.windows.net/imagenes/veh005_frenos.jpg', 2, @EstadoPendiente, GETDATE(), GETDATE(), NULL, NULL, NULL, 'VEH-MTY-005', 'EMP005');
+(9, 'TKT1737470009', '5218198765004', 'Sistema de refrigeracion con falla, sobrecalentamiento', 'https://stacfixbot.blob.core.windows.net/imagenes/veh004_temp.jpg', 2, @EstadoPendiente, DATEADD(day, -1, GETDATE()), DATEADD(day, -1, GETDATE()), NULL, NULL, NULL, 'VEH-MTY-004', 'EMP004'),
+(10, 'TKT1737470010', '5218198765005', 'Frenos hacen ruido al frenar', 'https://stacfixbot.blob.core.windows.net/imagenes/veh005_frenos.jpg', 2, @EstadoPendiente, GETDATE(), GETDATE(), NULL, NULL, NULL, 'VEH-MTY-005', 'EMP005');
 
 SET IDENTITY_INSERT [dbo].[Reportes] OFF;
 

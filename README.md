@@ -59,7 +59,7 @@ Diseñado para **~3,000 reportes/mes** con consistencia transaccional garantizad
 ## Estructura del Proyecto
 
 ```
-acfixbot-poc/
+acfixbot/
 │
 ├── api-whatsapp-webhook/              # Webhook principal de Meta (HTTP POST/GET)
 ├── api-health/                        # Health check con diagnósticos de conectividad
@@ -132,7 +132,7 @@ acfixbot-poc/
 | SQL Server                 | Azure SQL o Docker local | Schema v5.4                                           |
 | Redis                      | Azure Cache for Redis    | **Opcional** — fallback automático a cache en memoria |
 | Meta Business Account      | —                        | WhatsApp Business API configurada                     |
-| Azure OpenAI               | `gpt-4o-mini` deployment | O Gemini API Key para entorno POC                     |
+| Azure OpenAI               | `gpt-4o-mini` deployment | O Gemini API Key para desarrollo local                |
 
 ---
 
@@ -141,7 +141,7 @@ acfixbot-poc/
 ### 1. Instalar dependencias
 
 ```bash
-git clone <repo-url> && cd acfixbot-poc
+git clone <repo-url> && cd acfixbot
 npm install
 ```
 
@@ -228,20 +228,20 @@ npm start
 
 ### IA y Procesamiento
 
-| Variable                      | Descripción                                  | Default             |
-| ----------------------------- | -------------------------------------------- | ------------------- |
-| `USE_AI`                      | Habilitar servicios de IA                    | `true`              |
-| `AI_PROVIDER`                 | `azure-openai` (producción) o `gemini` (POC) | `gemini`            |
-| `AZURE_OPENAI_ENDPOINT`       | Endpoint del recurso Azure OpenAI            | —                   |
-| `AZURE_OPENAI_KEY`            | API Key                                      | —                   |
-| `AZURE_OPENAI_DEPLOYMENT`     | Nombre del deployment                        | `gpt-4o-mini`       |
-| `GEMINI_API_KEY`              | API Key de Google Gemini                     | —                   |
-| `VISION_ENDPOINT`             | Azure Computer Vision endpoint               | —                   |
-| `VISION_KEY`                  | API Key de Computer Vision                   | —                   |
-| `AUDIO_TRANSCRIPTION_ENABLED` | Habilitar transcripción de notas de voz      | `true`              |
-| `AZURE_AUDIO_DEPLOYMENT`      | Deployment de Whisper en Azure OpenAI        | `gpt-4o-mini-audio` |
-| `AZURE_SPEECH_KEY`            | Azure Speech Services (fallback audio)       | —                   |
-| `AZURE_SPEECH_REGION`         | Región de Speech Services                    | `eastus`            |
+| Variable                      | Descripción                                         | Default             |
+| ----------------------------- | --------------------------------------------------- | ------------------- |
+| `USE_AI`                      | Habilitar servicios de IA                           | `true`              |
+| `AI_PROVIDER`                 | `azure-openai` (producción) o `gemini` (desarrollo) | `gemini`            |
+| `AZURE_OPENAI_ENDPOINT`       | Endpoint del recurso Azure OpenAI                   | —                   |
+| `AZURE_OPENAI_KEY`            | API Key                                             | —                   |
+| `AZURE_OPENAI_DEPLOYMENT`     | Nombre del deployment                               | `gpt-4o-mini`       |
+| `GEMINI_API_KEY`              | API Key de Google Gemini                            | —                   |
+| `VISION_ENDPOINT`             | Azure Computer Vision endpoint                      | —                   |
+| `VISION_KEY`                  | API Key de Computer Vision                          | —                   |
+| `AUDIO_TRANSCRIPTION_ENABLED` | Habilitar transcripción de notas de voz             | `true`              |
+| `AZURE_AUDIO_DEPLOYMENT`      | Deployment de Whisper en Azure OpenAI               | `gpt-4o-mini-audio` |
+| `AZURE_SPEECH_KEY`            | Azure Speech Services (fallback audio)              | —                   |
+| `AZURE_SPEECH_REGION`         | Región de Speech Services                           | `eastus`            |
 
 ### Cache y Almacenamiento
 

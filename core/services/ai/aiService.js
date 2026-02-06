@@ -4,8 +4,8 @@
  * Con Circuit Breaker para protección contra fallos en cascada
  *
  * Uso:
- *   - POC: AI_PROVIDER=gemini (default)
- *   - PROD: AI_PROVIDER=azure-openai
+ *   - Desarrollo: AI_PROVIDER=gemini (default)
+ *   - Producción: AI_PROVIDER=azure-openai
  */
 
 const config = require('../../config');

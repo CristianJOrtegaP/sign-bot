@@ -175,11 +175,11 @@ const whatsapp = {
 const ai = {
   enabled: process.env.USE_AI === 'true',
 
-  // Provider de IA: 'gemini' (POC) o 'azure-openai' (Producción)
+  // Provider de IA: 'gemini' (desarrollo) o 'azure-openai' (producción)
   // Cambiar esta variable para alternar entre proveedores
   provider: process.env.AI_PROVIDER || 'gemini',
 
-  // Configuración de Gemini (POC)
+  // Configuración de Gemini
   gemini: {
     apiKey: process.env.GEMINI_API_KEY,
     model: 'gemini-2.5-flash',
