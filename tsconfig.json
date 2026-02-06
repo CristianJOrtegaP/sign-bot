@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "lib": ["ES2022"],
+    "outDir": "./dist",
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "@core/*": ["core/*"],
+      "@bot/*": ["bot/*"]
+    },
+    "strict": false,
+    "allowJs": true,
+    "checkJs": false,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "typeRoots": ["./types", "./node_modules/@types"]
+  },
+  "include": ["core/**/*.ts", "bot/**/*.ts", "api-*/**/*.ts", "timer-*/**/*.ts", "types/**/*.d.ts"],
+  "exclude": ["node_modules", "coverage", "dist", "tests", "frontend"]
+}

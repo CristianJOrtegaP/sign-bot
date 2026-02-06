@@ -478,6 +478,43 @@ function setCampo(camposRequeridos, nombreCampo, valor, tipoReporte) {
 }
 
 // ==============================================================
+// IMÁGENES
+// ==============================================================
+
+/**
+ * Agrega una imagen al array imagenes[] en datosTemp.
+ * Mantiene backward compatibility con imagenUrl.
+ * @param {Object} datosTemp - DatosTemp actual
+ * @param {string} url - URL de la imagen en blob storage
+ * @param {string} tipo - Tipo de procesamiento: 'ocr' | 'ai_vision' | 'guardada'
+ * @returns {Object} datosTemp actualizado
+ */
+function agregarImagen(datosTemp, url, tipo) {
+  if (!url) {
+    return datosTemp;
+  }
+
+  if (!Array.isArray(datosTemp.imagenes)) {
+    datosTemp.imagenes = [];
+    if (datosTemp.imagenUrl) {
+      datosTemp.imagenes.push({
+        url: datosTemp.imagenUrl,
+        tipo: 'legacy',
+        fecha: new Date().toISOString(),
+      });
+    }
+  }
+
+  const yaExiste = datosTemp.imagenes.some((img) => img.url === url);
+  if (!yaExiste) {
+    datosTemp.imagenes.push({ url, tipo, fecha: new Date().toISOString() });
+  }
+
+  datosTemp.imagenUrl = datosTemp.imagenes[0]?.url || url;
+  return datosTemp;
+}
+
+// ==============================================================
 // EXPORTS
 // ==============================================================
 
@@ -505,4 +542,7 @@ module.exports = {
   actualizarDatosTemp,
   confirmarCampo,
   setCampo,
+
+  // Imágenes
+  agregarImagen,
 };

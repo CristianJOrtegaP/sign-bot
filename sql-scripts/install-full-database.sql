@@ -61,6 +61,9 @@
 USE [db-acfixbot];
 GO
 
+SET QUOTED_IDENTIFIER ON;
+GO
+
 -- =============================================
 -- PASO 1: ELIMINAR OBJETOS EXISTENTES
 -- =============================================
@@ -147,7 +150,7 @@ GO
 -- Catalogo de Estados de Sesion
 CREATE TABLE [dbo].[CatEstadoSesion] (
     [EstadoId] INT IDENTITY(1,1) PRIMARY KEY,
-    [Codigo] NVARCHAR(30) NOT NULL UNIQUE,
+    [Codigo] NVARCHAR(50) NOT NULL UNIQUE,
     [Nombre] NVARCHAR(50) NOT NULL,
     [Descripcion] NVARCHAR(200) NULL,
     [EsTerminal] BIT DEFAULT 0,
@@ -563,9 +566,13 @@ GO
 
 -- Tabla para deduplicacion de mensajes de WhatsApp
 -- Previene procesar el mismo mensaje multiples veces (reintentos de webhook)
+-- registerMessageAtomic() usa MERGE con Telefono, Reintentos, UltimoReintento
 CREATE TABLE [dbo].[MensajesProcessados] (
     [Id] BIGINT IDENTITY(1,1) PRIMARY KEY,
     [WhatsAppMessageId] NVARCHAR(100) NOT NULL,
+    [Telefono] NVARCHAR(20) NULL,
+    [Reintentos] INT NOT NULL DEFAULT 0,
+    [UltimoReintento] DATETIME NULL,
     [FechaCreacion] DATETIME DEFAULT GETDATE(),
 
     CONSTRAINT [UQ_MensajesProcessados_MessageId] UNIQUE ([WhatsAppMessageId])
@@ -623,8 +630,8 @@ CREATE TABLE [dbo].[DeadLetterMessages] (
 -- Indice para buscar mensajes pendientes de reintento
 CREATE NONCLUSTERED INDEX [IX_DeadLetter_PendingRetry]
 ON [dbo].[DeadLetterMessages] ([Estado], [NextRetryAt])
-WHERE [Estado] IN ('PENDING', 'RETRYING')
-INCLUDE ([Telefono], [TipoMensaje], [RetryCount]);
+INCLUDE ([Telefono], [TipoMensaje], [RetryCount])
+WHERE [Estado] IN ('PENDING', 'RETRYING');
 
 -- Indice para buscar por telefono (analisis de usuarios con problemas)
 CREATE NONCLUSTERED INDEX [IX_DeadLetter_Telefono]
@@ -772,43 +779,41 @@ PRINT '   CatTipoReporte: 3 registros';
 GO
 
 -- Estados de Sesion (incluye estados de encuesta)
-INSERT INTO [dbo].[CatEstadoSesion] ([Codigo], [Nombre], [Descripcion], [EsTerminal], [Orden], [Activo]) VALUES
--- Estados base
-('INICIO', 'Inicio', 'Sesion nueva o reactivada, esperando seleccion de flujo', 1, 0, 1),
-('CANCELADO', 'Cancelado', 'Sesion cancelada explicitamente por el usuario', 1, 100, 1),
-('FINALIZADO', 'Finalizado', 'Flujo completado exitosamente, reporte creado', 1, 101, 1),
-('TIMEOUT', 'Timeout', 'Sesion cerrada por inactividad', 1, 102, 1),
--- Estados de Refrigerador
-('REFRI_ESPERA_SAP', 'Esperando SAP Refrigerador', 'Esperando codigo SAP del refrigerador', 0, 10, 1),
-('REFRI_CONFIRMAR_EQUIPO', 'Confirmar Equipo', 'Esperando confirmacion de datos del equipo', 0, 11, 1),
-('REFRI_ESPERA_DESCRIPCION', 'Esperando Descripcion Refrigerador', 'Esperando descripcion del problema', 0, 12, 1),
--- Estados de Vehiculo
-('VEHICULO_ESPERA_EMPLEADO', 'Esperando Numero Empleado', 'Esperando numero de empleado', 0, 20, 1),
-('VEHICULO_ESPERA_SAP', 'Esperando SAP Vehiculo', 'Esperando codigo SAP del vehiculo', 0, 21, 1),
-('VEHICULO_ESPERA_DESCRIPCION', 'Esperando Descripcion Vehiculo', 'Esperando descripcion del problema', 0, 22, 1),
-('VEHICULO_ESPERA_UBICACION', 'Esperando Ubicacion Vehiculo', 'Esperando ubicacion del vehiculo para el reporte', 0, 23, 1),
--- Estados de Consulta
-('CONSULTA_ESPERA_TICKET', 'Esperando Ticket', 'Usuario consulta estado, esperando numero de ticket', 0, 30, 1),
--- Estados de Encuesta de Satisfaccion
-('ENCUESTA_INVITACION', 'Invitacion Encuesta', 'Esperando aceptar/rechazar encuesta', 0, 40, 1),
-('ENCUESTA_PREGUNTA_1', 'Encuesta Pregunta 1', 'Pregunta: Atencion al reportar', 0, 41, 1),
-('ENCUESTA_PREGUNTA_2', 'Encuesta Pregunta 2', 'Pregunta: Tiempo de reparacion', 0, 42, 1),
-('ENCUESTA_PREGUNTA_3', 'Encuesta Pregunta 3', 'Pregunta: Fecha compromiso', 0, 43, 1),
-('ENCUESTA_PREGUNTA_4', 'Encuesta Pregunta 4', 'Pregunta: Unidad limpia', 0, 44, 1),
-('ENCUESTA_PREGUNTA_5', 'Encuesta Pregunta 5', 'Pregunta: Informacion reparacion', 0, 45, 1),
-('ENCUESTA_PREGUNTA_6', 'Encuesta Pregunta 6', 'Pregunta: Falla corregida', 0, 46, 1),
-('ENCUESTA_COMENTARIO', 'Encuesta Comentario', 'Pregunta si desea dejar comentario', 0, 47, 1),
-('ENCUESTA_ESPERA_COMENTARIO', 'Esperando Comentario', 'Esperando texto de comentario', 0, 48, 1),
--- Estados Flexibles (FASE 2b) - IA Vision
-('REFRI_ACTIVO', 'Refrigerador Activo', 'Flujo flexible de refrigerador en progreso', 0, 50, 1),
-('VEHICULO_ACTIVO', 'Vehiculo Activo', 'Flujo flexible de vehiculo en progreso', 0, 51, 1),
-('AI_CONFIRMAR', 'Confirmar IA', 'Esperando confirmacion de datos extraidos por IA', 0, 52, 1),
-('AI_VISION_CONFIRMAR', 'Confirmar Vision IA', 'Esperando confirmacion de codigo SAP extraido por OCR', 0, 53, 1),
-('CONFIRMAR_DATOS', 'Confirmar Datos', 'Mostrando resumen de datos para confirmacion final', 0, 54, 1),
--- Estado de Handoff a Agente Humano
-('AGENTE_ACTIVO', 'Atencion por Agente', 'Conversacion tomada por un agente humano', 0, 60, 1);
+-- IMPORTANTE: Usar IDENTITY_INSERT con IDs explicitos para que coincidan
+-- con ESTADO_ID en bot/constants/sessionStates.js
+SET IDENTITY_INSERT [dbo].[CatEstadoSesion] ON;
 
-PRINT '   CatEstadoSesion: 28 registros (base + consulta + encuesta + flexibles + agente)';
+INSERT INTO [dbo].[CatEstadoSesion] ([EstadoId], [Codigo], [Nombre], [Descripcion], [EsTerminal], [Orden], [Activo]) VALUES
+-- Estados terminales (IDs 1-4)
+(1, 'INICIO', 'Inicio', 'Sesion nueva o reactivada, esperando seleccion de flujo', 1, 0, 1),
+(2, 'CANCELADO', 'Cancelado', 'Sesion cancelada explicitamente por el usuario', 1, 100, 1),
+(3, 'FINALIZADO', 'Finalizado', 'Flujo completado exitosamente, reporte creado', 1, 101, 1),
+(4, 'TIMEOUT', 'Timeout', 'Sesion cerrada por inactividad', 1, 102, 1),
+-- IDs 5-11 reservados (legacy secuenciales, eliminados en FASE 2b)
+-- Estados de Encuesta de Satisfaccion (IDs 12-20)
+(12, 'ENCUESTA_INVITACION', 'Invitacion Encuesta', 'Esperando aceptar/rechazar encuesta', 0, 40, 1),
+(13, 'ENCUESTA_PREGUNTA_1', 'Encuesta Pregunta 1', 'Pregunta: Atencion al reportar', 0, 41, 1),
+(14, 'ENCUESTA_PREGUNTA_2', 'Encuesta Pregunta 2', 'Pregunta: Tiempo de reparacion', 0, 42, 1),
+(15, 'ENCUESTA_PREGUNTA_3', 'Encuesta Pregunta 3', 'Pregunta: Fecha compromiso', 0, 43, 1),
+(16, 'ENCUESTA_PREGUNTA_4', 'Encuesta Pregunta 4', 'Pregunta: Unidad limpia', 0, 44, 1),
+(17, 'ENCUESTA_PREGUNTA_5', 'Encuesta Pregunta 5', 'Pregunta: Informacion reparacion', 0, 45, 1),
+(18, 'ENCUESTA_PREGUNTA_6', 'Encuesta Pregunta 6', 'Pregunta: Falla corregida', 0, 46, 1),
+(19, 'ENCUESTA_COMENTARIO', 'Encuesta Comentario', 'Pregunta si desea dejar comentario', 0, 47, 1),
+(20, 'ENCUESTA_ESPERA_COMENTARIO', 'Esperando Comentario', 'Esperando texto de comentario', 0, 48, 1),
+-- Estado de Consulta (ID 21)
+(21, 'CONSULTA_ESPERA_TICKET', 'Esperando Ticket', 'Usuario consulta estado, esperando numero de ticket', 0, 30, 1),
+-- Estados Flexibles FASE 2b (IDs 23-27)
+(23, 'REFRIGERADOR_ACTIVO', 'Refrigerador Activo', 'Flujo flexible de refrigerador en progreso', 0, 50, 1),
+(24, 'VEHICULO_ACTIVO', 'Vehiculo Activo', 'Flujo flexible de vehiculo en progreso', 0, 51, 1),
+(25, 'REFRIGERADOR_CONFIRMAR_EQUIPO', 'Confirmar Equipo OCR', 'Esperando confirmacion de codigo SAP extraido por OCR', 0, 52, 1),
+(26, 'VEHICULO_CONFIRMAR_DATOS_AI', 'Confirmar Datos AI Vehiculo', 'Esperando confirmacion de datos extraidos por IA para vehiculo', 0, 53, 1),
+(27, 'REFRIGERADOR_CONFIRMAR_DATOS_AI', 'Confirmar Datos AI Refrigerador', 'Esperando confirmacion de datos extraidos por IA para refrigerador', 0, 54, 1),
+-- Estado de Handoff a Agente Humano (ID 28)
+(28, 'AGENTE_ACTIVO', 'Atencion por Agente', 'Conversacion tomada por un agente humano', 0, 60, 1);
+
+SET IDENTITY_INSERT [dbo].[CatEstadoSesion] OFF;
+
+PRINT '   CatEstadoSesion: 25 registros (IDs explicitos, sincronizados con ESTADO_ID en codigo)';
 GO
 
 -- Estados de Reporte
@@ -867,195 +872,12 @@ PRINT '   PreguntasEncuesta: 6 registros';
 GO
 
 -- =============================================
--- PASO 10: INSERTAR DATOS DE PRUEBA - CLIENTES
+-- NOTA: Tablas de datos inician vacias.
+-- Los datos se crean en tiempo de ejecucion via la app.
 -- =============================================
 
 PRINT '';
-PRINT 'Paso 10: Insertando datos de prueba en Clientes...';
-GO
-
-SET IDENTITY_INSERT [dbo].[Clientes] ON;
-
-INSERT INTO [dbo].[Clientes] ([ClienteId], [Nombre], [Direccion], [Ciudad], [Telefono], [Email], [Activo]) VALUES
-(1, 'OXXO Sucursal Centro', 'Av. Juarez #123, Centro', 'Monterrey', '8181234567', 'oxxo.centro@ejemplo.com', 1),
-(2, 'OXXO Sucursal San Pedro', 'Av. Constitucion #456, San Pedro', 'San Pedro Garza Garcia', '8187654321', 'oxxo.sanpedro@ejemplo.com', 1),
-(3, 'Extra Super Norte', 'Blvd. Bernardo Reyes #789', 'Monterrey', '8183456789', 'extra.norte@ejemplo.com', 1),
-(4, 'Extra Super Sur', 'Av. Insurgentes #321', 'Monterrey', '8189876543', 'extra.sur@ejemplo.com', 1),
-(5, 'Bodega Aurrera Apodaca', 'Carr. Miguel Aleman Km 24', 'Apodaca', '8182345678', 'bodega.apodaca@ejemplo.com', 1),
-(6, 'Soriana Hiper Valle', 'Av. Eugenio Garza Sada #2411', 'Monterrey', '8186789012', 'soriana.valle@ejemplo.com', 1),
-(7, 'HEB Lincoln', 'Av. Abraham Lincoln #500', 'Monterrey', '8185432109', 'heb.lincoln@ejemplo.com', 1),
-(8, 'Walmart Cumbres', 'Av. Paseo de los Leones #1000', 'Monterrey', '8184567890', 'walmart.cumbres@ejemplo.com', 1);
-
-SET IDENTITY_INSERT [dbo].[Clientes] OFF;
-
-PRINT '   Clientes: 8 registros';
-GO
-
--- =============================================
--- PASO 11: INSERTAR DATOS DE PRUEBA - EQUIPOS
--- =============================================
-
-PRINT '';
-PRINT 'Paso 11: Insertando datos de prueba en Equipos...';
-GO
-
-SET IDENTITY_INSERT [dbo].[Equipos] ON;
-
-INSERT INTO [dbo].[Equipos] ([EquipoId], [CodigoSAP], [CodigoBarras], [NumeroSerie], [Modelo], [Marca], [Descripcion], [Ubicacion], [ClienteId], [FechaInstalacion], [Activo]) VALUES
-(1, 'REF001', 'BARR001', 'SN-2024-001', 'VR-350', 'Imbera', 'Refrigerador vertical de 350L', 'Area de bebidas principal', 1, '2024-01-15', 1),
-(2, 'REF002', 'BARR002', 'SN-2024-002', 'VR-500', 'Imbera', 'Refrigerador vertical de 500L', 'Entrada principal', 1, '2024-02-20', 1),
-(3, 'REF003', 'BARR003', 'SN-2024-003', 'VR-350', 'Metalfrio', 'Refrigerador vertical de 350L', 'Pasillo central', 2, '2024-01-10', 1),
-(4, 'REF004', 'BARR004', 'SN-2024-004', 'VR-450', 'Torrey', 'Refrigerador vertical de 450L', 'Zona de lacteos', 2, '2024-03-05', 1),
-(5, 'REF005', 'BARR005', 'SN-2024-005', 'HZ-600', 'Imbera', 'Refrigerador horizontal de 600L', 'Area de congelados', 3, '2024-01-20', 1),
-(6, 'REF006', 'BARR006', 'SN-2024-006', 'VR-350', 'Metalfrio', 'Refrigerador vertical de 350L', 'Entrada tienda', 3, '2024-02-15', 1),
-(7, 'REF007', 'BARR007', 'SN-2024-007', 'VR-500', 'Imbera', 'Refrigerador vertical de 500L', 'Pasillo bebidas', 4, '2024-03-10', 1),
-(8, 'REF008', 'BARR008', 'SN-2024-008', 'VR-400', 'Torrey', 'Refrigerador vertical de 400L', 'Zona productos frescos', 4, '2024-01-25', 1),
-(9, 'REF009', 'BARR009', 'SN-2024-009', 'VR-350', 'Imbera', 'Refrigerador vertical de 350L', 'Entrada lateral', 5, '2024-02-01', 1),
-(10, 'REF010', 'BARR010', 'SN-2024-010', 'HZ-800', 'Metalfrio', 'Refrigerador horizontal de 800L', 'Area de helados', 5, '2024-03-15', 1),
-(11, 'REF011', 'BARR011', 'SN-2024-011', 'VR-450', 'Imbera', 'Refrigerador vertical de 450L', 'Pasillo central', 6, '2024-01-30', 1),
-(12, 'REF012', 'BARR012', 'SN-2024-012', 'VR-350', 'Torrey', 'Refrigerador vertical de 350L', 'Zona bebidas', 6, '2024-02-10', 1),
-(13, 'REF013', 'BARR013', 'SN-2024-013', 'VR-500', 'Metalfrio', 'Refrigerador vertical de 500L', 'Entrada principal', 7, '2024-03-20', 1),
-(14, 'REF014', 'BARR014', 'SN-2024-014', 'VR-400', 'Imbera', 'Refrigerador vertical de 400L', 'Pasillo lacteos', 7, '2024-01-12', 1),
-(15, 'REF015', 'BARR015', 'SN-2024-015', 'VR-350', 'Torrey', 'Refrigerador vertical de 350L', 'Area de refrescos', 8, '2024-02-25', 1),
-(16, '4045101', 'BARR016', 'SN-2024-016', 'VR-450', 'Imbera', 'Refrigerador vertical de 450L', 'Zona de bebidas frias', 1, '2024-03-01', 1);
-
-SET IDENTITY_INSERT [dbo].[Equipos] OFF;
-
-PRINT '   Equipos: 16 registros';
-GO
-
--- =============================================
--- PASO 11B: INSERTAR DATOS DE PRUEBA - CENTROS DE SERVICIO
--- =============================================
-
-PRINT '';
-PRINT 'Paso 11B: Insertando datos de prueba en CentrosServicio...';
-GO
-
-INSERT INTO [dbo].[CentrosServicio]
-    ([Codigo], [Nombre], [Direccion], [Ciudad], [Estado], [CodigoPostal], [Latitud], [Longitud], [Telefono], [HorarioApertura], [HorarioCierre], [DiasOperacion])
-VALUES
--- Centro de Monterrey
-(
-    'CS-MTY',
-    'Centro de Servicio Monterrey',
-    'Av. Eugenio Garza Sada 2501, Tecnologico',
-    'Monterrey',
-    'Nuevo Leon',
-    '64849',
-    25.6514,      -- Latitud Monterrey (cerca del Tec)
-    -100.2895,    -- Longitud Monterrey
-    '8181234567',
-    '08:00',
-    '18:00',
-    'L-S'
-),
--- Centro de CDMX
-(
-    'CS-CDMX',
-    'Centro de Servicio CDMX',
-    'Av. Insurgentes Sur 1602, Credito Constructor',
-    'Ciudad de Mexico',
-    'CDMX',
-    '03940',
-    19.3910,      -- Latitud CDMX (zona sur)
-    -99.1737,     -- Longitud CDMX
-    '5551234567',
-    '08:00',
-    '18:00',
-    'L-S'
-),
--- Centro de Guadalajara
-(
-    'CS-GDL',
-    'Centro de Servicio Guadalajara',
-    'Av. Vallarta 3233, Vallarta Poniente',
-    'Guadalajara',
-    'Jalisco',
-    '44110',
-    20.6767,      -- Latitud Guadalajara
-    -103.3825,    -- Longitud Guadalajara
-    '3331234567',
-    '08:00',
-    '18:00',
-    'L-S'
-),
--- Centro de Queretaro
-(
-    'CS-QRO',
-    'Centro de Servicio Queretaro',
-    'Blvd. Bernardo Quintana 4100, Alamos 3a Seccion',
-    'Queretaro',
-    'Queretaro',
-    '76160',
-    20.5888,      -- Latitud Queretaro
-    -100.3899,    -- Longitud Queretaro
-    '4421234567',
-    '08:00',
-    '18:00',
-    'L-V'
-);
-
-PRINT '   CentrosServicio: 4 registros (MTY, CDMX, GDL, QRO)';
-GO
-
--- =============================================
--- PASO 12: INSERTAR DATOS DE PRUEBA - REPORTES
--- =============================================
-
-PRINT '';
-PRINT 'Paso 12: Insertando datos de prueba en Reportes...';
-GO
-
--- Obtener IDs de estados de reporte
-DECLARE @EstadoPendiente INT, @EstadoEnProceso INT, @EstadoResuelto INT;
-SELECT @EstadoPendiente = EstadoReporteId FROM CatEstadoReporte WHERE Codigo = 'PENDIENTE';
-SELECT @EstadoEnProceso = EstadoReporteId FROM CatEstadoReporte WHERE Codigo = 'EN_PROCESO';
-SELECT @EstadoResuelto = EstadoReporteId FROM CatEstadoReporte WHERE Codigo = 'RESUELTO';
-
-SET IDENTITY_INSERT [dbo].[Reportes] ON;
-
-INSERT INTO [dbo].[Reportes] ([ReporteId], [NumeroTicket], [TelefonoReportante], [Descripcion], [ImagenUrl], [TipoReporteId], [EstadoReporteId], [FechaCreacion], [FechaActualizacion], [FechaResolucion], [EquipoId], [ClienteId], [CodigoSAPVehiculo], [NumeroEmpleado]) VALUES
--- Reportes de Refrigeradores (TipoReporteId = 1)
-(1, 'TKT1737470001', '5218112345001', 'El refrigerador no enfria adecuadamente, temperatura interna de 15C', 'https://stacfixbot.blob.core.windows.net/imagenes/ref001_temp.jpg', 1, @EstadoPendiente, DATEADD(day, -5, GETDATE()), DATEADD(day, -5, GETDATE()), NULL, 1, 1, NULL, NULL),
-(2, 'TKT1737470002', '5218112345002', 'Puerta no cierra correctamente, sello danado', 'https://stacfixbot.blob.core.windows.net/imagenes/ref002_puerta.jpg', 1, @EstadoEnProceso, DATEADD(day, -4, GETDATE()), DATEADD(day, -3, GETDATE()), NULL, 2, 1, NULL, NULL),
-(3, 'TKT1737470003', '5218112345003', 'Luz interior no funciona', NULL, 1, @EstadoResuelto, DATEADD(day, -10, GETDATE()), DATEADD(day, -8, GETDATE()), DATEADD(day, -8, GETDATE()), 3, 2, NULL, NULL),
-(4, 'TKT1737470004', '5218112345004', 'Ruido excesivo del compresor', 'https://stacfixbot.blob.core.windows.net/imagenes/ref004_ruido.jpg', 1, @EstadoPendiente, DATEADD(day, -2, GETDATE()), DATEADD(day, -2, GETDATE()), NULL, 4, 2, NULL, NULL),
-(5, 'TKT1737470005', '5218112345005', 'Formacion excesiva de hielo en el evaporador', 'https://stacfixbot.blob.core.windows.net/imagenes/ref005_hielo.jpg', 1, @EstadoPendiente, DATEADD(day, -1, GETDATE()), DATEADD(day, -1, GETDATE()), NULL, 5, 3, NULL, NULL),
--- Reportes de Vehiculos (TipoReporteId = 2)
-(6, 'TKT1737470006', '5218198765001', 'Fuga de aceite en el motor', 'https://stacfixbot.blob.core.windows.net/imagenes/veh001_fuga.jpg', 2, @EstadoPendiente, DATEADD(day, -3, GETDATE()), DATEADD(day, -3, GETDATE()), NULL, NULL, NULL, 'VEH-MTY-001', 'EMP001'),
-(7, 'TKT1737470007', '5218198765002', 'Llanta ponchada delantera derecha', 'https://stacfixbot.blob.core.windows.net/imagenes/veh002_llanta.jpg', 2, @EstadoEnProceso, DATEADD(day, -2, GETDATE()), DATEADD(day, -1, GETDATE()), NULL, NULL, NULL, 'VEH-MTY-002', 'EMP002'),
-(8, 'TKT1737470008', '5218198765003', 'Bateria descargada, no enciende', NULL, 2, @EstadoResuelto, DATEADD(day, -7, GETDATE()), DATEADD(day, -6, GETDATE()), DATEADD(day, -6, GETDATE()), NULL, NULL, 'VEH-MTY-003', 'EMP003'),
-(9, 'TKT1737470009', '5218198765004', 'Sistema de refrigeracion con falla, sobrecalentamiento', 'https://stacfixbot.blob.core.windows.net/imagenes/veh004_temp.jpg', 2, @EstadoPendiente, DATEADD(day, -1, GETDATE()), DATEADD(day, -1, GETDATE()), NULL, NULL, NULL, 'VEH-MTY-004', 'EMP004'),
-(10, 'TKT1737470010', '5218198765005', 'Frenos hacen ruido al frenar', 'https://stacfixbot.blob.core.windows.net/imagenes/veh005_frenos.jpg', 2, @EstadoPendiente, GETDATE(), GETDATE(), NULL, NULL, NULL, 'VEH-MTY-005', 'EMP005');
-
-SET IDENTITY_INSERT [dbo].[Reportes] OFF;
-
-PRINT '   Reportes: 10 registros (2 resueltos con FechaResolucion para pruebas de encuestas)';
-GO
-
--- =============================================
--- PASO 13: INSERTAR DATOS DE PRUEBA - SESIONES
--- =============================================
-
-PRINT '';
-PRINT 'Paso 13: Insertando datos de prueba en SesionesChat...';
-GO
-
-DECLARE @EstadoInicioId INT;
-SELECT @EstadoInicioId = EstadoId FROM CatEstadoSesion WHERE Codigo = 'INICIO';
-
-SET IDENTITY_INSERT [dbo].[SesionesChat] ON;
-
-INSERT INTO [dbo].[SesionesChat] ([SesionId], [Telefono], [TipoReporteId], [EstadoId], [DatosTemp], [EquipoIdTemp], [FechaCreacion], [UltimaActividad], [ContadorMensajes], [AdvertenciaEnviada]) VALUES
-(1, '5218112345001', NULL, @EstadoInicioId, NULL, NULL, DATEADD(day, -5, GETDATE()), DATEADD(day, -5, GETDATE()), 0, 0),
-(2, '5218112345002', NULL, @EstadoInicioId, NULL, NULL, DATEADD(day, -4, GETDATE()), DATEADD(day, -3, GETDATE()), 0, 0),
-(3, '5218198765001', NULL, @EstadoInicioId, NULL, NULL, DATEADD(day, -3, GETDATE()), DATEADD(day, -3, GETDATE()), 0, 0),
-(4, '5218198765002', NULL, @EstadoInicioId, NULL, NULL, DATEADD(day, -2, GETDATE()), DATEADD(day, -1, GETDATE()), 0, 0);
-
-SET IDENTITY_INSERT [dbo].[SesionesChat] OFF;
-
-PRINT '   SesionesChat: 4 registros';
+PRINT 'Paso 10: Tablas de datos vacias (primer deploy limpio)';
 GO
 
 -- =============================================
@@ -1778,7 +1600,7 @@ GO
 PRINT '';
 PRINT 'Catalogos Base:';
 PRINT '   - CatTipoReporte: REFRIGERADOR, VEHICULO, CONSULTA';
-PRINT '   - CatEstadoSesion: 21 estados (12 base + 9 encuesta, incluye VEHICULO_ESPERA_UBICACION)';
+PRINT '   - CatEstadoSesion: 20 estados (IDs explicitos, sincronizados con codigo)';
 PRINT '   - CatEstadoReporte: PENDIENTE, EN_PROCESO, RESUELTO, CANCELADO';
 PRINT '';
 PRINT 'Catalogos de Encuestas (NORMALIZADOS):';
@@ -1786,18 +1608,11 @@ PRINT '   - CatEstadoEncuesta: 5 estados (ENVIADA, EN_PROCESO, COMPLETADA, RECHA
 PRINT '   - CatTipoEncuesta: 1 tipo (SATISFACCION_SERVICIO)';
 PRINT '   - PreguntasEncuesta: 6 preguntas dinamicas';
 PRINT '';
-PRINT 'Tablas de datos:';
-PRINT '   - Clientes: 8 registros de prueba';
-PRINT '   - Equipos: 16 refrigeradores de prueba';
-PRINT '   - CentrosServicio: 4 centros de prueba (MTY, CDMX, GDL, QRO)';
-PRINT '   - Reportes: 10 reportes de prueba (2 con FechaResolucion)';
-PRINT '   - SesionesChat: 4 sesiones de prueba';
-PRINT '   - HistorialSesiones: vacia';
-PRINT '   - MensajesChat: vacia';
-PRINT '   - MensajesProcessados: vacia (deduplicacion)';
-PRINT '   - DeadLetterMessages: vacia (mensajes fallidos para reintento)';
-PRINT '   - Encuestas: vacia (normalizada con TipoEncuestaId y EstadoEncuestaId)';
-PRINT '   - RespuestasEncuesta: vacia (respuestas normalizadas)';
+PRINT 'Tablas de datos (todas vacias - primer deploy limpio):';
+PRINT '   - Clientes, Equipos, CentrosServicio';
+PRINT '   - Reportes, SesionesChat, HistorialSesiones';
+PRINT '   - MensajesChat, MensajesProcessados, DeadLetterMessages';
+PRINT '   - Encuestas, RespuestasEncuesta';
 PRINT '';
 PRINT 'Stored Procedures:';
 PRINT '   Base:';
@@ -1831,17 +1646,6 @@ PRINT '   - IX_Equipos_CodigoSAP_Activo_Full (covering)';
 PRINT '   - IX_Encuestas_Telefono_Estado_Full (covering)';
 PRINT '   - IX_HistorialSesiones_Telefono_Fecha_Full (auditoria)';
 PRINT '   - IX_Reportes_Encuestas_Pendientes (filtered)';
-PRINT '';
-PRINT 'Codigos SAP de prueba:';
-PRINT '   - Refrigeradores: REF001 a REF015, 4045101';
-PRINT '   - Vehiculos: VEH-MTY-001 a VEH-MTY-005';
-PRINT '   - Empleados: EMP001 a EMP005';
-PRINT '';
-PRINT 'Centros de Servicio de prueba:';
-PRINT '   - CS-MTY: Monterrey, NL (25.6514, -100.2895)';
-PRINT '   - CS-CDMX: Ciudad de Mexico (19.3910, -99.1737)';
-PRINT '   - CS-GDL: Guadalajara, JAL (20.6767, -103.3825)';
-PRINT '   - CS-QRO: Queretaro, QRO (20.5888, -100.3899)';
 PRINT '';
 PRINT 'NOTAS v5.0 - ENCUESTAS NORMALIZADAS:';
 PRINT '   - Encuestas ahora usa TipoEncuestaId (FK) en lugar de preguntas hardcoded';

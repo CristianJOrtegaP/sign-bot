@@ -184,7 +184,8 @@ async function crearReporteRefrigerador(from, datosTemp, _session, _context) {
   }
 
   const descripcion = sanitizeDescription(camposRequeridos.problema.valor);
-  return db.createReporte(equipoIdTemp, equipo.ClienteId, from, descripcion, null);
+  const imagenUrl = datosTemp.imagenes?.[0]?.url || datosTemp.imagenUrl || null;
+  return db.createReporte(equipoIdTemp, equipo.ClienteId, from, descripcion, imagenUrl);
 }
 
 /**
@@ -209,13 +210,14 @@ async function crearReporteVehiculo(from, datosTemp, session, context) {
   const tiempoEstimadoMinutos = tiempoLlegada?.tiempoEstimadoMin || null;
   const distanciaCentroKm =
     tiempoLlegada?.distanciaKm || centroServicio?.distanciaDirectaKm || null;
+  const imagenUrl = datosTemp.imagenes?.[0]?.url || datosTemp.imagenUrl || null;
 
   const numeroTicket = await db.createReporteVehiculo(
     codigoSAP,
     numeroEmpleado,
     from,
     descripcion,
-    null,
+    imagenUrl,
     ubicacionObj,
     centroServicioId,
     tiempoEstimadoMinutos,
@@ -1136,10 +1138,43 @@ const reporteFlow = {
   },
 };
 
+/**
+ * Procesa un botón presionado delegando al handler correspondiente
+ * @param {string} from - Teléfono del usuario
+ * @param {string} botonId - ID del botón presionado
+ * @param {Object} session - Sesión actual
+ * @param {Object} azureContext - Contexto de Azure Functions
+ * @returns {Promise<boolean>} - true si se procesó
+ */
+async function procesarBoton(from, botonId, session, azureContext) {
+  const botonConfig = reporteFlow.botones[botonId];
+  if (!botonConfig) {
+    return false;
+  }
+
+  const handlerName = typeof botonConfig === 'string' ? botonConfig : botonConfig.handler;
+  const handler = reporteFlow[handlerName];
+  if (typeof handler !== 'function') {
+    return false;
+  }
+
+  const ctx = {
+    from,
+    session,
+    context: azureContext,
+    EstadoCodigo: session.Estado,
+    log: (msg) => azureContext.log(`[ReporteFlow] ${msg}`),
+  };
+
+  await handler.call(reporteFlow, ctx);
+  return true;
+}
+
 // Exportar funciones públicas para uso externo
 module.exports = reporteFlow;
 module.exports.iniciarFlujo = iniciarFlujo;
 module.exports.procesarMensaje = procesarMensaje;
 module.exports.procesarImagen = procesarImagen;
 module.exports.procesarUbicacion = procesarUbicacion;
+module.exports.procesarBoton = procesarBoton;
 module.exports.esEstadoFlexible = esEstadoFlexible;

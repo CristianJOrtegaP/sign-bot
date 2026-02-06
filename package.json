@@ -19,6 +19,7 @@
     "test:coverage:report": "jest --coverage && open coverage/lcov-report/index.html",
     "test:debug": "node --inspect-brk node_modules/.bin/jest --runInBand",
     "docs:swagger": "npx @redocly/cli preview-docs docs/openapi.yaml",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
@@ -26,7 +27,7 @@
     "prepare": "node -e \"try { require.resolve('husky') } catch(e) { process.exit(0) }\" && husky || true"
   },
   "lint-staged": {
-    "*.js": [
+    "*.{js,ts}": [
       "eslint --fix",
       "prettier --write"
     ],
@@ -64,6 +65,9 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
+    "@types/node": "^25.2.1",
+    "@typescript-eslint/eslint-plugin": "^8.54.0",
+    "@typescript-eslint/parser": "^8.54.0",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-promise": "^7.2.1",
@@ -71,6 +75,8 @@
     "husky": "^9.1.7",
     "jest": "^30.2.0",
     "lint-staged": "^16.2.7",
-    "prettier": "^3.8.1"
+    "prettier": "^3.8.1",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.9.3"
   }
 }

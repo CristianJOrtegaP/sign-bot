@@ -1,6 +1,6 @@
 /**
  * Unit Test: Image Handler
- * Verifica validación de imágenes, rate limiting y routing OCR/AI Vision
+ * Verifica validación de imágenes, rate limiting y routing inteligente
  */
 
 jest.mock('../../core/services/infrastructure/appInsightsService', () =>
@@ -21,6 +21,7 @@ jest.mock('../../core/services/infrastructure/errorHandler', () => ({
 jest.mock('../../core/services/processing/backgroundProcessor', () => ({
   processImageInBackground: jest.fn().mockResolvedValue(undefined),
   processImageWithAIVision: jest.fn().mockResolvedValue(undefined),
+  saveImageOnly: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../../core/services/infrastructure/correlationService', () => ({
   getCorrelationId: jest.fn(() => 'test-corr-id'),
@@ -31,11 +32,16 @@ jest.mock('../../core/services/infrastructure/rateLimiter', () => ({
   recordRequest: jest.fn(),
 }));
 
-const { handleImage, IMAGE_LIMITS } = require('../../bot/controllers/imageHandler');
+const {
+  handleImage,
+  determineImageRoute,
+  IMAGE_LIMITS,
+} = require('../../bot/controllers/imageHandler');
 const whatsapp = require('../../core/services/external/whatsappService');
 const db = require('../../core/services/storage/databaseService');
 const backgroundProcessor = require('../../core/services/processing/backgroundProcessor');
 const rateLimiter = require('../../core/services/infrastructure/rateLimiter');
+const { ESTADO } = require('../../bot/constants/sessionStates');
 
 describe('ImageHandler', () => {
   let context;
@@ -120,11 +126,100 @@ describe('ImageHandler', () => {
       await handleImage(from, { id: 'img-1' }, messageId, context);
       expect(backgroundProcessor.processImageInBackground).not.toHaveBeenCalled();
       expect(backgroundProcessor.processImageWithAIVision).not.toHaveBeenCalled();
+      expect(backgroundProcessor.saveImageOnly).not.toHaveBeenCalled();
     });
   });
 
   // ===========================================================
-  // ROUTING OCR vs AI VISION
+  // determineImageRoute (función pura)
+  // ===========================================================
+  describe('determineImageRoute', () => {
+    test('BLOCK_CONFIRMATION para REFRIGERADOR_CONFIRMAR_DATOS_AI', () => {
+      const result = determineImageRoute(ESTADO.REFRIGERADOR_CONFIRMAR_DATOS_AI, {});
+      expect(result.route).toBe('BLOCK_CONFIRMATION');
+      expect(result.message).toContain('confirma o rechaza');
+    });
+
+    test('BLOCK_CONFIRMATION para VEHICULO_CONFIRMAR_DATOS_AI', () => {
+      const result = determineImageRoute(ESTADO.VEHICULO_CONFIRMAR_DATOS_AI, {});
+      expect(result.route).toBe('BLOCK_CONFIRMATION');
+    });
+
+    test('BLOCK_CONFIRMATION para REFRIGERADOR_CONFIRMAR_EQUIPO', () => {
+      const result = determineImageRoute(ESTADO.REFRIGERADOR_CONFIRMAR_EQUIPO, {});
+      expect(result.route).toBe('BLOCK_CONFIRMATION');
+    });
+
+    test('AI_VISION_INICIO para estado INICIO', () => {
+      const result = determineImageRoute(ESTADO.INICIO, null);
+      expect(result.route).toBe('AI_VISION_INICIO');
+    });
+
+    test('AI_VISION_INICIO cuando no hay tipoReporte', () => {
+      const result = determineImageRoute('REFRIGERADOR_ACTIVO', {});
+      expect(result.route).toBe('AI_VISION_INICIO');
+    });
+
+    test('OCR_SAP para refrigerador sin código SAP', () => {
+      const datos = {
+        tipoReporte: 'REFRIGERADOR',
+        camposRequeridos: { codigoSAP: { valor: null, completo: false } },
+      };
+      const result = determineImageRoute(ESTADO.REFRIGERADOR_ACTIVO, datos);
+      expect(result.route).toBe('OCR_SAP');
+    });
+
+    test('AI_VISION_PROBLEMA para refrigerador con SAP pero sin problema', () => {
+      const datos = {
+        tipoReporte: 'REFRIGERADOR',
+        camposRequeridos: {
+          codigoSAP: { valor: '1234567', completo: true },
+          problema: { valor: null, completo: false },
+        },
+      };
+      const result = determineImageRoute(ESTADO.REFRIGERADOR_ACTIVO, datos);
+      expect(result.route).toBe('AI_VISION_PROBLEMA');
+    });
+
+    test('SAVE_ONLY para refrigerador con SAP y problema completos', () => {
+      const datos = {
+        tipoReporte: 'REFRIGERADOR',
+        camposRequeridos: {
+          codigoSAP: { valor: '1234567', completo: true },
+          problema: { valor: 'No enfría', completo: true },
+        },
+      };
+      const result = determineImageRoute(ESTADO.REFRIGERADOR_ACTIVO, datos);
+      expect(result.route).toBe('SAVE_ONLY');
+    });
+
+    test('AI_VISION_PROBLEMA para vehículo sin problema', () => {
+      const datos = {
+        tipoReporte: 'VEHICULO',
+        camposRequeridos: { problema: { valor: null, completo: false } },
+      };
+      const result = determineImageRoute(ESTADO.VEHICULO_ACTIVO, datos);
+      expect(result.route).toBe('AI_VISION_PROBLEMA');
+    });
+
+    test('SAVE_ONLY para vehículo con problema completo', () => {
+      const datos = {
+        tipoReporte: 'VEHICULO',
+        camposRequeridos: { problema: { valor: 'Llanta ponchada', completo: true } },
+      };
+      const result = determineImageRoute(ESTADO.VEHICULO_ACTIVO, datos);
+      expect(result.route).toBe('SAVE_ONLY');
+    });
+
+    test('AI_VISION_INICIO como fallback para estados desconocidos', () => {
+      const datos = { tipoReporte: 'REFRIGERADOR' };
+      const result = determineImageRoute('ALGUN_OTRO_ESTADO', datos);
+      expect(result.route).toBe('AI_VISION_INICIO');
+    });
+  });
+
+  // ===========================================================
+  // ROUTING INTEGRADO (handleImage)
   // ===========================================================
   describe('routing de procesamiento', () => {
     test('debe usar AI Vision para estado INICIO', async () => {
@@ -133,11 +228,14 @@ describe('ImageHandler', () => {
       expect(backgroundProcessor.processImageInBackground).not.toHaveBeenCalled();
     });
 
-    test('debe usar OCR para REFRIGERADOR_ACTIVO', async () => {
+    test('debe usar OCR para REFRIGERADOR_ACTIVO sin código SAP', async () => {
       db.getSessionFresh.mockResolvedValue({
         Estado: 'REFRIGERADOR_ACTIVO',
         Version: 1,
-        DatosTemp: JSON.stringify({ tipoReporte: 'REFRIGERADOR' }),
+        DatosTemp: JSON.stringify({
+          tipoReporte: 'REFRIGERADOR',
+          camposRequeridos: { codigoSAP: { valor: null, completo: false } },
+        }),
         EquipoId: null,
       });
       await handleImage(from, { id: 'img-1' }, messageId, context);
@@ -145,15 +243,86 @@ describe('ImageHandler', () => {
       expect(backgroundProcessor.processImageWithAIVision).not.toHaveBeenCalled();
     });
 
-    test('debe usar AI Vision para VEHICULO_ACTIVO', async () => {
+    test('debe usar AI Vision para REFRIGERADOR_ACTIVO con SAP pero sin problema', async () => {
       db.getSessionFresh.mockResolvedValue({
-        Estado: 'VEHICULO_ACTIVO',
+        Estado: 'REFRIGERADOR_ACTIVO',
         Version: 1,
-        DatosTemp: JSON.stringify({ tipoReporte: 'VEHICULO' }),
+        DatosTemp: JSON.stringify({
+          tipoReporte: 'REFRIGERADOR',
+          camposRequeridos: {
+            codigoSAP: { valor: '1234567', completo: true },
+            problema: { valor: null, completo: false },
+          },
+        }),
         EquipoId: null,
       });
       await handleImage(from, { id: 'img-1' }, messageId, context);
       expect(backgroundProcessor.processImageWithAIVision).toHaveBeenCalled();
+      expect(backgroundProcessor.processImageInBackground).not.toHaveBeenCalled();
+    });
+
+    test('debe usar saveImageOnly para REFRIGERADOR_ACTIVO con todos los datos', async () => {
+      db.getSessionFresh.mockResolvedValue({
+        Estado: 'REFRIGERADOR_ACTIVO',
+        Version: 1,
+        DatosTemp: JSON.stringify({
+          tipoReporte: 'REFRIGERADOR',
+          camposRequeridos: {
+            codigoSAP: { valor: '1234567', completo: true },
+            problema: { valor: 'No enfría', completo: true },
+          },
+        }),
+        EquipoId: null,
+      });
+      await handleImage(from, { id: 'img-1' }, messageId, context);
+      expect(backgroundProcessor.saveImageOnly).toHaveBeenCalled();
+      expect(backgroundProcessor.processImageInBackground).not.toHaveBeenCalled();
+      expect(backgroundProcessor.processImageWithAIVision).not.toHaveBeenCalled();
+    });
+
+    test('debe usar AI Vision para VEHICULO_ACTIVO sin problema', async () => {
+      db.getSessionFresh.mockResolvedValue({
+        Estado: 'VEHICULO_ACTIVO',
+        Version: 1,
+        DatosTemp: JSON.stringify({
+          tipoReporte: 'VEHICULO',
+          camposRequeridos: { problema: { valor: null, completo: false } },
+        }),
+        EquipoId: null,
+      });
+      await handleImage(from, { id: 'img-1' }, messageId, context);
+      expect(backgroundProcessor.processImageWithAIVision).toHaveBeenCalled();
+    });
+
+    test('debe usar saveImageOnly para VEHICULO_ACTIVO con problema', async () => {
+      db.getSessionFresh.mockResolvedValue({
+        Estado: 'VEHICULO_ACTIVO',
+        Version: 1,
+        DatosTemp: JSON.stringify({
+          tipoReporte: 'VEHICULO',
+          camposRequeridos: { problema: { valor: 'Llanta ponchada', completo: true } },
+        }),
+        EquipoId: null,
+      });
+      await handleImage(from, { id: 'img-1' }, messageId, context);
+      expect(backgroundProcessor.saveImageOnly).toHaveBeenCalled();
+    });
+
+    test('debe bloquear imagen en estado de confirmación pendiente', async () => {
+      db.getSessionFresh.mockResolvedValue({
+        Estado: 'REFRIGERADOR_CONFIRMAR_DATOS_AI',
+        Version: 1,
+        DatosTemp: JSON.stringify({ tipoReporte: 'REFRIGERADOR' }),
+        EquipoId: null,
+      });
+      await handleImage(from, { id: 'img-1' }, messageId, context);
+      expect(whatsapp.sendAndSaveText).toHaveBeenCalledWith(
+        from,
+        expect.stringContaining('confirma o rechaza')
+      );
+      expect(backgroundProcessor.processImageInBackground).not.toHaveBeenCalled();
+      expect(backgroundProcessor.processImageWithAIVision).not.toHaveBeenCalled();
+      expect(backgroundProcessor.saveImageOnly).not.toHaveBeenCalled();
     });
   });
 

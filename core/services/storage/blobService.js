@@ -12,16 +12,17 @@ const {
 const { URL } = require('url');
 const { logger } = require('../infrastructure/errorHandler');
 const { getBreaker, SERVICES } = require('../infrastructure/circuitBreaker');
+const config = require('../../config');
 
-const CONTAINER_NAME = 'imagenes-reportes';
-const connectionString = process.env.BLOB_CONNECTION_STRING;
+const CONTAINER_NAME = config.blob?.containerName || 'imagenes-reportes';
+const connectionString = config.blob?.connectionString || process.env.BLOB_CONNECTION_STRING;
 
-// Tiempo de expiración del SAS token (1 año en milisegundos)
-const SAS_EXPIRY_MS = 365 * 24 * 60 * 60 * 1000;
+// Tiempo de expiración del SAS token (configurable via BLOB_SAS_EXPIRY_HOURS, default: 72h)
+const SAS_EXPIRY_MS = (config.blob?.sasExpiryHours || 72) * 60 * 60 * 1000;
 
 // Límites de tamaño de archivo (en bytes)
-const MAX_IMAGE_SIZE = parseInt(process.env.MAX_IMAGE_SIZE_MB || '10', 10) * 1024 * 1024; // 10MB default
-const MAX_AUDIO_SIZE = parseInt(process.env.MAX_AUDIO_SIZE_MB || '25', 10) * 1024 * 1024; // 25MB default
+const MAX_IMAGE_SIZE = (config.blob?.maxImageSizeMB || 10) * 1024 * 1024;
+const MAX_AUDIO_SIZE = (config.blob?.maxAudioSizeMB || 25) * 1024 * 1024;
 const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'ogg', 'mp3', 'wav', 'm4a'];
 
 let blobServiceClient = null;

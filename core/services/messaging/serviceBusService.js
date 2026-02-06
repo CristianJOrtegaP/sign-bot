@@ -103,11 +103,11 @@ async function connect() {
 async function sendToDeadLetter(messageData, error) {
   const correlationId = correlation.getCorrelationId() || 'no-correlation';
 
-  // Si está usando fallback, usar SQL
+  // Si está usando fallback, usar SQL directo (NO saveFailedMessage para evitar recursión)
   if (usingFallback || !isConnected) {
     const sqlService = getSqlDeadLetterService();
     if (sqlService) {
-      return sqlService.saveFailedMessage(messageData, error);
+      return sqlService.saveFailedMessageToSQL(messageData, error);
     }
     logger.error('[ServiceBus] No hay fallback disponible para DLQ');
     return false;
@@ -147,10 +147,10 @@ async function sendToDeadLetter(messageData, error) {
   } catch (sendError) {
     logger.error('[ServiceBus] Error enviando a Service Bus, usando fallback SQL', sendError);
 
-    // Fallback a SQL
+    // Fallback a SQL directo (NO saveFailedMessage para evitar recursión)
     const sqlService = getSqlDeadLetterService();
     if (sqlService) {
-      return sqlService.saveFailedMessage(messageData, error);
+      return sqlService.saveFailedMessageToSQL(messageData, error);
     }
 
     return false;

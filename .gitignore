@@ -47,6 +47,7 @@ build/
 
 # Azure deployment scripts - archivos sensibles
 scripts/azure/config.env
+scripts/azure/config.*.env
 scripts/azure/deployment-output.env
 scripts/azure/function-app.zip
 scripts/azure/.deploy/

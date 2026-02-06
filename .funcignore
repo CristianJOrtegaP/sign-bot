@@ -34,6 +34,10 @@ docs/
 # Scripts de desarrollo
 scripts/
 sql-scripts/
+infra/
+
+# Residuos de deploy
+node_modules_deploy_backup/
 
 # Configs locales
 local.settings.json
@@ -50,6 +54,14 @@ tmp/
 temp/
 *.tmp
 *.log
+
+# TypeScript (source files, types are not needed at runtime)
+tsconfig.json
+jsconfig.json
+types/
+*.d.ts
+*.ts
+!*.js
 
 # Build artifacts
 dist/

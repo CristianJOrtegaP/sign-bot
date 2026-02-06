@@ -41,7 +41,15 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
+      - name: Cache node_modules (prod)
+        uses: actions/cache@v4
+        id: nm-prod-cache
+        with:
+          path: node_modules
+          key: nm-prod-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: Instalar dependencias
+        if: steps.nm-prod-cache.outputs.cache-hit != 'true'
         run: npm ci --omit=dev
 
       - name: Login a Azure
@@ -58,14 +66,15 @@ jobs:
 
       - name: Health Check
         run: |
-          echo "Esperando 30s para que la app inicie..."
-          sleep 30
-          curl -sf https://func-acfixbot-dev.azurewebsites.net/api/health || echo "Health check pendiente"
-
-      - name: Notificar
-        run: |
-          echo "✅ Deploy a DEV completado"
-          echo "🔗 https://func-acfixbot-dev.azurewebsites.net"
+          for i in 1 2 3 4 5 6; do
+            echo "Intento $i/6..."
+            if curl -sf --max-time 10 https://func-acfixbot-dev.azurewebsites.net/api/health > /dev/null 2>&1; then
+              echo "Health check DEV exitoso"
+              exit 0
+            fi
+            sleep $((i * 5))
+          done
+          echo "::warning::Health check DEV no respondio (puede ser cold start)"
 
   # ============================================================================
   # DEPLOY A TST (Azure Cliente) - Automatico en push a staging
@@ -88,7 +97,15 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
+      - name: Cache node_modules (prod)
+        uses: actions/cache@v4
+        id: nm-prod-cache
+        with:
+          path: node_modules
+          key: nm-prod-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: Instalar dependencias
+        if: steps.nm-prod-cache.outputs.cache-hit != 'true'
         run: npm ci --omit=dev
 
       - name: Login a Azure (Cliente)
@@ -105,14 +122,15 @@ jobs:
 
       - name: Health Check
         run: |
-          echo "Esperando 30s para que la app inicie..."
-          sleep 30
-          curl -sf https://func-acfixbot-tst.azurewebsites.net/api/health || echo "Health check pendiente"
-
-      - name: Notificar
-        run: |
-          echo "✅ Deploy a TST completado"
-          echo "🔗 https://func-acfixbot-tst.azurewebsites.net"
+          for i in 1 2 3 4 5 6; do
+            echo "Intento $i/6..."
+            if curl -sf --max-time 10 https://func-acfixbot-tst.azurewebsites.net/api/health > /dev/null 2>&1; then
+              echo "Health check TST exitoso"
+              exit 0
+            fi
+            sleep $((i * 5))
+          done
+          echo "::warning::Health check TST no respondio (puede ser cold start)"
 
   # ============================================================================
   # DEPLOY A PROD (Azure Cliente) - Solo manual con aprobacion
@@ -129,7 +147,7 @@ jobs:
       - name: Verificar rama
         run: |
           if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
-            echo "❌ Solo se puede deployar a PROD desde main"
+            echo "Solo se puede deployar a PROD desde main"
             exit 1
           fi
 
@@ -142,13 +160,13 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
+      # Tests con todas las dependencias
       - name: Ejecutar tests
-        run: |
-          npm ci
-          npm test
+        run: npm ci && npm test
 
-      - name: Instalar dependencias de produccion
-        run: npm ci --omit=dev
+      # Podar devDeps sin reinstalar (reutiliza node_modules existente)
+      - name: Podar dependencias de desarrollo
+        run: npm prune --omit=dev
 
       - name: Login a Azure (Cliente - Produccion)
         uses: azure/login@v2
@@ -164,21 +182,28 @@ jobs:
 
       - name: Health Check
         run: |
-          echo "Esperando 45s para que la app inicie..."
-          sleep 45
-          response=$(curl -sf https://func-acfixbot-prod.azurewebsites.net/api/health)
-          echo "Health response: $response"
-          if [[ "$response" != *"healthy"* ]]; then
-            echo "⚠️ Health check no retorno healthy"
-          fi
+          for i in 1 2 3 4 5 6 7 8; do
+            echo "Intento $i/8..."
+            response=$(curl -sf --max-time 10 https://func-acfixbot-prod.azurewebsites.net/api/health 2>/dev/null || true)
+            if echo "$response" | grep -q '"status":"healthy"'; then
+              echo "Health check PROD exitoso: healthy"
+              exit 0
+            elif echo "$response" | grep -q '"status":"degraded"'; then
+              echo "Health check PROD: degraded (aceptable)"
+              exit 0
+            fi
+            sleep $((i * 5))
+          done
+          echo "Health check PROD fallo despues de 8 intentos"
+          exit 1
 
       - name: Notificar deployment exitoso
         run: |
-          echo "🚀 Deploy a PRODUCCION completado"
-          echo "📦 Version: ${{ github.sha }}"
-          echo "🔗 https://func-acfixbot-prod.azurewebsites.net"
+          echo "Deploy a PRODUCCION completado"
+          echo "Version: ${{ github.sha }}"
+          echo "URL: https://func-acfixbot-prod.azurewebsites.net"
           echo ""
-          echo "⚠️ Verificar manualmente:"
+          echo "Verificar manualmente:"
           echo "  1. Dashboard funcionando"
           echo "  2. Webhook de WhatsApp respondiendo"
           echo "  3. Metricas en App Insights"

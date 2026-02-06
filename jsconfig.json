@@ -12,7 +12,8 @@
       "@core/*": ["core/*"],
       "@bot/*": ["bot/*"]
     },
-    "lib": ["ES2022"]
+    "lib": ["ES2022"],
+    "skipLibCheck": true
   },
   "include": ["core/**/*.js", "bot/**/*.js", "api-*/**/*.js", "timer-*/**/*.js"],
   "exclude": ["node_modules", "coverage", "tests", "dist", "*.config.js"]

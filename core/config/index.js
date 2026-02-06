@@ -133,6 +133,26 @@ const database = {
 };
 
 // ============================================================================
+// CONFIGURACIÓN DE BLOB STORAGE
+// ============================================================================
+
+const blob = {
+  connectionString: process.env.BLOB_CONNECTION_STRING,
+  containerName: 'imagenes-reportes',
+
+  // Expiración del SAS token en horas (default: 72 horas = 3 días)
+  // DEV: 24 | TST: 48 | PROD: 72
+  sasExpiryHours: Math.min(
+    Math.max(1, parseInt(process.env.BLOB_SAS_EXPIRY_HOURS || '72', 10) || 72),
+    8760 // Máximo 1 año como guardrail
+  ),
+
+  // Límites de archivo
+  maxImageSizeMB: parseInt(process.env.MAX_IMAGE_SIZE_MB || '10', 10),
+  maxAudioSizeMB: parseInt(process.env.MAX_AUDIO_SIZE_MB || '25', 10),
+};
+
+// ============================================================================
 // CONFIGURACIÓN DE WHATSAPP
 // ============================================================================
 
@@ -542,6 +562,7 @@ module.exports = {
 
   // Configuraciones por módulo
   database,
+  blob,
   whatsapp,
   ai,
   audio,

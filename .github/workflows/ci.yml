@@ -11,7 +11,7 @@ env:
 
 jobs:
   test:
-    name: Tests
+    name: Tests + Coverage
     runs-on: ubuntu-latest
 
     steps:
@@ -24,31 +24,26 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        id: nm-cache
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: Instalar dependencias
+        if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Ejecutar tests unitarios
-        run: npm run test:unit
-        env:
-          NODE_ENV: test
-
-      - name: Ejecutar tests de integracion
-        run: npm run test:integration
-        env:
-          NODE_ENV: test
-
-      - name: Ejecutar tests de seguridad
-        run: npm run test:security
-        env:
-          NODE_ENV: test
-
-      - name: Generar reporte de coverage
-        run: npm run test:coverage
+      # Una sola ejecucion con coverage (cubre unit + integration)
+      - name: Ejecutar tests con coverage
+        run: npm run test:ci
         env:
           NODE_ENV: test
 
       - name: Subir coverage a artifacts
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: coverage-report
           path: coverage/
@@ -68,7 +63,15 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        id: nm-cache
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: Instalar dependencias
+        if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Ejecutar ESLint
@@ -91,7 +94,15 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        id: nm-cache
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: Instalar dependencias
+        if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Auditoria de seguridad npm
@@ -122,7 +133,15 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
+      - name: Cache node_modules (prod)
+        uses: actions/cache@v4
+        id: nm-prod-cache
+        with:
+          path: node_modules
+          key: nm-prod-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: Instalar dependencias de produccion
+        if: steps.nm-prod-cache.outputs.cache-hit != 'true'
         run: npm ci --omit=dev
 
       - name: Verificar sintaxis
@@ -135,7 +154,7 @@ jobs:
       - name: Crear artifact de deployment
         run: |
           mkdir -p dist
-          cp -r api-* timer-* core/ bot/ host.json package*.json dist/
+          cp -r api-* timer-* queue-* core/ bot/ node_modules/ host.json package.json dist/
           cd dist && zip -r ../acfixbot-${{ github.sha }}.zip .
 
       - name: Subir artifact

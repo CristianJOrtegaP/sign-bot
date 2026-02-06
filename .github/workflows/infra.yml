@@ -1,0 +1,77 @@
+name: Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Ambiente de deployment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - tst
+          - prod
+      action:
+        description: 'Accion a ejecutar'
+        required: true
+        type: choice
+        options:
+          - validate
+          - what-if
+          - deploy
+
+jobs:
+  infra:
+    name: Infrastructure ${{ inputs.action }} (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    env:
+      # readEnvironmentVariable() en .bicepparam necesita esta variable
+      SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@v4
+
+      - name: Login a Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets[format('AZURE_CREDENTIALS_{0}', inputs.environment)] }}
+
+      - name: Validar plantilla Bicep
+        if: inputs.action == 'validate'
+        run: |
+          az deployment sub validate \
+            --location eastus \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/${{ inputs.environment }}.bicepparam
+
+      - name: What-If (preview de cambios)
+        if: inputs.action == 'what-if'
+        run: |
+          az deployment sub what-if \
+            --location eastus \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/${{ inputs.environment }}.bicepparam
+
+      - name: Deploy infraestructura
+        if: inputs.action == 'deploy'
+        id: deploy
+        run: |
+          DEPLOY_NAME="acfixbot-${{ inputs.environment }}-$(date +%Y%m%d%H%M%S)"
+          echo "deployment_name=$DEPLOY_NAME" >> "$GITHUB_OUTPUT"
+          az deployment sub create \
+            --location eastus \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/${{ inputs.environment }}.bicepparam \
+            --name "$DEPLOY_NAME"
+
+      - name: Mostrar outputs
+        if: inputs.action == 'deploy'
+        run: |
+          echo "Outputs del deployment:"
+          az deployment sub show \
+            --name "${{ steps.deploy.outputs.deployment_name }}" \
+            --query properties.outputs \
+            --output table 2>/dev/null || echo "Outputs no disponibles aun"

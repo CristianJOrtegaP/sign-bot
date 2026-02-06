@@ -352,6 +352,7 @@ function getMode() {
 
 module.exports = {
   saveFailedMessage,
+  saveFailedMessageToSQL,
   markAsProcessed,
   markAsSkipped,
   recordRetryFailure,

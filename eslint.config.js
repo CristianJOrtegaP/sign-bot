@@ -105,9 +105,42 @@ module.exports = [
     },
   },
 
+  // ===== Configuración específica para TypeScript =====
+  {
+    files: ['**/*.ts'],
+    languageOptions: {
+      parser: require('@typescript-eslint/parser'),
+      parserOptions: {
+        ecmaVersion: 2022,
+        sourceType: 'commonjs',
+      },
+    },
+    plugins: {
+      '@typescript-eslint': require('@typescript-eslint/eslint-plugin'),
+    },
+    rules: {
+      'no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
+    },
+  },
+
   // ===== Configuración específica para tests =====
   {
-    files: ['tests/**/*.js', '**/*.test.js', '**/*.spec.js'],
+    files: [
+      'tests/**/*.js',
+      'tests/**/*.ts',
+      '**/*.test.js',
+      '**/*.test.ts',
+      '**/*.spec.js',
+      '**/*.spec.ts',
+    ],
     languageOptions: {
       globals: {
         createMockContext: 'readonly',

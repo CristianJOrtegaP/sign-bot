@@ -13,14 +13,26 @@ Esta carpeta contiene las configuraciones base para cada ambiente.
 ## Uso Rapido
 
 ```bash
-# Deploy completo a dev
+# Deploy completo a dev (infraestructura + secretos + DB + codigo)
 ./scripts/azure/deploy.sh dev
 
-# Solo infraestructura
+# Solo validar que Bicep compila y es valido
+./scripts/azure/deploy.sh dev --validate
+
+# Preview de cambios sin desplegar
+./scripts/azure/deploy.sh dev --what-if
+
+# Solo infraestructura + secretos
 ./scripts/azure/deploy.sh tst --infra-only
 
-# Solo codigo
+# Solo codigo (re-deploy rapido)
 ./scripts/azure/deploy.sh prod --code-only
+
+# Solo base de datos
+./scripts/azure/deploy.sh dev --db-only
+
+# Solo poblar Key Vault
+./scripts/azure/deploy.sh dev --secrets-only
 
 # Destruir ambiente
 ./scripts/azure/destroy.sh dev
@@ -38,45 +50,52 @@ cp scripts/azure/config.env.example scripts/azure/config.env
 ./scripts/azure/deploy.sh dev
 ```
 
-## Control de Recursos
+Si no configuras config.env, el script te pedira los secretos interactivamente.
 
-Cada recurso se puede habilitar/deshabilitar con flags `ENABLE_*`:
+## Infraestructura (Bicep IaC)
 
-| Flag                     | Descripcion                | Dev   | Tst   | Prod  |
-| ------------------------ | -------------------------- | ----- | ----- | ----- |
-| `ENABLE_SQL`             | Base de datos SQL          | true  | true  | true  |
-| `ENABLE_STORAGE`         | Blob storage (fotos)       | true  | true  | true  |
-| `ENABLE_COMPUTER_VISION` | OCR para fotos             | true  | true  | true  |
-| `ENABLE_KEY_VAULT`       | Secretos                   | true  | true  | true  |
-| `ENABLE_APP_INSIGHTS`    | Monitoreo                  | true  | true  | true  |
-| `ENABLE_AZURE_SPEECH`    | Transcripcion audios       | true  | true  | true  |
-| `ENABLE_AZURE_MAPS`      | Geocodificacion y rutas    | true  | true  | true  |
-| `ENABLE_AZURE_OPENAI`    | Azure OpenAI (Whisper/GPT) | false | true  | true  |
-| `ENABLE_WHISPER_MODEL`   | Desplegar modelo Whisper   | false | true  | true  |
-| `ENABLE_STATIC_WEBAPP`   | Dashboard web              | true  | true  | true  |
-| `ENABLE_FUNCTION_APP`    | Function App (backend)     | true  | true  | true  |
-| `ENABLE_REDIS`           | Cache (>1000 usuarios/dia) | false | false | false |
-| `ENABLE_SERVICEBUS`      | Colas (event-driven)       | false | false | false |
+El script usa templates Bicep en `infra/` para crear toda la infraestructura declarativamente:
 
-## SKUs por Ambiente
+| Recurso          | DEV            | TST          | PROD         |
+| ---------------- | -------------- | ------------ | ------------ |
+| App Service Plan | Consumption Y1 | Premium EP1  | Premium EP1  |
+| SQL Database     | Basic (5 DTU)  | S1 (20 DTU)  | S2 (50 DTU)  |
+| Storage          | Standard_LRS   | Standard_LRS | Standard_GRS |
+| Redis            | Omitido        | Basic C0     | Standard C1  |
+| Service Bus      | Omitido        | Basic        | Standard     |
+| App Insights     | 30 dias        | 60 dias      | 90 dias      |
+| Computer Vision  | S1             | S1           | S1           |
+| Speech Services  | F0 (gratis)    | F0           | F0           |
+| Azure OpenAI     | S0             | S0           | S0           |
+| Azure Maps       | Gen2           | Gen2         | Gen2         |
+| Static Web App   | Free           | Free         | Free         |
 
-| Recurso         | Dev           | Tst           | Prod          |
-| --------------- | ------------- | ------------- | ------------- |
-| SQL Database    | Basic (5 DTU) | Basic (5 DTU) | Basic (5 DTU) |
-| Function App    | Consumption   | Consumption   | Consumption   |
-| Storage         | Standard_LRS  | Standard_LRS  | Standard_LRS  |
-| Computer Vision | F0 (free)     | S1            | S1            |
-| App Insights    | Free          | Free          | Free          |
-| Azure OpenAI    | -             | S0            | S0            |
+## Key Vault Secrets (auto-poblados)
+
+El script extrae automaticamente las keys de los recursos desplegados y las guarda en Key Vault:
+
+| Secreto                       | Fuente                     |
+| ----------------------------- | -------------------------- |
+| SQL-CONNECTION-STRING         | Construido de parametros   |
+| WHATSAPP-TOKEN                | config.env                 |
+| WHATSAPP-VERIFY-TOKEN         | config.env / auto-generado |
+| COMPUTER-VISION-KEY           | Extraido del recurso       |
+| SPEECH-SERVICE-KEY            | Extraido del recurso       |
+| AZURE-MAPS-KEY                | Extraido del recurso       |
+| AZURE-OPENAI-API-KEY          | Extraido del recurso       |
+| AZURE-OPENAI-ENDPOINT         | Extraido del recurso       |
+| REDIS-CONNECTION-STRING       | Extraido (solo tst/prod)   |
+| SERVICE-BUS-CONNECTION-STRING | Extraido (solo tst/prod)   |
 
 ## Costo Estimado Mensual
 
-- **Dev**: ~$15-25 USD (sin Azure OpenAI)
-- **Tst**: ~$40-60 USD (con Azure OpenAI)
-- **Prod**: ~$50-80 USD (optimizado para 100 reportes/dia)
+- **Dev**: ~$30-50 USD (todos los servicios basicos)
+- **Tst**: ~$80-120 USD (con Redis y Service Bus)
+- **Prod**: ~$150-250 USD (SKUs de produccion)
 
 ## Notas
 
 - Los archivos `.env` en esta carpeta son plantillas de infra
 - Los secretos reales van en `config.env` (ignorado por git)
 - Despues del deploy, los secretos se guardan en Azure Key Vault
+- Los nombres de recursos siguen la convencion de `infra/modules/naming.bicep`

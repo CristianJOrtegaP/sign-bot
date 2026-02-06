@@ -15,6 +15,7 @@ const { ESTADO, ORIGEN_ACCION, TIPO_REPORTE } = require('../../../bot/constants/
 const { safeParseJSON } = require('../../utils/helpers');
 const { OCRError } = vision;
 const fieldExtractor = require('../../../bot/services/fieldExtractor');
+const fieldManager = require('../../../bot/services/fieldManager');
 const appInsights = require('../infrastructure/appInsightsService');
 const correlation = require('../infrastructure/correlationService');
 const config = require('../../config');
@@ -113,9 +114,9 @@ async function _processImageInBackgroundCore(from, imageId, context, opts = {}) 
         const session = await db.getSessionFresh(from);
         const datosTemp = safeParseJSON(session.DatosTemp) || {};
 
-        // Agregar URL de imagen a datosTemp
+        // Agregar URL de imagen al array de imágenes
         if (imagenUrl) {
-          datosTemp.imagenUrl = imagenUrl;
+          fieldManager.agregarImagen(datosTemp, imagenUrl, 'ocr');
         }
 
         // Actualizar campos con el código SAP extraído y datos del equipo
@@ -140,7 +141,6 @@ async function _processImageInBackgroundCore(from, imageId, context, opts = {}) 
 
         // Usar flexibleFlowManager para procesar y continuar el flujo
         const _flexManager = getFlexibleFlowManager();
-        const fieldManager = require('../../../bot/services/fieldManager');
 
         // Actualizar datosTemp con el nuevo campo
         const { datosActualizados, resumenActualizacion: _resumenActualizacion } =
@@ -386,10 +386,10 @@ async function _processImageWithAIVisionCore(from, imageId, caption, context, op
     const session = await db.getSessionFresh(from);
     const datosTemp = safeParseJSON(session.DatosTemp) || {};
 
-    // 5. Agregar URL de imagen a datosTemp
+    // 5. Agregar URL de imagen al array de imágenes
     if (imagenUrl) {
-      datosTemp.imagenUrl = imagenUrl;
-      context.log(`[Background AI Vision] imagenUrl agregada a datosTemp`);
+      fieldManager.agregarImagen(datosTemp, imagenUrl, 'ai_vision');
+      context.log(`[Background AI Vision] imagen agregada al array de imágenes`);
     }
 
     // 6. PRIMERO: Determinar tipo de equipo (antes de guardar datos)
@@ -631,6 +631,111 @@ async function processImageWithAIVision(from, imageId, caption, context, opts = 
   return result;
 }
 
+/**
+ * Guarda una imagen como evidencia sin análisis OCR ni AI Vision.
+ * Para cuando todos los datos del reporte ya están recolectados.
+ * @param {string} from - Número de teléfono del usuario
+ * @param {string} imageId - ID de la imagen en WhatsApp
+ * @param {Object} context - Contexto de Azure Functions para logs
+ */
+async function _saveImageOnlyCore(from, imageId, context, opts = {}) {
+  const startTime = Date.now();
+  if (opts.correlationId) {
+    correlation.addToContext({ correlationId: opts.correlationId });
+  }
+  try {
+    context.log(`[Background SaveOnly] Guardando imagen de evidencia para ${from}`);
+
+    // 1. Descargar imagen
+    const imageBuffer = await whatsapp.downloadMedia(imageId);
+    context.log(`[Background SaveOnly] Imagen descargada: ${imageBuffer.length} bytes`);
+
+    // 2. Comprimir y subir imagen a Azure Blob Storage
+    let imagenUrl = null;
+    try {
+      const {
+        buffer: compressedBuffer,
+        originalSize,
+        compressedSize,
+      } = await imageProcessor.compressImage(imageBuffer);
+      context.log(
+        `[Background SaveOnly] Imagen comprimida: ${(originalSize / 1024).toFixed(1)}KB → ${(compressedSize / 1024).toFixed(1)}KB`
+      );
+
+      imagenUrl = await blobService.uploadImage(compressedBuffer, from);
+      context.log(`[Background SaveOnly] Imagen subida a Blob Storage: ${imagenUrl}`);
+
+      // Actualizar el placeholder con la URL real
+      const updated = await db.updateImagePlaceholder(from, imageId, imagenUrl);
+      if (updated) {
+        context.log(`[Background SaveOnly] Placeholder actualizado con URL real`);
+      } else {
+        await db.saveMessage(from, 'U', imagenUrl, 'IMAGEN');
+        context.log(
+          `[Background SaveOnly] Imagen guardada como mensaje nuevo (placeholder no encontrado)`
+        );
+      }
+    } catch (uploadError) {
+      context.log.warn(
+        `[Background SaveOnly] No se pudo subir imagen a Blob Storage: ${uploadError.message}`
+      );
+      return; // Sin URL no hay nada más que hacer
+    }
+
+    // 3. Agregar imagen al array de imágenes en datosTemp
+    const session = await db.getSessionFresh(from);
+    const datosTemp = safeParseJSON(session.DatosTemp) || {};
+
+    fieldManager.agregarImagen(datosTemp, imagenUrl, 'evidencia');
+
+    await db.updateSession(
+      from,
+      session.Estado, // Mantener mismo estado
+      datosTemp,
+      session.EquipoIdTemp,
+      ORIGEN_ACCION.BOT,
+      'Imagen de evidencia guardada',
+      null,
+      session.Version
+    );
+    context.log(`[Background SaveOnly] ✅ Imagen agregada al array de imágenes`);
+
+    appInsights.trackEvent(
+      'image_processed',
+      { metodo: 'SAVE_ONLY', exito: true },
+      { duracionMs: Date.now() - startTime }
+    );
+
+    context.log(`[Background SaveOnly] ✅ Guardado completado para ${from}`);
+  } catch (error) {
+    context.log.error('[Background SaveOnly] ❌ Error guardando imagen:', error);
+
+    appInsights.trackEvent(
+      'image_processed',
+      { metodo: 'SAVE_ONLY', exito: false, errorMessage: error.message },
+      { duracionMs: Date.now() - startTime }
+    );
+  }
+}
+
+/**
+ * Wrapper con semáforo de concurrencia para saveImageOnly.
+ */
+async function saveImageOnly(from, imageId, context, opts = {}) {
+  const result = limiter.tryRun(() => _saveImageOnlyCore(from, imageId, context, opts));
+  if (result === null) {
+    context.log.warn(
+      `[Background SaveOnly] Capacidad de procesamiento alcanzada, rechazando imagen de ${from}`
+    );
+    await whatsapp.sendAndSaveText(
+      from,
+      '⏳ Hay muchas imágenes procesándose en este momento.\nPor favor, intenta de nuevo en unos segundos.'
+    );
+    return;
+  }
+  return result;
+}
+
 function getProcessingStats() {
   return limiter.stats();
 }
@@ -638,5 +743,6 @@ function getProcessingStats() {
 module.exports = {
   processImageInBackground,
   processImageWithAIVision,
+  saveImageOnly,
   getProcessingStats,
 };
