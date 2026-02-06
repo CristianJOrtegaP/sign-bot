@@ -45,7 +45,29 @@ const { esCancelacion, cancelarFlujo } = require('./cancellation');
 // Cálculo de servicio
 const { calcularCentroServicioYETA } = require('./serviceCalculation');
 
+// Adapter para FlexibleFlowContext (migración gradual)
+const {
+  crearContexto,
+  withContext,
+  useFlexibleContext,
+  ejecutarConContexto,
+  createFlexibleFlowContext,
+} = require('./FlexibleFlowAdapter');
+
 module.exports = {
+  // ============================================================
+  // NUEVA API - FlexibleFlowContext
+  // ============================================================
+  crearContexto,
+  withContext,
+  useFlexibleContext,
+  ejecutarConContexto,
+  createFlexibleFlowContext,
+
+  // ============================================================
+  // LEGACY API - Funciones existentes
+  // ============================================================
+
   // Constantes
   ESTADO_FLEXIBLE,
 
