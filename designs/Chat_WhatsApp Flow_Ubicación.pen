@@ -1,0 +1,1499 @@
+{
+  "version": "2.7",
+  "children": [
+    {
+      "type": "frame",
+      "id": "Pz3Xo",
+      "x": 900,
+      "y": 0,
+      "name": "1. Chat - Imagen + Abrir Flow",
+      "clip": true,
+      "width": 390,
+      "height": 844,
+      "fill": "#F5F4F1",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "H6tgO",
+          "name": "WA Header",
+          "width": "fill_container",
+          "height": 56,
+          "fill": "#075E54",
+          "gap": 12,
+          "padding": [
+            0,
+            16
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "icon_font",
+              "id": "VTJ6S",
+              "name": "backIcon",
+              "width": 24,
+              "height": 24,
+              "iconFontName": "chevron-left",
+              "iconFontFamily": "lucide",
+              "fill": "#FFFFFF"
+            },
+            {
+              "type": "ellipse",
+              "id": "DxuSY",
+              "name": "avatar",
+              "fill": "#25D366",
+              "width": 36,
+              "height": 36
+            },
+            {
+              "type": "frame",
+              "id": "CbuvK",
+              "name": "headerInfo",
+              "width": "fill_container",
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "tfedg",
+                  "name": "headerName",
+                  "fill": "#FFFFFF",
+                  "content": "AC FixBot",
+                  "fontFamily": "Outfit",
+                  "fontSize": 16,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "Es6SB",
+                  "name": "headerStatus",
+                  "fill": "#FFFFFFAA",
+                  "content": "en línea",
+                  "fontFamily": "Outfit",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "dWxWI",
+          "name": "Chat Area",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "#ECE5DD",
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 12,
+          "justifyContent": "end",
+          "children": [
+            {
+              "type": "frame",
+              "id": "zCXjV",
+              "name": "User Image Bubble",
+              "width": 220,
+              "fill": "#DCF8C6",
+              "cornerRadius": 12,
+              "layout": "vertical",
+              "gap": 4,
+              "padding": 4,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "P10y8",
+                  "name": "imgPlaceholder",
+                  "metadata": {
+                    "type": "unsplash",
+                    "username": "ninjason",
+                    "link": "https://unsplash.com/@ninjason",
+                    "author": "Jason Leung"
+                  },
+                  "width": 212,
+                  "height": 160,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "https://images.unsplash.com/photo-1737679865809-056b55f4380d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w4NDM0ODN8MHwxfHJhbmRvbXx8fHx8fHx8fDE3NzA0MjI2Mzd8&ixlib=rb-4.1.0&q=80&w=1080",
+                    "mode": "fill"
+                  },
+                  "cornerRadius": 8
+                },
+                {
+                  "type": "text",
+                  "id": "SPmhX",
+                  "name": "imgTime",
+                  "fill": "#6D6C6A",
+                  "textGrowth": "fixed-width",
+                  "width": 212,
+                  "content": "4:32 PM ✓✓",
+                  "textAlign": "right",
+                  "fontFamily": "Outfit",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "4D6a4",
+              "name": "Bot Analyzing",
+              "width": 300,
+              "fill": "#FFFFFF",
+              "cornerRadius": 12,
+              "layout": "vertical",
+              "gap": 4,
+              "padding": [
+                8,
+                12
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "7ZJI8",
+                  "name": "botText1",
+                  "fill": "#1A1918",
+                  "textGrowth": "fixed-width",
+                  "width": 276,
+                  "content": "🤖 Analizando imagen con inteligencia artificial... Un momento por favor.",
+                  "lineHeight": 1.4,
+                  "fontFamily": "Outfit",
+                  "fontSize": 14,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "bEbzO",
+                  "name": "botTime1",
+                  "fill": "#6D6C6A",
+                  "textGrowth": "fixed-width",
+                  "width": 276,
+                  "content": "4:32 PM",
+                  "textAlign": "right",
+                  "fontFamily": "Outfit",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "LKmvp",
+              "name": "Bot Results + Flow CTA",
+              "width": 320,
+              "fill": "#FFFFFF",
+              "cornerRadius": 12,
+              "layout": "vertical",
+              "gap": 8,
+              "padding": [
+                8,
+                12
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "KM6j4",
+                  "name": "botText2",
+                  "fill": "#1A1918",
+                  "textGrowth": "fixed-width",
+                  "width": 296,
+                  "content": "🤖 *Análisis completado*\n\n📷 Veo un refrigerador comercial con código de barras.\n\n*Datos detectados:*\n• Tipo: *Refrigerador*\n• SAP: *1048723*\n• Problema: *No enfría*\n\n¿Los datos son correctos? Abre el formulario para confirmar o corregir.",
+                  "lineHeight": 1.4,
+                  "fontFamily": "Outfit",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "ckHSg",
+                  "name": "botTime2",
+                  "fill": "#6D6C6A",
+                  "textGrowth": "fixed-width",
+                  "width": 296,
+                  "content": "4:33 PM",
+                  "textAlign": "right",
+                  "fontFamily": "Outfit",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "oTzCg",
+              "name": "Flow CTA Button",
+              "width": 320,
+              "height": 44,
+              "fill": "#FFFFFF",
+              "cornerRadius": 12,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1,
+                "fill": "#25D366"
+              },
+              "gap": 8,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "x0s5H",
+                  "name": "flowIcon",
+                  "width": 18,
+                  "height": 18,
+                  "iconFontName": "file-text",
+                  "iconFontFamily": "lucide",
+                  "fill": "#25D366"
+                },
+                {
+                  "type": "text",
+                  "id": "52wTn",
+                  "name": "flowLabel",
+                  "fill": "#25D366",
+                  "content": "Abrir formulario de reporte",
+                  "fontFamily": "Outfit",
+                  "fontSize": 14,
+                  "fontWeight": "600"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "N1gNG",
+      "x": 1330,
+      "y": 0,
+      "name": "2A. Flow - Refrigerador",
+      "clip": true,
+      "width": 390,
+      "height": 844,
+      "fill": "#FFFFFF",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "qymSb",
+          "name": "Flow Header",
+          "width": "fill_container",
+          "height": 56,
+          "fill": "#008069",
+          "gap": 12,
+          "padding": [
+            0,
+            16
+          ],
+          "children": [
+            {
+              "type": "text",
+              "id": "kR4Ql",
+              "name": "closeIcon",
+              "fill": "#FFFFFF",
+              "content": "✕",
+              "fontFamily": "Inter",
+              "fontSize": 18,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "cRMm2",
+              "name": "headerTitle",
+              "fill": "#FFFFFF",
+              "content": "Confirmar Reporte",
+              "fontFamily": "Outfit",
+              "fontSize": 17,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "I4RUs",
+          "name": "Form Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "#FFFFFF",
+          "layout": "vertical",
+          "gap": 20,
+          "padding": 20,
+          "children": [
+            {
+              "type": "frame",
+              "id": "wD18z",
+              "name": "Tipo de Equipo Group",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "lTzRM",
+                  "name": "tipoLabel",
+                  "fill": "#1A1A1A",
+                  "content": "Tipo de Equipo",
+                  "fontFamily": "Outfit",
+                  "fontSize": 14,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "ePGWX",
+                  "name": "tipoHint",
+                  "fill": "#888888",
+                  "content": "Detectado por IA — puedes corregir",
+                  "fontFamily": "Outfit",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "zCglc",
+                  "name": "Radio Options",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "pHjCt",
+                      "name": "Radio Refrigerador",
+                      "width": "fill_container",
+                      "height": 44,
+                      "fill": "#E8F5E9",
+                      "cornerRadius": 10,
+                      "gap": 10,
+                      "padding": [
+                        0,
+                        14
+                      ],
+                      "children": [
+                        {
+                          "type": "ellipse",
+                          "id": "3TaAi",
+                          "name": "radioFill",
+                          "fill": "#008069",
+                          "width": 18,
+                          "height": 18
+                        },
+                        {
+                          "type": "text",
+                          "id": "763on",
+                          "name": "radioLabel1",
+                          "fill": "#1A1A1A",
+                          "content": "Refrigerador",
+                          "fontFamily": "Outfit",
+                          "fontSize": 14,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "htceH",
+                      "name": "Radio Vehiculo",
+                      "width": "fill_container",
+                      "height": 44,
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 10,
+                      "gap": 10,
+                      "padding": [
+                        0,
+                        14
+                      ],
+                      "children": [
+                        {
+                          "type": "ellipse",
+                          "id": "NeHBc",
+                          "name": "radioEmpty",
+                          "width": 18,
+                          "height": 18
+                        },
+                        {
+                          "type": "text",
+                          "id": "5kZ0V",
+                          "name": "radioLabel2",
+                          "fill": "#666666",
+                          "content": "Vehículo",
+                          "fontFamily": "Outfit",
+                          "fontSize": 14
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "bYxiy",
+              "name": "SAP Group",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 6,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "nP1ON",
+                  "name": "sapLabel",
+                  "fill": "#1A1A1A",
+                  "content": "Código SAP",
+                  "fontFamily": "Outfit",
+                  "fontSize": 14,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "frame",
+                  "id": "9aruw",
+                  "name": "SAP Input",
+                  "width": "fill_container",
+                  "height": 44,
+                  "fill": "#F7F7F7",
+                  "cornerRadius": 10,
+                  "padding": [
+                    0,
+                    14
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "sLYug",
+                      "name": "sapValue",
+                      "fill": "#1A1A1A",
+                      "content": "1048723",
+                      "fontFamily": "Outfit",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "rnl8Y",
+              "name": "Problema Group",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 6,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "hPzbI",
+                  "name": "probLabel",
+                  "fill": "#1A1A1A",
+                  "content": "Descripción del Problema",
+                  "fontFamily": "Outfit",
+                  "fontSize": 14,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "frame",
+                  "id": "UOG2l",
+                  "name": "Problema Input",
+                  "width": "fill_container",
+                  "height": 88,
+                  "fill": "#F7F7F7",
+                  "cornerRadius": 10,
+                  "layout": "vertical",
+                  "padding": [
+                    12,
+                    14
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "09fnR",
+                      "name": "probValue",
+                      "fill": "#1A1A1A",
+                      "content": "No enfría — el refrigerador no mantiene temperatura adecuada",
+                      "fontFamily": "Outfit",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "TULxh",
+              "name": "PhotoPicker Group",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 6,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "2s06O",
+                  "name": "photoLabel",
+                  "fill": "#1A1A1A",
+                  "content": "Fotos adicionales (opcional)",
+                  "fontFamily": "Outfit",
+                  "fontSize": 14,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "un4Yy",
+                  "name": "photoHint",
+                  "fill": "#888888",
+                  "content": "Toma fotos del equipo dañado como evidencia",
+                  "fontFamily": "Outfit",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "ufMkM",
+                  "name": "Photo Button",
+                  "width": "fill_container",
+                  "height": 48,
+                  "fill": "#F0F0F0",
+                  "cornerRadius": 10,
+                  "gap": 8,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "k3XAg",
+                      "name": "camIcon",
+                      "content": "📷",
+                      "fontFamily": "Inter",
+                      "fontSize": 20,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "AWjik",
+                      "name": "camText",
+                      "fill": "#666666",
+                      "content": "Tomar o elegir foto",
+                      "fontFamily": "Outfit",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "8ps8n",
+              "name": "Spacer",
+              "width": "fill_container",
+              "height": "fill_container"
+            },
+            {
+              "type": "frame",
+              "id": "tWuwk",
+              "name": "Submit Button",
+              "width": "fill_container",
+              "height": 50,
+              "fill": "#008069",
+              "cornerRadius": 12,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "6Anfd",
+                  "name": "submitText",
+                  "fill": "#FFFFFF",
+                  "content": "Enviar Reporte",
+                  "fontFamily": "Outfit",
+                  "fontSize": 16,
+                  "fontWeight": "600"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "rPVnr",
+      "x": 2200,
+      "y": 0,
+      "name": "3. Chat - Ubicación",
+      "clip": true,
+      "width": 390,
+      "height": 844,
+      "fill": "#ECE5DD",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "pc9El",
+          "name": "WA Header",
+          "width": "fill_container",
+          "height": 60,
+          "fill": "#008069",
+          "gap": 10,
+          "padding": [
+            0,
+            12
+          ],
+          "children": [
+            {
+              "type": "text",
+              "id": "wyi6n",
+              "name": "backIcon3",
+              "fill": "#FFFFFF",
+              "content": "‹",
+              "fontFamily": "Inter",
+              "fontSize": 28,
+              "fontWeight": "300"
+            },
+            {
+              "type": "ellipse",
+              "id": "LKfs5",
+              "name": "avatar3",
+              "fill": "#25D366",
+              "width": 36,
+              "height": 36
+            },
+            {
+              "type": "frame",
+              "id": "pVnA6",
+              "name": "Name Col",
+              "layout": "vertical",
+              "gap": 1,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "ysErt",
+                  "name": "nameText3",
+                  "fill": "#FFFFFF",
+                  "content": "AC FixBot",
+                  "fontFamily": "Outfit",
+                  "fontSize": 16,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "Yr0Uv",
+                  "name": "statusText3",
+                  "fill": "#D4ECD8",
+                  "content": "en línea",
+                  "fontFamily": "Outfit",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "UKOrW",
+          "name": "Chat Area",
+          "width": "fill_container",
+          "height": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 12,
+          "children": [
+            {
+              "type": "frame",
+              "id": "8CAVN",
+              "name": "Bot Success Msg",
+              "width": 300,
+              "fill": "#FFFFFF",
+              "cornerRadius": [
+                12,
+                12,
+                12,
+                0
+              ],
+              "layout": "vertical",
+              "gap": 4,
+              "padding": [
+                10,
+                12
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "g43Gs",
+                  "name": "b1Text",
+                  "fill": "#1A1A1A",
+                  "content": "✅ *¡Reporte creado exitosamente!*\n\n📋 Reporte #REF-2026-0847\n• Tipo: Refrigerador\n• SAP: 1048723\n• Problema: No enfría",
+                  "fontFamily": "Outfit",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "vL68v",
+                  "name": "b1Time",
+                  "fill": "#999999",
+                  "content": "4:34 PM",
+                  "fontFamily": "Outfit",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "kH901",
+              "name": "Bot Location Request",
+              "width": 300,
+              "fill": "#FFFFFF",
+              "cornerRadius": [
+                12,
+                12,
+                12,
+                0
+              ],
+              "layout": "vertical",
+              "gap": 4,
+              "padding": [
+                10,
+                12
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "ovjSE",
+                  "name": "b2Text",
+                  "fill": "#1A1A1A",
+                  "content": "📍 Solo falta la ubicación del equipo para completar tu reporte.\n\nComparte tu ubicación actual:",
+                  "fontFamily": "Outfit",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "375vx",
+                  "name": "b2Time",
+                  "fill": "#999999",
+                  "content": "4:34 PM",
+                  "fontFamily": "Outfit",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "jACjI",
+              "name": "Location Button",
+              "width": 300,
+              "height": 44,
+              "fill": "#FFFFFF",
+              "cornerRadius": [
+                0,
+                0,
+                12,
+                12
+              ],
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "8Fuim",
+                  "name": "locIcon",
+                  "content": "📍",
+                  "fontFamily": "Inter",
+                  "fontSize": 16,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "D60zq",
+                  "name": "locText",
+                  "fill": "#008069",
+                  "content": "Enviar ubicación",
+                  "fontFamily": "Outfit",
+                  "fontSize": 14,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "uWOBV",
+              "name": "User Bubble Wrap",
+              "width": "fill_container",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "IUF8z",
+                  "name": "User Location Share",
+                  "width": 260,
+                  "fill": "#D9FDD3",
+                  "cornerRadius": [
+                    12,
+                    12,
+                    0,
+                    12
+                  ],
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "F7VgP",
+                      "name": "Map Preview",
+                      "metadata": {
+                        "type": "unsplash",
+                        "username": "liceagadavid",
+                        "link": "https://unsplash.com/@liceagadavid",
+                        "author": "David Liceaga"
+                      },
+                      "clip": true,
+                      "width": "fill_container",
+                      "height": 120,
+                      "fill": {
+                        "type": "image",
+                        "enabled": true,
+                        "url": "https://images.unsplash.com/photo-1596304686259-00cae6afbfab?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w4NDM0ODN8MHwxfHJhbmRvbXx8fHx8fHx8fDE3NzA0MjI4NTB8&ixlib=rb-4.1.0&q=80&w=1080",
+                        "mode": "fill"
+                      },
+                      "cornerRadius": [
+                        12,
+                        12,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "66yRm",
+                          "name": "mapPin",
+                          "content": "📍",
+                          "fontFamily": "Inter",
+                          "fontSize": 28,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "YcKBc",
+                      "name": "Location Info",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "padding": [
+                        8,
+                        12
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "cJVpJ",
+                          "name": "locTitle",
+                          "fill": "#1A1A1A",
+                          "content": "Mi ubicación",
+                          "fontFamily": "Outfit",
+                          "fontSize": 13,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "text",
+                          "id": "mDJGJ",
+                          "name": "locAddr",
+                          "fill": "#666666",
+                          "content": "Av. Constitución 1050, Monterrey, NL",
+                          "fontFamily": "Outfit",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "ynkwc",
+                          "name": "locTime",
+                          "fill": "#999999",
+                          "content": "4:35 PM  ✓✓",
+                          "fontFamily": "Outfit",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "HaGO2",
+              "name": "Bot Final Msg",
+              "width": 300,
+              "fill": "#FFFFFF",
+              "cornerRadius": [
+                12,
+                12,
+                12,
+                0
+              ],
+              "layout": "vertical",
+              "gap": 4,
+              "padding": [
+                10,
+                12
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "cMHkT",
+                  "name": "finalText",
+                  "fill": "#1A1A1A",
+                  "content": "🎉 *¡Reporte completado!*\n\nTu reporte #REF-2026-0847 ha sido registrado con ubicación.\n\nUn técnico será asignado pronto. Te notificaremos cuando haya novedades.\n\n¿Necesitas algo más? Escribe *\"menú\"* para ver opciones.",
+                  "fontFamily": "Outfit",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "ONFg5",
+                  "name": "finalTime",
+                  "fill": "#999999",
+                  "content": "4:35 PM",
+                  "fontFamily": "Outfit",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "NJIGh",
+      "x": 1290,
+      "y": 390,
+      "name": "Arrow 1-2",
+      "width": 40,
+      "height": 64,
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "text",
+          "id": "KQc9t",
+          "name": "arrowText1",
+          "fill": "#008069",
+          "content": "→",
+          "fontFamily": "Inter",
+          "fontSize": 24,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "KL3I8",
+      "x": 1270,
+      "y": 454,
+      "name": "Label 1-2",
+      "width": 80,
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "text",
+          "id": "jGWHZ",
+          "name": "labelText1",
+          "fill": "#666666",
+          "content": "Toca\n\"Abrir\nformulario\"",
+          "fontFamily": "Outfit",
+          "fontSize": 10,
+          "fontWeight": "normal"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "Xw5wW",
+      "x": 2160,
+      "y": 390,
+      "name": "Arrow 2-3",
+      "width": 40,
+      "height": 64,
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "text",
+          "id": "X4FrZ",
+          "name": "arrowText2",
+          "fill": "#008069",
+          "content": "→",
+          "fontFamily": "Inter",
+          "fontSize": 24,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "E0wBX",
+      "x": 2140,
+      "y": 454,
+      "name": "Label 2-3",
+      "width": 80,
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "text",
+          "id": "6YBPg",
+          "name": "labelText2",
+          "fill": "#666666",
+          "content": "Envía\nreporte\n+ pide\nubicación",
+          "fontFamily": "Outfit",
+          "fontSize": 10,
+          "fontWeight": "normal"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "5H5OF",
+      "x": 900,
+      "y": -80,
+      "name": "Title",
+      "width": 1720,
+      "layout": "vertical",
+      "gap": 4,
+      "children": [
+        {
+          "type": "text",
+          "id": "c94Du",
+          "name": "titleText",
+          "fill": "#1A1A1A",
+          "content": "Opción A: Chat + WhatsApp Flow + Ubicación",
+          "fontFamily": "Outfit",
+          "fontSize": 22,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "LQqjT",
+          "name": "subtitleText",
+          "fill": "#888888",
+          "content": "El usuario envía imagen por chat → IA analiza → Flow para confirmar/corregir datos → Ubicación al final",
+          "fontFamily": "Outfit",
+          "fontSize": 13,
+          "fontWeight": "normal"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "XXzJl",
+      "x": 1724,
+      "y": 390,
+      "name": "Or Divider",
+      "width": 32,
+      "height": 64,
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "text",
+          "id": "VnQ7l",
+          "name": "orText",
+          "fill": "#AAAAAA",
+          "content": "ó",
+          "fontFamily": "Outfit",
+          "fontSize": 16,
+          "fontWeight": "600"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "1QKDu",
+      "x": 1770,
+      "y": 0,
+      "name": "2B. Flow - Vehículo",
+      "clip": true,
+      "width": 390,
+      "height": 844,
+      "fill": "#FFFFFF",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "8IbLW",
+          "name": "Flow Header",
+          "width": "fill_container",
+          "height": 56,
+          "fill": "#008069",
+          "gap": 12,
+          "padding": [
+            0,
+            16
+          ],
+          "children": [
+            {
+              "type": "text",
+              "id": "uCjqX",
+              "name": "closeB",
+              "fill": "#FFFFFF",
+              "content": "✕",
+              "fontFamily": "Inter",
+              "fontSize": 18,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "p8f3v",
+              "name": "titleB",
+              "fill": "#FFFFFF",
+              "content": "Confirmar Reporte",
+              "fontFamily": "Outfit",
+              "fontSize": 17,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "WbNkH",
+          "name": "Form Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "#FFFFFF",
+          "layout": "vertical",
+          "gap": 20,
+          "padding": 20,
+          "children": [
+            {
+              "type": "frame",
+              "id": "tABQr",
+              "name": "Tipo Group",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "VhTuX",
+                  "name": "tipoLblB",
+                  "fill": "#1A1A1A",
+                  "content": "Tipo de Equipo",
+                  "fontFamily": "Outfit",
+                  "fontSize": 14,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "YTB7X",
+                  "name": "tipoHintB",
+                  "fill": "#888888",
+                  "content": "Detectado por IA — puedes corregir",
+                  "fontFamily": "Outfit",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "J9K0w",
+                  "name": "Radio Options",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "6tnhH",
+                      "name": "Radio Refrigerador",
+                      "width": "fill_container",
+                      "height": 44,
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 10,
+                      "gap": 10,
+                      "padding": [
+                        0,
+                        14
+                      ],
+                      "children": [
+                        {
+                          "type": "ellipse",
+                          "id": "Vc9KX",
+                          "name": "radioEmptyB",
+                          "width": 18,
+                          "height": 18
+                        },
+                        {
+                          "type": "text",
+                          "id": "k0muh",
+                          "name": "radioLblRefB",
+                          "fill": "#666666",
+                          "content": "Refrigerador",
+                          "fontFamily": "Outfit",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "nRu2M",
+                      "name": "Radio Vehiculo",
+                      "width": "fill_container",
+                      "height": 44,
+                      "fill": "#E8F5E9",
+                      "cornerRadius": 10,
+                      "gap": 10,
+                      "padding": [
+                        0,
+                        14
+                      ],
+                      "children": [
+                        {
+                          "type": "ellipse",
+                          "id": "6kHl0",
+                          "name": "radioFillB",
+                          "fill": "#008069",
+                          "width": 18,
+                          "height": 18
+                        },
+                        {
+                          "type": "text",
+                          "id": "2Z3E0",
+                          "name": "radioLblVehB",
+                          "fill": "#1A1A1A",
+                          "content": "Vehículo",
+                          "fontFamily": "Outfit",
+                          "fontSize": 14,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "5YtMR",
+              "name": "SAP Group",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 6,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "GQhoC",
+                  "name": "sapLblB",
+                  "fill": "#1A1A1A",
+                  "content": "Código SAP",
+                  "fontFamily": "Outfit",
+                  "fontSize": 14,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "frame",
+                  "id": "1WN2T",
+                  "name": "SAP Input",
+                  "width": "fill_container",
+                  "height": 44,
+                  "fill": "#F7F7F7",
+                  "cornerRadius": 10,
+                  "padding": [
+                    0,
+                    14
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Zn28Z",
+                      "name": "sapValB",
+                      "fill": "#1A1A1A",
+                      "content": "7820415",
+                      "fontFamily": "Outfit",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "ZF1eh",
+              "name": "Empleado Group",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 6,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "6X0g9",
+                  "name": "empLbl",
+                  "fill": "#1A1A1A",
+                  "content": "Número de Empleado",
+                  "fontFamily": "Outfit",
+                  "fontSize": 14,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "frame",
+                  "id": "uovGb",
+                  "name": "Empleado Input",
+                  "width": "fill_container",
+                  "height": 44,
+                  "fill": "#F7F7F7",
+                  "cornerRadius": 10,
+                  "padding": [
+                    0,
+                    14
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "T2AZm",
+                      "name": "empVal",
+                      "fill": "#1A1A1A",
+                      "content": "EMP-4521",
+                      "fontFamily": "Outfit",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "btBQW",
+              "name": "Problema Group",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 6,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "hs1t0",
+                  "name": "probLblB",
+                  "fill": "#1A1A1A",
+                  "content": "Descripción del Problema",
+                  "fontFamily": "Outfit",
+                  "fontSize": 14,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "frame",
+                  "id": "3U6u8",
+                  "name": "Problema Input",
+                  "width": "fill_container",
+                  "height": 88,
+                  "fill": "#F7F7F7",
+                  "cornerRadius": 10,
+                  "layout": "vertical",
+                  "padding": [
+                    12,
+                    14
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "6PeV5",
+                      "name": "probValB",
+                      "fill": "#1A1A1A",
+                      "content": "Llanta ponchada en eje trasero del lado derecho",
+                      "fontFamily": "Outfit",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Ej7nD",
+              "name": "PhotoPicker Group",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 6,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "h36SJ",
+                  "name": "photoLblB",
+                  "fill": "#1A1A1A",
+                  "content": "Fotos adicionales (opcional)",
+                  "fontFamily": "Outfit",
+                  "fontSize": 14,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "YHCA1",
+                  "name": "photoHintB",
+                  "fill": "#888888",
+                  "content": "Toma fotos del vehículo dañado como evidencia",
+                  "fontFamily": "Outfit",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "YCQ3z",
+                  "name": "Photo Button",
+                  "width": "fill_container",
+                  "height": 48,
+                  "fill": "#F0F0F0",
+                  "cornerRadius": 10,
+                  "gap": 8,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "e9WUk",
+                      "name": "camIconB",
+                      "content": "📷",
+                      "fontFamily": "Inter",
+                      "fontSize": 20,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "6ehiD",
+                      "name": "camTextB",
+                      "fill": "#666666",
+                      "content": "Tomar o elegir foto",
+                      "fontFamily": "Outfit",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Oqv0s",
+              "name": "Spacer",
+              "width": "fill_container",
+              "height": "fill_container"
+            },
+            {
+              "type": "frame",
+              "id": "1pniN",
+              "name": "Submit Button",
+              "width": "fill_container",
+              "height": 50,
+              "fill": "#008069",
+              "cornerRadius": 12,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "Oy8YO",
+                  "name": "submitTxtB",
+                  "fill": "#FFFFFF",
+                  "content": "Enviar Reporte",
+                  "fontFamily": "Outfit",
+                  "fontSize": 16,
+                  "fontWeight": "600"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

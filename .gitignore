@@ -57,3 +57,7 @@ scripts/azure/.swa-deployment-token
 *.zip
 deploy-*.zip
 function-app-*.zip
+
+# Deploy backup / outputs
+node_modules_deploy_backup/
+scripts/azure/outputs-*.env
