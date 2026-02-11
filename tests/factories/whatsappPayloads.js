@@ -72,101 +72,6 @@ function createButtonResponse(buttonId, from = '+5215512345678', messageId = nul
   };
 }
 
-function createImageMessage(mediaId = 'media-123', from = '+5215512345678', messageId = null) {
-  return {
-    object: 'whatsapp_business_account',
-    entry: [
-      {
-        id: '100200300',
-        changes: [
-          {
-            value: {
-              messaging_product: 'whatsapp',
-              metadata: { display_phone_number: '15551234567', phone_number_id: 'test-phone-id' },
-              contacts: [{ profile: { name: 'Test User' }, wa_id: from }],
-              messages: [
-                {
-                  from,
-                  id: messageId || nextId(),
-                  timestamp: String(Math.floor(Date.now() / 1000)),
-                  type: 'image',
-                  image: { id: mediaId, mime_type: 'image/jpeg', sha256: 'abc123' },
-                },
-              ],
-            },
-            field: 'messages',
-          },
-        ],
-      },
-    ],
-  };
-}
-
-function createLocationMessage(
-  lat = 19.4326,
-  lng = -99.1332,
-  from = '+5215512345678',
-  messageId = null
-) {
-  return {
-    object: 'whatsapp_business_account',
-    entry: [
-      {
-        id: '100200300',
-        changes: [
-          {
-            value: {
-              messaging_product: 'whatsapp',
-              metadata: { display_phone_number: '15551234567', phone_number_id: 'test-phone-id' },
-              contacts: [{ profile: { name: 'Test User' }, wa_id: from }],
-              messages: [
-                {
-                  from,
-                  id: messageId || nextId(),
-                  timestamp: String(Math.floor(Date.now() / 1000)),
-                  type: 'location',
-                  location: { latitude: lat, longitude: lng },
-                },
-              ],
-            },
-            field: 'messages',
-          },
-        ],
-      },
-    ],
-  };
-}
-
-function createAudioMessage(mediaId = 'audio-123', from = '+5215512345678', messageId = null) {
-  return {
-    object: 'whatsapp_business_account',
-    entry: [
-      {
-        id: '100200300',
-        changes: [
-          {
-            value: {
-              messaging_product: 'whatsapp',
-              metadata: { display_phone_number: '15551234567', phone_number_id: 'test-phone-id' },
-              contacts: [{ profile: { name: 'Test User' }, wa_id: from }],
-              messages: [
-                {
-                  from,
-                  id: messageId || nextId(),
-                  timestamp: String(Math.floor(Date.now() / 1000)),
-                  type: 'audio',
-                  audio: { id: mediaId, mime_type: 'audio/ogg; codecs=opus' },
-                },
-              ],
-            },
-            field: 'messages',
-          },
-        ],
-      },
-    ],
-  };
-}
-
 function createVerificationRequest(token = 'test-verify-token', challenge = '1234567890') {
   return {
     method: 'GET',
@@ -207,12 +112,51 @@ function createStatusNotification(
   };
 }
 
+function createTemplateStatusCallback(
+  messageId = 'wamid.template_123',
+  status = 'delivered',
+  from = '+5215512345678'
+) {
+  return {
+    object: 'whatsapp_business_account',
+    entry: [
+      {
+        id: '100200300',
+        changes: [
+          {
+            value: {
+              messaging_product: 'whatsapp',
+              metadata: { display_phone_number: '15551234567', phone_number_id: 'test-phone-id' },
+              statuses: [
+                {
+                  id: messageId,
+                  status,
+                  timestamp: String(Math.floor(Date.now() / 1000)),
+                  recipient_id: from,
+                  conversation: {
+                    id: 'conv-test-123',
+                    origin: { type: 'utility' },
+                  },
+                  pricing: {
+                    billable: true,
+                    pricing_model: 'CBP',
+                    category: 'utility',
+                  },
+                },
+              ],
+            },
+            field: 'messages',
+          },
+        ],
+      },
+    ],
+  };
+}
+
 module.exports = {
   createTextMessage,
   createButtonResponse,
-  createImageMessage,
-  createLocationMessage,
-  createAudioMessage,
   createVerificationRequest,
   createStatusNotification,
+  createTemplateStatusCallback,
 };

@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# AC FIXBOT - Instalador Completo Azure
+# Sign Bot - Instalador Completo Azure
 # ============================================================================
 # Script unico para desplegar toda la infraestructura, configurar secretos,
 # inicializar la base de datos y desplegar el codigo.
@@ -125,23 +125,23 @@ derive_resource_names() {
     local ENV_SUFFIX="${ENVIRONMENT}"
     [ "$ENVIRONMENT" = "dev" ] && ENV_SUFFIX="development"
 
-    RESOURCE_GROUP="rg-acfixbot-${ENV_SUFFIX}"
-    FUNCTION_APP_NAME="func-acfixbot-${ENV_SUFFIX}"
-    KEY_VAULT_NAME="kv-acfixbot-${ENV_SUFFIX}"
-    SQL_SERVER_NAME="sql-acfixbot-${ENV_SUFFIX}"
-    SQL_DATABASE_NAME="db-acfixbot"
-    STORAGE_ACCOUNT_NAME="stacfixbot${ENV_SUFFIX}"
-    COMPUTER_VISION_NAME="cv-acfixbot-${ENV_SUFFIX}"
-    SPEECH_NAME="speech-acfixbot-${ENV_SUFFIX}"
-    MAPS_NAME="maps-acfixbot-${ENV_SUFFIX}"
-    OPENAI_NAME="oai-acfixbot-${ENV_SUFFIX}"
-    WHISPER_OPENAI_NAME="oai-acfixbot-whisper-${ENV_SUFFIX}"
-    REDIS_NAME="redis-acfixbot-${ENV_SUFFIX}"
-    SERVICE_BUS_NAME="sb-acfixbot-${ENV_SUFFIX}"
-    APP_INSIGHTS_NAME="appi-acfixbot-${ENV_SUFFIX}"
-    SWA_NAME="swa-acfixbot-${ENV_SUFFIX}"
-    APP_SERVICE_PLAN_NAME="asp-acfixbot-${ENV_SUFFIX}"
-    LOG_ANALYTICS_NAME="log-acfixbot-${ENV_SUFFIX}"
+    RESOURCE_GROUP="rg-signbot-${ENV_SUFFIX}"
+    FUNCTION_APP_NAME="func-signbot-${ENV_SUFFIX}"
+    KEY_VAULT_NAME="kv-signbot-${ENV_SUFFIX}"
+    SQL_SERVER_NAME="sql-signbot-${ENV_SUFFIX}"
+    SQL_DATABASE_NAME="db-signbot"
+    STORAGE_ACCOUNT_NAME="stsignbot${ENV_SUFFIX}"
+    COMPUTER_VISION_NAME="cv-signbot-${ENV_SUFFIX}"
+    SPEECH_NAME="speech-signbot-${ENV_SUFFIX}"
+    MAPS_NAME="maps-signbot-${ENV_SUFFIX}"
+    OPENAI_NAME="oai-signbot-${ENV_SUFFIX}"
+    WHISPER_OPENAI_NAME="oai-signbot-whisper-${ENV_SUFFIX}"
+    REDIS_NAME="redis-signbot-${ENV_SUFFIX}"
+    SERVICE_BUS_NAME="sb-signbot-${ENV_SUFFIX}"
+    APP_INSIGHTS_NAME="appi-signbot-${ENV_SUFFIX}"
+    SWA_NAME="swa-signbot-${ENV_SUFFIX}"
+    APP_SERVICE_PLAN_NAME="asp-signbot-${ENV_SUFFIX}"
+    LOG_ANALYTICS_NAME="log-signbot-${ENV_SUFFIX}"
 }
 
 load_environment() {
@@ -380,7 +380,7 @@ deploy_bicep() {
     # Usar ENV_SUFFIX para consistencia (dev→development)
     local ENV_SUFFIX="${ENVIRONMENT}"
     [ "$ENVIRONMENT" = "dev" ] && ENV_SUFFIX="development"
-    DEPLOYMENT_NAME="acfixbot-${ENV_SUFFIX}-$(date +%Y%m%d%H%M%S)"
+    DEPLOYMENT_NAME="signbot-${ENV_SUFFIX}-$(date +%Y%m%d%H%M%S)"
     LOCATION="${LOCATION:-eastus}"
 
     # Flags de recursos opcionales (leidos del env, default false)
@@ -400,7 +400,7 @@ deploy_bicep() {
     BICEP_PARAMS=(
         --parameters environment="$ENVIRONMENT"
         --parameters location="$LOCATION"
-        --parameters projectName="acfixbot"
+        --parameters projectName="signbot"
         --parameters sqlAdminLogin="${SQL_ADMIN_USER:-sqladmin}"
         --parameters sqlAdminPassword="$SQL_ADMIN_PASSWORD"
         --parameters deployOpenAI="$DEPLOY_OPENAI"
@@ -959,7 +959,7 @@ deploy_functions() {
     # Usar staging dir para no tocar node_modules local
     local STAGE_DIR
     STAGE_DIR=$(mktemp -d)
-    local DEPLOY_ZIP="/tmp/acfixbot-deploy-$$.zip"
+    local DEPLOY_ZIP="/tmp/signbot-deploy-$$.zip"
 
     # Copiar fuentes al directorio de staging (sin node_modules ni archivos dev)
     log_info "Preparando paquete de deployment..."
@@ -1175,7 +1175,7 @@ main() {
 
     echo ""
     echo "============================================================================"
-    echo "  AC FIXBOT - Instalador Azure"
+    echo "  Sign Bot - Instalador Azure"
     echo "  Infraestructura + Secretos + Base de Datos + Codigo"
     echo "============================================================================"
     echo ""

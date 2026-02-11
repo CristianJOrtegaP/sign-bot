@@ -1,5 +1,5 @@
 // ==============================================================================
-// AC FIXBOT - Storage Account Module
+// Sign Bot - Storage Account Module
 // Storage Account + Blob Container with lifecycle management
 // ==============================================================================
 
@@ -14,7 +14,7 @@ param location string
 param environment string
 
 var tags = {
-  project: 'acfixbot'
+  project: 'signbot'
   environment: environment
 }
 

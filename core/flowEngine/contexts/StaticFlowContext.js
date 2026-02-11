@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - StaticFlowContext
+ * Sign Bot - StaticFlowContext
  * Contexto para flujos estáticos/secuenciales (encuesta, consulta)
  *
  * Extiende BaseContext con métodos específicos para flujos

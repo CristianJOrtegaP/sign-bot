@@ -1,5 +1,5 @@
 // ==============================================================================
-// AC FIXBOT - Azure Service Bus Module
+// Sign Bot - Azure Service Bus Module
 // Service Bus Namespace + Queue with dead letter support
 // ==============================================================================
 
@@ -14,7 +14,7 @@ param location string
 param environment string
 
 var tags = {
-  project: 'acfixbot'
+  project: 'signbot'
   environment: environment
 }
 
@@ -36,7 +36,7 @@ resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2022-10-01-preview
 
 resource queue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
   parent: serviceBusNamespace
-  name: 'acfixbot-messages'
+  name: 'signbot-messages'
   properties: {
     maxDeliveryCount: 3
     defaultMessageTimeToLive: 'P1D'

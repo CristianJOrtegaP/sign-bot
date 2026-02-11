@@ -1,27 +1,26 @@
 /**
- * AC FIXBOT - Dead Letter Queue Processor (FASE 2)
- * Timer trigger que procesa automáticamente mensajes fallidos
+ * SIGN BOT - Dead Letter Queue Processor
+ * Timer trigger que procesa automaticamente mensajes fallidos
  *
  * Schedule: Cada 10 minutos (cron: 0 *\/10 * * * *)
  *
  * Flujo:
  * 1. Obtiene mensajes pendientes de retry desde DeadLetterMessages
  * 2. Intenta reprocesar cada mensaje
- * 3. Marca como PROCESSED si tiene éxito
+ * 3. Marca como PROCESSED si tiene exito
  * 4. Incrementa RetryCount y marca como FAILED si excede MaxRetries
- * 5. Envía alertas si hay mensajes fallidos críticos
+ * 5. Envia alertas si hay mensajes fallidos criticos
  */
 
 const deadLetterService = require('../core/services/infrastructure/deadLetterService');
 const alertingService = require('../core/services/infrastructure/alertingService');
-const { handleText, handleButton } = require('../bot/controllers/messageHandler');
-const { handleImage } = require('../bot/controllers/imageHandler');
+const { processMessageByType } = require('../core/services/processing/messageRouter');
 
 // ==============================================================
-// CONFIGURACIÓN
+// CONFIGURACION
 // ==============================================================
 
-const MAX_MESSAGES_PER_RUN = 10; // Procesar máximo 10 mensajes por ejecución
+const MAX_MESSAGES_PER_RUN = 10; // Procesar maximo 10 mensajes por ejecucion
 const PROCESSING_TIMEOUT_MS = 30000; // 30s timeout por mensaje
 
 // ==============================================================
@@ -40,7 +39,7 @@ async function reprocessMessage(dlMessage, context) {
   });
 
   try {
-    // Imágenes >24h: media ID de WhatsApp ya expiró, no tiene sentido reintentar
+    // Imagenes >24h: media ID de WhatsApp ya expiro, no tiene sentido reintentar
     if (dlMessage.TipoMensaje === 'image') {
       const messageAge = Date.now() - new Date(dlMessage.FechaCreacion).getTime();
       const hoursOld = messageAge / (1000 * 60 * 60);
@@ -55,27 +54,31 @@ async function reprocessMessage(dlMessage, context) {
       }
     }
 
-    // Dispatch al handler correcto según tipo de mensaje
-    let processingPromise;
+    // Reconstruir el mensaje para pasarlo por messageRouter
     const { WhatsAppMessageId: msgId, Telefono: from, TipoMensaje: tipo, Contenido } = dlMessage;
+    let message;
 
     switch (tipo) {
       case 'text':
-        processingPromise = handleText(from, Contenido, msgId, context);
+        message = { type: 'text', text: { body: Contenido } };
         break;
       case 'image': {
         const imageData = JSON.parse(Contenido);
-        processingPromise = handleImage(from, imageData, msgId, context);
+        message = { type: 'image', image: imageData };
         break;
       }
       case 'interactive': {
         const payload = JSON.parse(Contenido);
-        processingPromise = handleButton(from, payload, msgId, context);
+        message = { type: 'interactive', interactive: { button_reply: payload } };
         break;
       }
       default:
         throw new Error(`Tipo de mensaje no soportado para reprocessing: ${tipo}`);
     }
+
+    const log = (msg, ...args) => context.log(`[DLQ:${msgId}] ${msg}`, ...args);
+
+    const processingPromise = processMessageByType(message, from, msgId, context, log);
 
     const timeoutPromise = new Promise((_resolve, reject) => {
       setTimeout(() => reject(new Error('Processing timeout')), PROCESSING_TIMEOUT_MS);
@@ -83,7 +86,7 @@ async function reprocessMessage(dlMessage, context) {
 
     await Promise.race([processingPromise, timeoutPromise]);
 
-    // Éxito - marcar como procesado
+    // Exito - marcar como procesado
     await deadLetterService.markAsProcessed(dlMessage.DeadLetterId);
 
     context.log.info(`[DLQ] Mensaje reprocesado exitosamente`, {
@@ -151,7 +154,7 @@ async function processBatch(messages, context) {
 // ==============================================================
 
 /**
- * Envía alertas sobre mensajes fallidos permanentemente
+ * Envia alertas sobre mensajes fallidos permanentemente
  */
 async function sendAlertForPermanentFailures(results, context) {
   if (results.permanentlyFailed === 0) {
@@ -206,12 +209,12 @@ async function cleanupOldMessages(context) {
 
 module.exports = async function (context, _myTimer) {
   const startTime = Date.now();
-  context.log.info('🔄 [DLQ Processor] Iniciando procesamiento de dead letter queue');
+  context.log.info('[DLQ Processor] Iniciando procesamiento de dead letter queue');
 
   try {
-    // 1. Obtener estadísticas actuales
+    // 1. Obtener estadisticas actuales
     const stats = await deadLetterService.getStats();
-    context.log.info('[DLQ] Estadísticas actuales', {
+    context.log.info('[DLQ] Estadisticas actuales', {
       total: stats.total,
       byStatus: stats.byStatus,
     });
@@ -222,7 +225,7 @@ module.exports = async function (context, _myTimer) {
     if (messages.length === 0) {
       context.log.info('[DLQ] No hay mensajes pendientes de procesamiento');
 
-      // Cleanup periódico aunque no haya mensajes
+      // Cleanup periodico aunque no haya mensajes
       await cleanupOldMessages(context);
       return;
     }
@@ -234,7 +237,7 @@ module.exports = async function (context, _myTimer) {
 
     // 4. Log resultados
     const duration = Date.now() - startTime;
-    context.log.info('✅ [DLQ Processor] Procesamiento completado', {
+    context.log.info('[DLQ Processor] Procesamiento completado', {
       duration_ms: duration,
       processed: results.processed,
       failed: results.failed,
@@ -246,20 +249,20 @@ module.exports = async function (context, _myTimer) {
     // 5. Enviar alertas si hay fallos permanentes
     await sendAlertForPermanentFailures(results, context);
 
-    // 6. Cleanup periódico
+    // 6. Cleanup periodico
     await cleanupOldMessages(context);
   } catch (error) {
-    context.log.error('❌ [DLQ Processor] Error en procesamiento', {
+    context.log.error('[DLQ Processor] Error en procesamiento', {
       error: error.message,
       stack: error.stack,
     });
 
-    // Enviar alerta por error crítico en el processor
+    // Enviar alerta por error critico en el processor
     try {
       await alertingService.sendManualAlert(
         'CRITICAL',
         'dlq_processor_failure',
-        'Error crítico en DLQ Processor',
+        'Error critico en DLQ Processor',
         { error: error.message }
       );
     } catch (alertError) {

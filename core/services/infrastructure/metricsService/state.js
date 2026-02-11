@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Métricas: Estado y Configuración
+ * Sign Bot - Métricas: Estado y Configuración
  * Contiene el objeto metrics en memoria y constantes de configuración
  */
 
@@ -32,8 +32,8 @@ const SLA_TARGETS = {
 
 // Nombres de tablas de Azure Storage
 const TABLE_NAMES = {
-  METRICS: 'ACFixBotMetrics',
-  ERRORS: 'ACFixBotErrors',
+  METRICS: 'SignBotMetrics',
+  ERRORS: 'SignBotErrors',
 };
 
 module.exports = {

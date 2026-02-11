@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Request Timeout Utilities
+ * Sign Bot - Request Timeout Utilities
  * Utilidades para agregar timeouts a operaciones asíncronas
  *
  * @module utils/requestTimeout

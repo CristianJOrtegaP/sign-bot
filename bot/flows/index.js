@@ -1,16 +1,12 @@
 /**
- * AC FIXBOT - Registro de Flujos
- * Configuración central de qué flujos están activos
+ * SIGN BOT - Registro de Flujos
+ * Configuracion central de flujos activos
  *
  * Para agregar un nuevo flujo:
  * 1. Crear el archivo en bot/flows/miFlujo.js
- * 2. Importarlo aquí
+ * 2. Importarlo aqui
  * 3. Agregarlo a FLUJOS_DISPONIBLES
  * 4. Habilitarlo en FLUJOS_HABILITADOS
- *
- * Para clonar el bot y remover flujos:
- * 1. Cambiar FLUJOS_HABILITADOS[flujo] = false
- * 2. Opcionalmente eliminar el archivo del flujo
  *
  * @module bot/flows
  */
@@ -21,26 +17,16 @@ const { registry } = require('../../core/flowEngine');
 // IMPORTAR FLUJOS DISPONIBLES
 // ============================================================
 
-const consultaFlow = require('./consultaFlow');
-const encuestaFlow = require('./encuestaFlow');
-const reporteFlow = require('./reporteFlow');
+const firmaFlow = require('./firmaFlow');
+const consultaDocumentosFlow = require('./consultaDocumentosFlow');
 
 // ============================================================
-// CONFIGURACIÓN: QUÉ FLUJOS ESTÁN HABILITADOS
-// Cambiar a false para deshabilitar un flujo
+// CONFIGURACION: QUE FLUJOS ESTAN HABILITADOS
 // ============================================================
 
-/**
- * CONFIGURACIÓN: QUÉ FLUJOS ESTÁN HABILITADOS
- * Cambiar a true para activar un flujo migrado al FlowEngine
- *
- * NOTA: Mientras CONSULTA esté en false, se usa el sistema legacy
- * Activar cuando los tests se actualicen para el nuevo sistema
- */
 const FLUJOS_HABILITADOS = {
-  CONSULTA: true, // Migrado a FlowEngine
-  ENCUESTA: true, // Migrado a FlowEngine
-  REPORTE: true, // Migrado a FlowEngine (refrigerador + vehículo)
+  FIRMA: true,
+  CONSULTA_DOCUMENTOS: true,
 };
 
 // ============================================================
@@ -49,17 +35,15 @@ const FLUJOS_HABILITADOS = {
 
 /**
  * Lista de todos los flujos disponibles
- * Agregar nuevos flujos aquí
  */
 const FLUJOS_DISPONIBLES = {
-  CONSULTA: consultaFlow,
-  ENCUESTA: encuestaFlow,
-  REPORTE: reporteFlow,
+  FIRMA: firmaFlow,
+  CONSULTA_DOCUMENTOS: consultaDocumentosFlow,
 };
 
 /**
  * Inicializa el registro de flujos
- * Llamar al inicio de la aplicación
+ * Llamar al inicio de la aplicacion
  */
 function inicializarFlujos() {
   let registrados = 0;
@@ -82,7 +66,7 @@ function inicializarFlujos() {
 }
 
 /**
- * Verifica si un flujo está habilitado
+ * Verifica si un flujo esta habilitado
  * @param {string} nombre - Nombre del flujo
  * @returns {boolean}
  */
@@ -101,7 +85,7 @@ function listarHabilitados() {
 }
 
 module.exports = {
-  // Configuración
+  // Configuracion
   FLUJOS_HABILITADOS,
   FLUJOS_DISPONIBLES,
 
@@ -113,8 +97,7 @@ module.exports = {
   // Re-exportar registry para acceso directo
   registry,
 
-  // Flujos individuales (para compatibilidad hacia atrás)
-  consultaFlow,
-  encuestaFlow,
-  reporteFlow,
+  // Flujos individuales
+  firmaFlow,
+  consultaDocumentosFlow,
 };

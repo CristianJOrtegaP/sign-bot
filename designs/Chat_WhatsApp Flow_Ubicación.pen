@@ -57,7 +57,7 @@
                   "id": "tfedg",
                   "name": "headerName",
                   "fill": "#FFFFFF",
-                  "content": "AC FixBot",
+                  "content": "Sign Bot",
                   "fontFamily": "Outfit",
                   "fontSize": 16,
                   "fontWeight": "600"
@@ -664,7 +664,7 @@
                   "id": "ysErt",
                   "name": "nameText3",
                   "fill": "#FFFFFF",
-                  "content": "AC FixBot",
+                  "content": "Sign Bot",
                   "fontFamily": "Outfit",
                   "fontSize": 16,
                   "fontWeight": "600"

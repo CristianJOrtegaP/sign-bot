@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Circuit Breaker Pattern
+ * SIGN BOT - Circuit Breaker Pattern
  * Protege contra fallos en cascada de servicios externos
  *
  * Estados:
@@ -286,31 +286,19 @@ function resetAll() {
 // Pre-configurar breakers para servicios conocidos
 const SERVICES = {
   WHATSAPP: 'whatsapp',
-  GEMINI: 'gemini',
-  AZURE_OPENAI: 'azure-openai',
-  AZURE_VISION: 'azure-vision',
+  DOCUSIGN: 'docusign',
   DATABASE: 'database',
   BLOB_STORAGE: 'blob-storage',
 };
 
-// Configuraciones específicas por servicio
+// Configuraciones especificas por servicio
 const SERVICE_CONFIGS = {
   [SERVICES.WHATSAPP]: {
     failureThreshold: 3,
     successThreshold: 1,
-    timeout: 60000, // WhatsApp es crítico, esperar más
+    timeout: 60000, // WhatsApp es critico, esperar mas
   },
-  [SERVICES.GEMINI]: {
-    failureThreshold: 5,
-    successThreshold: 2,
-    timeout: 30000,
-  },
-  [SERVICES.AZURE_OPENAI]: {
-    failureThreshold: 5,
-    successThreshold: 2,
-    timeout: 30000,
-  },
-  [SERVICES.AZURE_VISION]: {
+  [SERVICES.DOCUSIGN]: {
     failureThreshold: 5,
     successThreshold: 2,
     timeout: 30000,

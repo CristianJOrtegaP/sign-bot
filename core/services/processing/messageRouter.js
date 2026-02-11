@@ -1,23 +1,24 @@
 /**
- * AC FIXBOT - Message Router
- * Enruta mensajes de WhatsApp al handler correspondiente según su tipo.
- * Módulo compartido entre el webhook HTTP y el queue processor.
+ * SIGN BOT - Message Router
+ * Enruta mensajes de WhatsApp al handler correspondiente segun su tipo.
+ * Modulo compartido entre el webhook HTTP y el queue processor.
+ *
+ * Sign Bot solo maneja: text, interactive (buttons).
+ * Tipos no soportados (image, audio, location) reciben un mensaje informativo.
  *
  * @module services/processing/messageRouter
  */
 
 const messageHandler = require('../../../bot/controllers/messageHandler');
-const imageHandler = require('../../../bot/controllers/imageHandler');
-const audioHandler = require('../../../bot/controllers/audioHandler');
 const { TimeoutBudget } = require('../../utils/requestTimeout');
 
 /**
- * Procesa un mensaje según su tipo (text, image, audio, interactive, location)
+ * Procesa un mensaje segun su tipo (text, interactive)
  * @param {Object} message - Mensaje completo de WhatsApp
- * @param {string} from - Número de teléfono del remitente
- * @param {string} messageId - ID único del mensaje
+ * @param {string} from - Numero de telefono del remitente
+ * @param {string} messageId - ID unico del mensaje
  * @param {Object} context - Azure Functions context (para logging)
- * @param {Function} log - Función de logging con correlation ID
+ * @param {Function} log - Funcion de logging con correlation ID
  * @param {TimeoutBudget|null} budget - Presupuesto de timeout (opcional)
  */
 async function processMessageByType(message, from, messageId, context, log, budget = null) {
@@ -35,16 +36,6 @@ async function processMessageByType(message, from, messageId, context, log, budg
       break;
     }
 
-    case 'image':
-      log('Imagen recibida');
-      await imageHandler.handleImage(from, message.image, messageId, context);
-      break;
-
-    case 'audio':
-      log('Audio recibido');
-      await audioHandler.handleAudio(from, message.audio, messageId, context);
-      break;
-
     case 'interactive': {
       const buttonReply = message.interactive && message.interactive.button_reply;
       if (buttonReply) {
@@ -54,15 +45,20 @@ async function processMessageByType(message, from, messageId, context, log, budg
       break;
     }
 
-    case 'location': {
-      const location = message.location;
-      log(`Ubicacion recibida: lat=${location?.latitude}, lng=${location?.longitude}`);
-      await messageHandler.handleLocation(from, location, messageId, context);
+    // Sign Bot no procesa imagenes, audio ni ubicacion
+    // Estos tipos reciben una respuesta informativa
+    case 'image':
+    case 'audio':
+    case 'video':
+    case 'document':
+    case 'location':
+    case 'sticker':
+      log(`Tipo de mensaje no soportado por Sign Bot: ${messageType}`);
+      await messageHandler.handleUnsupportedType(from, messageType, messageId, context);
       break;
-    }
 
     default:
-      log(`Tipo de mensaje no manejado: ${messageType}`);
+      log(`Tipo de mensaje desconocido: ${messageType}`);
   }
 }
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# AC FIXBOT - Destruir Infraestructura
+# Sign Bot - Destruir Infraestructura
 # ============================================================================
 # ADVERTENCIA: Elimina TODOS los recursos del ambiente especificado
 #

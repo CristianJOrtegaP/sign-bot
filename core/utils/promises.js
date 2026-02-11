@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Promise Utilities
+ * Sign Bot - Promise Utilities
  * Utilities para manejo de promesas con timeouts y fallbacks
  */
 

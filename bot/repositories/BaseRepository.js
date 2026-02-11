@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - BaseRepository
+ * SIGN BOT - BaseRepository
  * Clase base abstracta para todos los repositorios
  * Define interfaz común y comportamiento compartido
  *

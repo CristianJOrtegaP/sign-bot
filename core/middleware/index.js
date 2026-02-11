@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Exportacion centralizada de middleware
+ * Sign Bot - Exportacion centralizada de middleware
  */
 
 const deduplication = require('./deduplication');

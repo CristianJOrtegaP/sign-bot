@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Graceful Shutdown Handler
+ * Sign Bot - Graceful Shutdown Handler
  * Maneja el cierre ordenado de la aplicación
  *
  * @module utils/gracefulShutdown

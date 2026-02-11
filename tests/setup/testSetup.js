@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Test Setup
+ * Sign Bot - Test Setup
  * Se ejecuta DESPUES del framework de Jest (setupFilesAfterEnv)
  */
 

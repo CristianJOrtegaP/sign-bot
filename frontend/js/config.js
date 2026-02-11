@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Configuration
+ * SIGN BOT - Configuration
  * Configuracion dinamica por ambiente
  */
 
@@ -22,10 +22,10 @@ function detectEnvironment() {
 
 // URLs por ambiente
 const API_URLS = {
-  local: 'http://localhost:7071/api/conversations',
-  dev: 'https://func-acfixbot-dev.azurewebsites.net/api/conversations',
-  tst: 'https://func-acfixbot-tst.azurewebsites.net/api/conversations',
-  prod: 'https://func-acfixbot-prod.azurewebsites.net/api/conversations',
+  local: 'http://localhost:7071/api',
+  dev: 'https://func-signbot-dev.azurewebsites.net/api',
+  tst: 'https://func-signbot-tst.azurewebsites.net/api',
+  prod: 'https://func-signbot-prod.azurewebsites.net/api',
 };
 
 const ENVIRONMENT = detectEnvironment();
@@ -33,16 +33,26 @@ const API_BASE = API_URLS[ENVIRONMENT] || API_URLS.prod;
 
 // Auto-refresh intervals (in milliseconds)
 const REFRESH_INTERVAL_KPIS = 60000; // 60 seconds
+const REFRESH_INTERVAL_DOCUMENTS = 30000; // 30 seconds
 const REFRESH_INTERVAL_CONVERSATIONS = 30000; // 30 seconds
 const REFRESH_INTERVAL_CHAT = 5000; // 5 seconds
+const REFRESH_INTERVAL_METRICS = 120000; // 2 minutes
+const REFRESH_INTERVAL_HEALTH = 60000; // 60 seconds
+
+// Pagination
+const DOCUMENTS_PAGE_SIZE = 20;
 
 // Export for use in other modules
 window.CONFIG = {
   ENVIRONMENT,
   API_BASE,
   REFRESH_INTERVAL_KPIS,
+  REFRESH_INTERVAL_DOCUMENTS,
   REFRESH_INTERVAL_CONVERSATIONS,
   REFRESH_INTERVAL_CHAT,
+  REFRESH_INTERVAL_METRICS,
+  REFRESH_INTERVAL_HEALTH,
+  DOCUMENTS_PAGE_SIZE,
 };
 
 console.log(`[Config] Environment: ${ENVIRONMENT}, API: ${API_BASE}`);

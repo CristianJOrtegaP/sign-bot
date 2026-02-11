@@ -59,7 +59,7 @@ jobs:
         if: inputs.action == 'deploy'
         id: deploy
         run: |
-          DEPLOY_NAME="acfixbot-${{ inputs.environment }}-$(date +%Y%m%d%H%M%S)"
+          DEPLOY_NAME="signbot-${{ inputs.environment }}-$(date +%Y%m%d%H%M%S)"
           echo "deployment_name=$DEPLOY_NAME" >> "$GITHUB_OUTPUT"
           az deployment sub create \
             --location eastus \

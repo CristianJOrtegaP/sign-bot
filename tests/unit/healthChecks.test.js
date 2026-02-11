@@ -1,6 +1,6 @@
 /**
- * Unit Test: Health Check - Redis, Service Bus, Background Processor checks
- * Verifica los checks 11, 12 y 13 agregados al endpoint /api/health
+ * Unit Test: Health Check - Redis, Service Bus, Background Processor, DocuSign checks
+ * Verifica los checks agregados al endpoint /api/health - Sign Bot
  */
 
 // Mock all external dependencies before requiring
@@ -25,7 +25,7 @@ jest.mock('../../core/services/storage/connectionPool', () => {
           { TABLE_NAME: 'SesionesChat' },
           { TABLE_NAME: 'MensajesProcessados' },
           { TABLE_NAME: 'DeadLetterMessages' },
-          { TABLE_NAME: 'Reportes' },
+          { TABLE_NAME: 'DocumentosFirma' },
         ],
       }),
     }));
@@ -47,9 +47,7 @@ jest.mock('../../core/services/infrastructure/circuitBreaker', () => ({
   getBreaker: jest.fn(() => ({ canExecute: () => ({ allowed: true }) })),
   SERVICES: {
     WHATSAPP: 'whatsapp',
-    GEMINI: 'gemini',
-    AZURE_OPENAI: 'azure-openai',
-    AZURE_VISION: 'azure-vision',
+    DOCUSIGN: 'docusign',
     DATABASE: 'database',
     BLOB_STORAGE: 'blob-storage',
   },
@@ -61,7 +59,7 @@ jest.mock('../../core/services/infrastructure/errorHandler', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-// Mock axios for active health checks (WhatsApp/AI) - make them healthy
+// Mock axios for active health checks (WhatsApp) - make them healthy
 jest.mock('axios', () => ({
   get: jest.fn().mockResolvedValue({
     status: 200,
@@ -254,7 +252,7 @@ describe('Health Check - Degraded status propagation', () => {
             { TABLE_NAME: 'SesionesChat' },
             { TABLE_NAME: 'MensajesProcessados' },
             { TABLE_NAME: 'DeadLetterMessages' },
-            { TABLE_NAME: 'Reportes' },
+            { TABLE_NAME: 'DocumentosFirma' },
           ],
         }),
       }));
@@ -262,7 +260,6 @@ describe('Health Check - Degraded status propagation', () => {
     });
     const dlq = require('../../core/services/infrastructure/deadLetterService');
     dlq.getStats.mockResolvedValue({ total: 0, byStatus: {} });
-    // Ensure config check passes (WHATSAPP_TOKEN is checked by health endpoint)
     process.env.WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN || 'test-token';
     context = createMockContext();
     config.redis = { enabled: true };

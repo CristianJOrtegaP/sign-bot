@@ -1,13 +1,13 @@
 /**
- * AC FIXBOT - Queue Message Processor
- * Service Bus trigger que procesa mensajes de WhatsApp de forma asíncrona.
- * Desacopla la recepción del webhook del procesamiento de mensajes.
+ * SIGN BOT - Queue Message Processor
+ * Service Bus trigger que procesa mensajes de WhatsApp de forma asincrona.
+ * Desacopla la recepcion del webhook del procesamiento de mensajes.
  *
  * Flujo:
- * 1. Webhook recibe mensaje → valida firma → dedup → encola en Service Bus
- * 2. Este trigger lee de la cola → restaura correlationId → procesa el mensaje
- * 3. Si falla → Azure Functions abandona el mensaje (vuelve a la cola)
- * 4. Si excede maxDeliveryCount → Azure lo mueve a DLQ nativo
+ * 1. Webhook recibe mensaje -> valida firma -> dedup -> encola en Service Bus
+ * 2. Este trigger lee de la cola -> restaura correlationId -> procesa el mensaje
+ * 3. Si falla -> Azure Functions abandona el mensaje (vuelve a la cola)
+ * 4. Si excede maxDeliveryCount -> Azure lo mueve a DLQ nativo
  */
 
 const appInsights = require('../core/services/infrastructure/appInsightsService');
@@ -45,7 +45,7 @@ module.exports = async function (context, queueMessage) {
     `Queue processor: mensaje recibido | From: ${payload.from} | Type: ${payload.message?.type} | MsgID: ${payload.messageId}`
   );
 
-  // Timeout wrapper para evitar que un mensaje cuelgue la función
+  // Timeout wrapper para evitar que un mensaje cuelgue la funcion
   const timeoutPromise = new Promise((_resolve, reject) => {
     setTimeout(
       () => reject(new Error('Processing timeout exceeded (4 min)')),
@@ -63,7 +63,7 @@ module.exports = async function (context, queueMessage) {
     ]);
 
     log('Queue processor: mensaje procesado exitosamente');
-    // autoCompleteMessages=true en host.json → Azure Functions completa el mensaje
+    // autoCompleteMessages=true en host.json -> Azure Functions completa el mensaje
   } catch (error) {
     logError('Queue processor: error procesando mensaje', error);
 
@@ -85,7 +85,7 @@ module.exports = async function (context, queueMessage) {
       logError('Queue processor: error guardando en DLQ', dlqError);
     }
 
-    // Re-throw para que Azure Functions abandone el mensaje (reintento automático)
+    // Re-throw para que Azure Functions abandone el mensaje (reintento automatico)
     throw error;
   }
 };

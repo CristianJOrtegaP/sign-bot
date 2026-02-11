@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Middleware de Deduplicacion
+ * Sign Bot - Middleware de Deduplicacion
  * Previene el procesamiento de mensajes duplicados
  */
 
@@ -11,10 +11,10 @@ const rateLimiter = require('../services/infrastructure/rateLimiter');
  * @returns {boolean} - true si es duplicado
  */
 function isDuplicateInMemory(messageId) {
-    if (!messageId) {
-        return false;
-    }
-    return rateLimiter.isDuplicateMessage(messageId);
+  if (!messageId) {
+    return false;
+  }
+  return rateLimiter.isDuplicateMessage(messageId);
 }
 
 /**
@@ -24,15 +24,15 @@ function isDuplicateInMemory(messageId) {
  * @returns {Promise<boolean>} - true si es duplicado
  */
 async function isDuplicateInDatabase(db, messageId) {
-    if (!messageId) {
-        return false;
-    }
-    try {
-        return await db.isMessageProcessed(messageId);
-    } catch (_error) {
-        // En caso de error, retornar false para no bloquear mensajes legitimos
-        return false;
-    }
+  if (!messageId) {
+    return false;
+  }
+  try {
+    return await db.isMessageProcessed(messageId);
+  } catch (_error) {
+    // En caso de error, retornar false para no bloquear mensajes legitimos
+    return false;
+  }
 }
 
 /**
@@ -44,26 +44,26 @@ async function isDuplicateInDatabase(db, messageId) {
  * @returns {Promise<{isDuplicate: boolean, source: string|null}>}
  */
 async function checkDuplicate(db, messageId, options = {}) {
-    const { skipDatabaseCheck = false } = options;
+  const { skipDatabaseCheck = false } = options;
 
-    // 1. Verificar en memoria (rapido)
-    if (isDuplicateInMemory(messageId)) {
-        return { isDuplicate: true, source: 'memory' };
+  // 1. Verificar en memoria (rapido)
+  if (isDuplicateInMemory(messageId)) {
+    return { isDuplicate: true, source: 'memory' };
+  }
+
+  // 2. Verificar en BD (robusto, compartido entre instancias)
+  if (!skipDatabaseCheck) {
+    const isDuplicateDB = await isDuplicateInDatabase(db, messageId);
+    if (isDuplicateDB) {
+      return { isDuplicate: true, source: 'database' };
     }
+  }
 
-    // 2. Verificar en BD (robusto, compartido entre instancias)
-    if (!skipDatabaseCheck) {
-        const isDuplicateDB = await isDuplicateInDatabase(db, messageId);
-        if (isDuplicateDB) {
-            return { isDuplicate: true, source: 'database' };
-        }
-    }
-
-    return { isDuplicate: false, source: null };
+  return { isDuplicate: false, source: null };
 }
 
 module.exports = {
-    isDuplicateInMemory,
-    isDuplicateInDatabase,
-    checkDuplicate
+  isDuplicateInMemory,
+  isDuplicateInDatabase,
+  checkDuplicate,
 };

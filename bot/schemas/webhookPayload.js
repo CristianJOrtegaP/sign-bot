@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Schema de Validacion para Webhook de WhatsApp
+ * SIGN BOT - Schema de Validacion para Webhook de WhatsApp
  */
 
 const { z } = require('zod');

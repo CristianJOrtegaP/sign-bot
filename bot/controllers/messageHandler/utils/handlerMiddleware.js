@@ -1,6 +1,6 @@
 /**
- * AC FIXBOT - Middleware compartido para Handlers
- * Elimina duplicación de rate limiting y reactivación de sesión
+ * SIGN BOT - Middleware compartido para Handlers
+ * Rate limiting y reactivacion de sesion
  */
 
 const whatsapp = require('../../../../core/services/external/whatsappService');

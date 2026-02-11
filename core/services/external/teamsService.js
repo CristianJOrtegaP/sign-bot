@@ -1,6 +1,6 @@
 /**
- * AC FIXBOT - Servicio de Integración con Microsoft Teams
- * Envía notificaciones de conversaciones a canales de Teams via Webhook
+ * SIGN BOT - Servicio de Integracion con Microsoft Teams
+ * Envia notificaciones de documentos y firma a canales de Teams via Webhook
  */
 
 const https = require('https');
@@ -11,34 +11,38 @@ const { logger } = require('../infrastructure/errorHandler');
 
 /**
  * URL del Incoming Webhook de Teams
- * Configurar en: Teams > Canal > Conectores > Incoming Webhook
+ * Se obtiene de config.teams.webhookUrl (que lee TEAMS_WEBHOOK_URL del entorno)
  */
-const TEAMS_WEBHOOK_URL = process.env.TEAMS_WEBHOOK_URL || config.teams?.webhookUrl || null;
+function getWebhookUrl() {
+  return config.teams?.webhookUrl || null;
+}
 
 /**
- * Colores para diferentes tipos de notificación
+ * Colores para diferentes tipos de notificacion
  */
 const COLORS = {
   INFO: '0078D4', // Azul Teams
   SUCCESS: '00A86B', // Verde
   WARNING: 'FFA500', // Naranja
   ERROR: 'D13438', // Rojo
-  CONVERSATION: '6264A7', // Morado Teams
+  SIGNING: '6264A7', // Morado Teams
 };
 
 /**
- * Envía un mensaje a Teams via Incoming Webhook
- * @param {Object} card - Adaptive Card para Teams
- * @returns {Promise<boolean>} - true si se envió correctamente
+ * Envia un mensaje a Teams via Incoming Webhook
+ * @param {Object} card - MessageCard para Teams
+ * @returns {Promise<boolean>} - true si se envio correctamente
  */
 async function sendToTeams(card) {
-  if (!TEAMS_WEBHOOK_URL) {
-    logger.debug('[TeamsService] Webhook URL no configurado, omitiendo notificación');
+  const webhookUrl = getWebhookUrl();
+
+  if (!webhookUrl) {
+    logger.debug('[TeamsService] Webhook URL no configurado, omitiendo notificacion');
     return false;
   }
 
   try {
-    const url = new URL(TEAMS_WEBHOOK_URL);
+    const url = new URL(webhookUrl);
     const isHttps = url.protocol === 'https:';
     const httpModule = isHttps ? https : http;
 
@@ -63,7 +67,7 @@ async function sendToTeams(card) {
         });
         res.on('end', () => {
           if (res.statusCode >= 200 && res.statusCode < 300) {
-            logger.debug('[TeamsService] Notificación enviada a Teams');
+            logger.debug('[TeamsService] Notificacion enviada a Teams');
             resolve(true);
           } else {
             logger.warn(`[TeamsService] Error HTTP ${res.statusCode}: ${data}`);
@@ -92,119 +96,21 @@ async function sendToTeams(card) {
   }
 }
 
-/**
- * Notifica una nueva conversación iniciada
- * @param {string} telefono - Número del usuario
- * @param {string} tipoReporte - VEHICULO, REFRIGERADOR, etc.
- * @param {string} mensaje - Primer mensaje del usuario
- */
-async function notifyNewConversation(telefono, tipoReporte, mensaje = '') {
-  const card = {
-    '@type': 'MessageCard',
-    '@context': 'http://schema.org/extensions',
-    themeColor: COLORS.CONVERSATION,
-    summary: `Nueva conversación: ${tipoReporte || 'Inicio'}`,
-    sections: [
-      {
-        activityTitle: '💬 Nueva Conversación',
-        activitySubtitle: new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' }),
-        facts: [
-          { name: '📱 Usuario', value: maskPhone(telefono) },
-          { name: '🔧 Tipo', value: tipoReporte || 'Por definir' },
-        ],
-        text: mensaje ? `**Mensaje:** ${truncate(mensaje, 200)}` : '',
-        markdown: true,
-      },
-    ],
-  };
-
-  return sendToTeams(card);
-}
-
-/**
- * Notifica un mensaje de usuario en una conversación activa
- * @param {string} telefono - Número del usuario
- * @param {string} tipo - 'U' usuario, 'B' bot
- * @param {string} mensaje - Contenido del mensaje
- * @param {Object} contexto - Contexto adicional (estado, tipoReporte, etc.)
- */
-async function notifyMessage(telefono, tipo, mensaje, contexto = {}) {
-  const esUsuario = tipo === 'U';
-  const emoji = esUsuario ? '👤' : '🤖';
-  const quien = esUsuario ? 'Usuario' : 'Bot';
-
-  const card = {
-    '@type': 'MessageCard',
-    '@context': 'http://schema.org/extensions',
-    themeColor: esUsuario ? COLORS.INFO : COLORS.SUCCESS,
-    summary: `${quien}: ${truncate(mensaje, 50)}`,
-    sections: [
-      {
-        activityTitle: `${emoji} ${quien}`,
-        activitySubtitle: `${maskPhone(telefono)} • ${new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })}`,
-        facts: [
-          { name: 'Estado', value: contexto.estado || 'N/A' },
-          { name: 'Tipo', value: contexto.tipoReporte || 'N/A' },
-        ],
-        text: truncate(mensaje, 500),
-        markdown: true,
-      },
-    ],
-  };
-
-  return sendToTeams(card);
-}
-
-/**
- * Notifica un ticket/reporte creado
- * @param {string} telefono - Número del usuario
- * @param {string} tipoReporte - Tipo de reporte
- * @param {string} ticketId - ID del ticket creado
- * @param {Object} datos - Datos del reporte
- */
-async function notifyTicketCreated(telefono, tipoReporte, ticketId, datos = {}) {
-  const facts = [
-    { name: '📱 Usuario', value: maskPhone(telefono) },
-    { name: '🎫 Ticket', value: ticketId || 'N/A' },
-    { name: '🔧 Tipo', value: tipoReporte || 'N/A' },
-  ];
-
-  if (datos.codigoSAP) {
-    facts.push({ name: '📦 SAP', value: datos.codigoSAP });
-  }
-  if (datos.problema) {
-    facts.push({ name: '⚠️ Problema', value: truncate(datos.problema, 100) });
-  }
-
-  const card = {
-    '@type': 'MessageCard',
-    '@context': 'http://schema.org/extensions',
-    themeColor: COLORS.SUCCESS,
-    summary: `✅ Ticket creado: ${ticketId}`,
-    sections: [
-      {
-        activityTitle: '✅ Ticket Creado',
-        activitySubtitle: new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' }),
-        facts,
-        markdown: true,
-      },
-    ],
-  };
-
-  return sendToTeams(card);
-}
+// ============================================================================
+// NOTIFICACIONES GENERICAS
+// ============================================================================
 
 /**
  * Notifica un error o problema
- * @param {string} titulo - Título del error
- * @param {string} descripcion - Descripción del error
+ * @param {string} titulo - Titulo del error
+ * @param {string} descripcion - Descripcion del error
  * @param {Object} contexto - Contexto adicional
  */
 async function notifyError(titulo, descripcion, contexto = {}) {
   const facts = [];
 
   if (contexto.telefono) {
-    facts.push({ name: '📱 Usuario', value: maskPhone(contexto.telefono) });
+    facts.push({ name: 'Usuario', value: maskPhone(contexto.telefono) });
   }
   if (contexto.estado) {
     facts.push({ name: 'Estado', value: contexto.estado });
@@ -217,11 +123,11 @@ async function notifyError(titulo, descripcion, contexto = {}) {
     '@type': 'MessageCard',
     '@context': 'http://schema.org/extensions',
     themeColor: COLORS.ERROR,
-    summary: `❌ Error: ${titulo}`,
+    summary: `Error: ${titulo}`,
     sections: [
       {
-        activityTitle: `❌ ${titulo}`,
-        activitySubtitle: new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' }),
+        activityTitle: titulo,
+        activitySubtitle: formatTimestamp(),
         facts: facts.length > 0 ? facts : undefined,
         text: descripcion,
         markdown: true,
@@ -232,40 +138,38 @@ async function notifyError(titulo, descripcion, contexto = {}) {
   return sendToTeams(card);
 }
 
-/**
- * Notifica análisis de AI Vision completado
- * @param {string} telefono - Número del usuario
- * @param {Object} analisis - Resultado del análisis AI
- */
-async function notifyAIVisionAnalysis(telefono, analisis = {}) {
-  const facts = [{ name: '📱 Usuario', value: maskPhone(telefono) }];
+// ============================================================================
+// NOTIFICACIONES DE SIGN BOT (FIRMA DIGITAL)
+// ============================================================================
 
-  if (analisis.tipo_equipo) {
-    facts.push({ name: '🔧 Equipo', value: analisis.tipo_equipo });
-  }
-  if (analisis.codigo_sap) {
-    facts.push({ name: '📦 SAP', value: analisis.codigo_sap });
-  }
-  if (analisis.numero_empleado) {
-    facts.push({ name: '👤 Empleado', value: analisis.numero_empleado });
-  }
-  if (analisis.problema) {
-    facts.push({ name: '⚠️ Problema', value: truncate(analisis.problema, 100) });
+/**
+ * Notifica que un cliente rechazo un documento
+ * @param {Object} documento - Datos del documento { nombreDocumento, clienteTelefono, clienteNombre, envelopeId }
+ * @param {string} motivoRechazo - Motivo del rechazo proporcionado por el cliente
+ * @returns {Promise<boolean>}
+ */
+async function notifyDocumentRejected(documento, motivoRechazo) {
+  const facts = [
+    { name: 'Documento', value: documento.nombreDocumento || 'N/A' },
+    { name: 'Cliente', value: documento.clienteNombre || maskPhone(documento.clienteTelefono) },
+    { name: 'Telefono', value: maskPhone(documento.clienteTelefono) },
+    { name: 'Motivo', value: truncate(motivoRechazo, 200) || 'No especificado' },
+  ];
+
+  if (documento.envelopeId) {
+    facts.push({ name: 'Envelope', value: documento.envelopeId });
   }
 
   const card = {
     '@type': 'MessageCard',
     '@context': 'http://schema.org/extensions',
-    themeColor: COLORS.INFO,
-    summary: `🤖 AI Vision: ${analisis.tipo_equipo || 'Análisis'}`,
+    themeColor: COLORS.ERROR,
+    summary: `Documento rechazado: ${documento.nombreDocumento || 'N/A'}`,
     sections: [
       {
-        activityTitle: '🤖 Análisis AI Vision',
-        activitySubtitle: new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' }),
+        activityTitle: 'Documento Rechazado',
+        activitySubtitle: formatTimestamp(),
         facts,
-        text: analisis.informacion_visual
-          ? `**Lo detectado:** ${truncate(analisis.informacion_visual, 200)}`
-          : '',
         markdown: true,
       },
     ],
@@ -275,27 +179,135 @@ async function notifyAIVisionAnalysis(telefono, analisis = {}) {
 }
 
 /**
- * Notifica resumen diario de actividad
- * @param {Object} metricas - Métricas del día
+ * Notifica que un cliente firmo un documento exitosamente
+ * @param {Object} documento - Datos del documento { nombreDocumento, clienteTelefono, clienteNombre, envelopeId }
+ * @returns {Promise<boolean>}
+ */
+async function notifyDocumentSigned(documento) {
+  const facts = [
+    { name: 'Documento', value: documento.nombreDocumento || 'N/A' },
+    { name: 'Cliente', value: documento.clienteNombre || maskPhone(documento.clienteTelefono) },
+    { name: 'Telefono', value: maskPhone(documento.clienteTelefono) },
+  ];
+
+  if (documento.envelopeId) {
+    facts.push({ name: 'Envelope', value: documento.envelopeId });
+  }
+
+  const card = {
+    '@type': 'MessageCard',
+    '@context': 'http://schema.org/extensions',
+    themeColor: COLORS.SUCCESS,
+    summary: `Documento firmado: ${documento.nombreDocumento || 'N/A'}`,
+    sections: [
+      {
+        activityTitle: 'Documento Firmado',
+        activitySubtitle: formatTimestamp(),
+        facts,
+        markdown: true,
+      },
+    ],
+  };
+
+  return sendToTeams(card);
+}
+
+/**
+ * Notifica que un documento lleva varios dias pendiente de firma
+ * @param {Object} documento - Datos del documento { nombreDocumento, clienteTelefono, clienteNombre, envelopeId }
+ * @param {number} diasPendientes - Numero de dias que lleva pendiente
+ * @returns {Promise<boolean>}
+ */
+async function notifyPendingReminder(documento, diasPendientes) {
+  const facts = [
+    { name: 'Documento', value: documento.nombreDocumento || 'N/A' },
+    { name: 'Cliente', value: documento.clienteNombre || maskPhone(documento.clienteTelefono) },
+    { name: 'Telefono', value: maskPhone(documento.clienteTelefono) },
+    { name: 'Dias pendiente', value: String(diasPendientes) },
+  ];
+
+  if (documento.envelopeId) {
+    facts.push({ name: 'Envelope', value: documento.envelopeId });
+  }
+
+  const card = {
+    '@type': 'MessageCard',
+    '@context': 'http://schema.org/extensions',
+    themeColor: COLORS.WARNING,
+    summary: `Documento pendiente (${diasPendientes} dias): ${documento.nombreDocumento || 'N/A'}`,
+    sections: [
+      {
+        activityTitle: `Documento Pendiente de Firma (${diasPendientes} dias)`,
+        activitySubtitle: formatTimestamp(),
+        facts,
+        markdown: true,
+      },
+    ],
+  };
+
+  return sendToTeams(card);
+}
+
+/**
+ * Notifica un error al procesar un documento
+ * @param {Object} documento - Datos del documento { nombreDocumento, clienteTelefono, clienteNombre, envelopeId }
+ * @param {string|Error} error - Error ocurrido
+ * @returns {Promise<boolean>}
+ */
+async function notifyDocumentError(documento, error) {
+  const errorMessage = typeof error === 'string' ? error : error?.message || 'Error desconocido';
+
+  const facts = [
+    { name: 'Documento', value: documento.nombreDocumento || 'N/A' },
+    { name: 'Cliente', value: documento.clienteNombre || maskPhone(documento.clienteTelefono) },
+    { name: 'Telefono', value: maskPhone(documento.clienteTelefono) },
+    { name: 'Error', value: truncate(errorMessage, 200) },
+  ];
+
+  if (documento.envelopeId) {
+    facts.push({ name: 'Envelope', value: documento.envelopeId });
+  }
+
+  const card = {
+    '@type': 'MessageCard',
+    '@context': 'http://schema.org/extensions',
+    themeColor: COLORS.ERROR,
+    summary: `Error en documento: ${documento.nombreDocumento || 'N/A'}`,
+    sections: [
+      {
+        activityTitle: 'Error Procesando Documento',
+        activitySubtitle: formatTimestamp(),
+        facts,
+        markdown: true,
+      },
+    ],
+  };
+
+  return sendToTeams(card);
+}
+
+/**
+ * Notifica resumen diario de actividad de Sign Bot
+ * @param {Object} metricas - Metricas del dia
  */
 async function notifyDailySummary(metricas = {}) {
   const card = {
     '@type': 'MessageCard',
     '@context': 'http://schema.org/extensions',
     themeColor: COLORS.INFO,
-    summary: '📊 Resumen Diario AC FIXBOT',
+    summary: 'Resumen Diario Sign Bot',
     sections: [
       {
-        activityTitle: '📊 Resumen Diario',
+        activityTitle: 'Resumen Diario',
         activitySubtitle: new Date().toLocaleDateString('es-MX', {
           timeZone: 'America/Mexico_City',
         }),
         facts: [
-          { name: '💬 Conversaciones', value: String(metricas.totalConversaciones || 0) },
-          { name: '✅ Tickets Creados', value: String(metricas.ticketsCreados || 0) },
-          { name: '🚗 Vehículos', value: String(metricas.vehiculos || 0) },
-          { name: '❄️ Refrigeradores', value: String(metricas.refrigeradores || 0) },
-          { name: '❌ Errores', value: String(metricas.errores || 0) },
+          { name: 'Documentos enviados', value: String(metricas.documentosEnviados || 0) },
+          { name: 'Documentos firmados', value: String(metricas.documentosFirmados || 0) },
+          { name: 'Documentos rechazados', value: String(metricas.documentosRechazados || 0) },
+          { name: 'Documentos pendientes', value: String(metricas.documentosPendientes || 0) },
+          { name: 'Errores', value: String(metricas.errores || 0) },
         ],
         markdown: true,
       },
@@ -305,10 +317,22 @@ async function notifyDailySummary(metricas = {}) {
   return sendToTeams(card);
 }
 
+// ============================================================================
+// FUNCIONES UTILITARIAS
+// ============================================================================
+
 /**
- * Enmascara un número de teléfono para privacidad
- * @param {string} telefono - Número completo
- * @returns {string} - Número enmascarado (ej: 52***1234)
+ * Formatea timestamp para Mexico City
+ * @returns {string}
+ */
+function formatTimestamp() {
+  return new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
+}
+
+/**
+ * Enmascara un numero de telefono para privacidad
+ * @param {string} telefono - Numero completo
+ * @returns {string} - Numero enmascarado (ej: 52***1234)
  */
 function maskPhone(telefono) {
   if (!telefono || telefono.length < 8) {
@@ -320,9 +344,9 @@ function maskPhone(telefono) {
 }
 
 /**
- * Trunca texto a un máximo de caracteres
+ * Trunca texto a un maximo de caracteres
  * @param {string} text - Texto original
- * @param {number} maxLength - Longitud máxima
+ * @param {number} maxLength - Longitud maxima
  * @returns {string} - Texto truncado
  */
 function truncate(text, maxLength = 200) {
@@ -336,20 +360,20 @@ function truncate(text, maxLength = 200) {
 }
 
 /**
- * Verifica si el servicio está configurado
+ * Verifica si el servicio esta configurado
  * @returns {boolean}
  */
 function isConfigured() {
-  return Boolean(TEAMS_WEBHOOK_URL);
+  return Boolean(getWebhookUrl());
 }
 
 module.exports = {
   sendToTeams,
-  notifyNewConversation,
-  notifyMessage,
-  notifyTicketCreated,
   notifyError,
-  notifyAIVisionAnalysis,
+  notifyDocumentRejected,
+  notifyDocumentSigned,
+  notifyPendingReminder,
+  notifyDocumentError,
   notifyDailySummary,
   isConfigured,
   COLORS,

@@ -1,5 +1,5 @@
 // ==============================================================================
-// AC FIXBOT - Application Insights Module
+// Sign Bot - Application Insights Module
 // Application Insights + Log Analytics Workspace
 // ==============================================================================
 
@@ -20,7 +20,7 @@ param environment string
 param retentionInDays int = environment == 'prod' ? 90 : environment == 'tst' ? 60 : 30
 
 var tags = {
-  project: 'acfixbot'
+  project: 'signbot'
   environment: environment
 }
 

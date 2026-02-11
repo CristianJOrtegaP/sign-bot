@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - FlowEngine
+ * Sign Bot - FlowEngine
  * Motor de flujos para el bot
  *
  * ## Arquitectura de Contextos

@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Alerting Service (FASE 2)
+ * Sign Bot - Alerting Service (FASE 2)
  * Sistema de alertas configurable para monitoreo proactivo
  *
  * Características:
@@ -113,7 +113,7 @@ function createAlert(severity, type, message, details = {}) {
     details,
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
-    service: 'acfixbot',
+    service: 'signbot',
   };
 }
 
@@ -169,7 +169,7 @@ function formatWebhookPayload(alert) {
           { title: 'Environment', value: alert.environment, short: true },
           { title: 'Timestamp', value: alert.timestamp, short: false },
         ],
-        footer: 'AC FixBot Monitoring',
+        footer: 'Sign Bot Monitoring',
       },
     ],
   };

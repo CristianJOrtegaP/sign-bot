@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Application Insights Integration
+ * Sign Bot - Application Insights Integration
  * Inicializa el SDK y exporta cliente para custom tracking
  *
  * FASE 10/10: Observabilidad real con Azure Application Insights
@@ -54,7 +54,7 @@ function initialize() {
     isInitialized = true;
 
     // Agregar propiedades globales
-    client.context.tags[client.context.keys.cloudRole] = 'acfixbot';
+    client.context.tags[client.context.keys.cloudRole] = 'signbot';
     client.context.tags[client.context.keys.cloudRoleInstance] =
       process.env.WEBSITE_INSTANCE_ID || 'local';
 

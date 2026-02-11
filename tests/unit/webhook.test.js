@@ -1,6 +1,6 @@
 /**
  * Unit Test: Webhook Principal (api-whatsapp-webhook/index.js)
- * Verifica routing, deduplicación, firma y Dead Letter Queue
+ * Verifica routing, deduplicacion, firma y Dead Letter Queue - Sign Bot
  */
 
 // Mocks de dependencias
@@ -19,13 +19,6 @@ jest.mock('../../core/services/infrastructure/metricsService', () =>
 jest.mock('../../bot/controllers/messageHandler', () => ({
   handleText: jest.fn().mockResolvedValue(undefined),
   handleButton: jest.fn().mockResolvedValue(undefined),
-  handleLocation: jest.fn().mockResolvedValue(undefined),
-}));
-jest.mock('../../bot/controllers/imageHandler', () => ({
-  handleImage: jest.fn().mockResolvedValue(undefined),
-}));
-jest.mock('../../bot/controllers/audioHandler', () => ({
-  handleAudio: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../../core/services/infrastructure/rateLimiter', () => ({
   isDuplicateMessage: jest.fn(() => false),
@@ -44,8 +37,6 @@ jest.mock('../../core/services/infrastructure/deadLetterService', () => ({
 
 const webhook = require('../../api-whatsapp-webhook');
 const messageHandler = require('../../bot/controllers/messageHandler');
-const imageHandler = require('../../bot/controllers/imageHandler');
-const audioHandler = require('../../bot/controllers/audioHandler');
 const rateLimiter = require('../../core/services/infrastructure/rateLimiter');
 const security = require('../../core/services/infrastructure/securityService');
 const db = require('../../core/services/storage/databaseService');
@@ -58,7 +49,6 @@ describe('Webhook Principal', () => {
   beforeEach(() => {
     context = global.createMockContext();
     jest.clearAllMocks();
-    // Re-establecer implementaciones (clearAllMocks solo limpia contadores, NO restaura implementaciones)
     rateLimiter.isDuplicateMessage.mockReturnValue(false);
     security.verifyWebhookSignature.mockReturnValue(true);
     db.registerMessageAtomic.mockResolvedValue({ isDuplicate: false, retryCount: 0 });
@@ -66,15 +56,12 @@ describe('Webhook Principal', () => {
     deadLetter.saveFailedMessage.mockResolvedValue(undefined);
     messageHandler.handleText.mockResolvedValue(undefined);
     messageHandler.handleButton.mockResolvedValue(undefined);
-    messageHandler.handleLocation.mockResolvedValue(undefined);
-    imageHandler.handleImage.mockResolvedValue(undefined);
-    audioHandler.handleAudio.mockResolvedValue(undefined);
   });
 
   // ===========================================================
   // VERIFICACION GET
   // ===========================================================
-  describe('GET - Verificación del webhook', () => {
+  describe('GET - Verificacion del webhook', () => {
     test('debe verificar webhook con token correcto y retornar challenge', async () => {
       const req = payloads.createVerificationRequest('test-verify-token', '9876543');
 
@@ -111,14 +98,14 @@ describe('Webhook Principal', () => {
   // ===========================================================
   describe('POST - Routing por tipo de mensaje', () => {
     test('debe rutear mensaje de texto a messageHandler.handleText', async () => {
-      const body = payloads.createTextMessage('Hola');
+      const body = payloads.createTextMessage('mis documentos');
       const req = { method: 'POST', body, headers: {} };
 
       await webhook(context, req);
 
       expect(messageHandler.handleText).toHaveBeenCalledWith(
         '+5215512345678',
-        'Hola',
+        'mis documentos',
         expect.any(String),
         expect.any(Object),
         null,
@@ -127,57 +114,29 @@ describe('Webhook Principal', () => {
       expect(context.res.status).toBe(200);
     });
 
-    test('debe rutear imagen a imageHandler.handleImage', async () => {
-      const body = payloads.createImageMessage('media-456');
-      const req = { method: 'POST', body, headers: {} };
-
-      await webhook(context, req);
-
-      expect(imageHandler.handleImage).toHaveBeenCalledWith(
-        '+5215512345678',
-        expect.objectContaining({ id: 'media-456' }),
-        expect.any(String),
-        expect.any(Object)
-      );
-    });
-
-    test('debe rutear audio a audioHandler.handleAudio', async () => {
-      const body = payloads.createAudioMessage('audio-789');
-      const req = { method: 'POST', body, headers: {} };
-
-      await webhook(context, req);
-
-      expect(audioHandler.handleAudio).toHaveBeenCalledWith(
-        '+5215512345678',
-        expect.objectContaining({ id: 'audio-789' }),
-        expect.any(String),
-        expect.any(Object)
-      );
-    });
-
-    test('debe rutear botón interactivo a messageHandler.handleButton', async () => {
-      const body = payloads.createButtonResponse('btn_tipo_refrigerador');
+    test('debe rutear boton interactivo a messageHandler.handleButton', async () => {
+      const body = payloads.createButtonResponse('btn_ver_documentos');
       const req = { method: 'POST', body, headers: {} };
 
       await webhook(context, req);
 
       expect(messageHandler.handleButton).toHaveBeenCalledWith(
         '+5215512345678',
-        'btn_tipo_refrigerador',
+        'btn_ver_documentos',
         expect.any(String),
         expect.any(Object)
       );
     });
 
-    test('debe rutear ubicación a messageHandler.handleLocation', async () => {
-      const body = payloads.createLocationMessage(19.43, -99.13);
+    test('debe rutear boton de rechazo correctamente', async () => {
+      const body = payloads.createButtonResponse('btn_rechazar');
       const req = { method: 'POST', body, headers: {} };
 
       await webhook(context, req);
 
-      expect(messageHandler.handleLocation).toHaveBeenCalledWith(
+      expect(messageHandler.handleButton).toHaveBeenCalledWith(
         '+5215512345678',
-        expect.objectContaining({ latitude: 19.43, longitude: -99.13 }),
+        'btn_rechazar',
         expect.any(String),
         expect.any(Object)
       );
@@ -187,7 +146,7 @@ describe('Webhook Principal', () => {
   // ===========================================================
   // DEDUPLICACION
   // ===========================================================
-  describe('POST - Deduplicación de mensajes', () => {
+  describe('POST - Deduplicacion de mensajes', () => {
     test('debe ignorar mensaje duplicado en memoria', async () => {
       rateLimiter.isDuplicateMessage.mockReturnValue(true);
       const body = payloads.createTextMessage('Hola', '+5215512345678', 'dup-msg-1');
@@ -263,7 +222,7 @@ describe('Webhook Principal', () => {
       expect(context.res.status).toBe(200);
     });
 
-    test('debe actualizar nombre de usuario si está en el payload', async () => {
+    test('debe actualizar nombre de usuario si esta en el payload', async () => {
       const body = payloads.createTextMessage('Hola');
       const req = { method: 'POST', body, headers: {} };
 
@@ -271,13 +230,23 @@ describe('Webhook Principal', () => {
 
       expect(db.updateUserName).toHaveBeenCalledWith('+5215512345678', 'Test User');
     });
+
+    test('debe ignorar callback de template status', async () => {
+      const body = payloads.createTemplateStatusCallback('wamid.tmpl_1', 'delivered');
+      const req = { method: 'POST', body, headers: {} };
+
+      await webhook(context, req);
+
+      expect(messageHandler.handleText).not.toHaveBeenCalled();
+      expect(context.res.status).toBe(200);
+    });
   });
 
   // ===========================================================
   // VALIDACION DE FIRMA
   // ===========================================================
-  describe('POST - Validación de firma', () => {
-    test('debe rechazar firma inválida en ambiente de producción', async () => {
+  describe('POST - Validacion de firma', () => {
+    test('debe rechazar firma invalida en ambiente de produccion', async () => {
       const originalEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
       const originalSkip = process.env.SKIP_SIGNATURE_VALIDATION;
       process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
@@ -289,7 +258,6 @@ describe('Webhook Principal', () => {
 
       // Re-require para captar env changes
       jest.resetModules();
-      // Restaurar mocks tras resetModules
       jest.mock('../../core/services/infrastructure/appInsightsService', () =>
         require('../__mocks__/appInsightsService.mock')
       );
@@ -305,13 +273,6 @@ describe('Webhook Principal', () => {
       jest.mock('../../bot/controllers/messageHandler', () => ({
         handleText: jest.fn().mockResolvedValue(undefined),
         handleButton: jest.fn().mockResolvedValue(undefined),
-        handleLocation: jest.fn().mockResolvedValue(undefined),
-      }));
-      jest.mock('../../bot/controllers/imageHandler', () => ({
-        handleImage: jest.fn().mockResolvedValue(undefined),
-      }));
-      jest.mock('../../bot/controllers/audioHandler', () => ({
-        handleAudio: jest.fn().mockResolvedValue(undefined),
       }));
       jest.mock('../../core/services/infrastructure/rateLimiter', () => ({
         isDuplicateMessage: jest.fn(() => false),

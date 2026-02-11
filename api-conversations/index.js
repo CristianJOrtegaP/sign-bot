@@ -1,16 +1,16 @@
 /**
- * AC FIXBOT - Conversations API
+ * SIGN BOT - Conversations API
  * API REST para gestionar conversaciones y handoff a agente humano
- * (El dashboard visual está en /api/dashboard)
+ * (El dashboard visual esta en /api/dashboard)
  *
  * Endpoints GET:
  * - /api/conversations/list (lista de conversaciones)
  * - /api/conversations/chat/{telefono} (historial de un usuario)
- * - /api/conversations/search/{query} (buscar por teléfono)
+ * - /api/conversations/search/{query} (buscar por telefono)
  * - /api/conversations/kpis (datos para dashboard de KPIs)
  *
  * Endpoints POST:
- * - /api/conversations/takeover/{telefono} (agente toma la conversación)
+ * - /api/conversations/takeover/{telefono} (agente toma la conversacion)
  * - /api/conversations/release/{telefono} (devolver al bot)
  * - /api/conversations/send/{telefono} (enviar mensaje como agente)
  */
@@ -26,7 +26,7 @@ const {
 } = require('../bot/constants/sessionStates');
 
 /**
- * Obtiene lista de conversaciones activas (agrupadas por teléfono)
+ * Obtiene lista de conversaciones activas (agrupadas por telefono)
  */
 async function getConversationsList(limit = 50, offset = 0) {
   const pool = await connectionPool.getPool();
@@ -36,7 +36,6 @@ async function getConversationsList(limit = 50, offset = 0) {
         s.Telefono,
         s.NombreUsuario,
         ce.Codigo AS Estado,
-        s.TipoReporteId,
         s.UltimaActividad AS FechaUltimoMensaje,
         s.FechaCreacion,
         s.ContadorMensajes,
@@ -45,11 +44,9 @@ async function getConversationsList(limit = 50, offset = 0) {
         s.FechaTomaAgente,
         (SELECT COUNT(*) FROM MensajesChat mc WHERE mc.Telefono = s.Telefono) as TotalMensajes,
         (SELECT TOP 1 mc.Contenido FROM MensajesChat mc WHERE mc.Telefono = s.Telefono ORDER BY mc.FechaCreacion DESC) as UltimoMensaje,
-        tr.Nombre as TipoReporte,
         ce.Nombre as EstadoNombre
       FROM SesionesChat s
       INNER JOIN CatEstadoSesion ce ON s.EstadoId = ce.EstadoId
-      LEFT JOIN CatTipoReporte tr ON s.TipoReporteId = tr.TipoReporteId
       ORDER BY s.UltimaActividad DESC
       OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
     `);
@@ -58,7 +55,7 @@ async function getConversationsList(limit = 50, offset = 0) {
 }
 
 /**
- * Obtiene historial de mensajes de un teléfono específico
+ * Obtiene historial de mensajes de un telefono especifico
  */
 async function getChatHistory(telefono, limit = 1000) {
   const pool = await connectionPool.getPool();
@@ -70,8 +67,6 @@ async function getChatHistory(telefono, limit = 1000) {
         Tipo,
         Contenido,
         TipoContenido,
-        IntencionDetectada,
-        ConfianzaIA,
         AgenteId,
         FechaCreacion
       FROM MensajesChat
@@ -79,7 +74,7 @@ async function getChatHistory(telefono, limit = 1000) {
       ORDER BY FechaCreacion ASC
     `);
 
-  // Obtener info de sesión
+  // Obtener info de sesion
   const sessionResult = await pool.request().input('telefono', telefono).query(`
       SELECT
         s.Telefono,
@@ -91,11 +86,9 @@ async function getChatHistory(telefono, limit = 1000) {
         s.AgenteId,
         s.AgenteNombre,
         s.FechaTomaAgente,
-        tr.Nombre as TipoReporte,
         ce.Nombre as EstadoNombre
       FROM SesionesChat s
       INNER JOIN CatEstadoSesion ce ON s.EstadoId = ce.EstadoId
-      LEFT JOIN CatTipoReporte tr ON s.TipoReporteId = tr.TipoReporteId
       WHERE s.Telefono = @telefono
     `);
 
@@ -106,7 +99,7 @@ async function getChatHistory(telefono, limit = 1000) {
 }
 
 /**
- * Busca conversaciones por número de teléfono
+ * Busca conversaciones por numero de telefono
  */
 async function searchConversations(query) {
   const pool = await connectionPool.getPool();
@@ -121,11 +114,9 @@ async function searchConversations(query) {
         s.AgenteId,
         s.AgenteNombre,
         (SELECT COUNT(*) FROM MensajesChat mc WHERE mc.Telefono = s.Telefono) as TotalMensajes,
-        tr.Nombre as TipoReporte,
         ce.Nombre as EstadoNombre
       FROM SesionesChat s
       INNER JOIN CatEstadoSesion ce ON s.EstadoId = ce.EstadoId
-      LEFT JOIN CatTipoReporte tr ON s.TipoReporteId = tr.TipoReporteId
       WHERE s.Telefono LIKE @query
       ORDER BY s.UltimaActividad DESC
     `);
@@ -134,12 +125,12 @@ async function searchConversations(query) {
 }
 
 /**
- * Agente toma control de una conversación
+ * Agente toma control de una conversacion
  */
 async function takeoverConversation(telefono, agenteId, agenteNombre) {
   const pool = await connectionPool.getPool();
 
-  // Verificar que la sesión existe y no está ya tomada
+  // Verificar que la sesion existe y no esta ya tomada
   const checkResult = await pool.request().input('telefono', telefono).query(`
       SELECT ce.Codigo AS Estado, s.AgenteId
       FROM SesionesChat s
@@ -148,18 +139,18 @@ async function takeoverConversation(telefono, agenteId, agenteNombre) {
     `);
 
   if (checkResult.recordset.length === 0) {
-    return { success: false, error: 'Sesión no encontrada' };
+    return { success: false, error: 'Sesion no encontrada' };
   }
 
   const session = checkResult.recordset[0];
   if (session.Estado === ESTADO.AGENTE_ACTIVO && session.AgenteId) {
-    return { success: false, error: `Conversación ya tomada por ${session.AgenteId}` };
+    return { success: false, error: `Conversacion ya tomada por ${session.AgenteId}` };
   }
 
   // Guardar estado anterior para poder restaurar
   const estadoAnterior = session.Estado;
 
-  // Actualizar sesión a modo agente
+  // Actualizar sesion a modo agente
   await pool
     .request()
     .input('telefono', telefono)
@@ -183,7 +174,7 @@ async function takeoverConversation(telefono, agenteId, agenteNombre) {
     .input('estadoAnterior', estadoAnterior)
     .input('estadoNuevo', ESTADO.AGENTE_ACTIVO)
     .input('origen', ORIGEN_ACCION.SISTEMA)
-    .input('descripcion', `Conversación tomada por agente: ${agenteNombre}`).query(`
+    .input('descripcion', `Conversacion tomada por agente: ${agenteNombre}`).query(`
       INSERT INTO HistorialSesiones (Telefono, EstadoAnteriorId, EstadoNuevoId, OrigenAccion, Descripcion)
       SELECT @telefono,
              (SELECT EstadoId FROM CatEstadoSesion WHERE Codigo = @estadoAnterior),
@@ -209,12 +200,12 @@ async function releaseConversation(telefono) {
     `);
 
   if (checkResult.recordset.length === 0) {
-    return { success: false, error: 'Sesión no encontrada' };
+    return { success: false, error: 'Sesion no encontrada' };
   }
 
   const session = checkResult.recordset[0];
   if (session.Estado !== ESTADO.AGENTE_ACTIVO) {
-    return { success: false, error: 'La conversación no está en modo agente' };
+    return { success: false, error: 'La conversacion no esta en modo agente' };
   }
 
   // Intentar restaurar estado anterior o usar INICIO
@@ -228,7 +219,7 @@ async function releaseConversation(telefono) {
     // Usar INICIO si no se puede parsear
   }
 
-  // Actualizar sesión
+  // Actualizar sesion
   await pool.request().input('telefono', telefono).input('estadoCodigo', estadoRestaurar).query(`
       UPDATE SesionesChat
       SET EstadoId = (SELECT EstadoId FROM CatEstadoSesion WHERE Codigo = @estadoCodigo),
@@ -246,7 +237,7 @@ async function releaseConversation(telefono) {
     .input('estadoAnterior', ESTADO.AGENTE_ACTIVO)
     .input('estadoNuevo', estadoRestaurar)
     .input('origen', ORIGEN_ACCION.SISTEMA)
-    .input('descripcion', `Conversación devuelta al bot por: ${session.AgenteNombre}`).query(`
+    .input('descripcion', `Conversacion devuelta al bot por: ${session.AgenteNombre}`).query(`
       INSERT INTO HistorialSesiones (Telefono, EstadoAnteriorId, EstadoNuevoId, OrigenAccion, Descripcion)
       SELECT @telefono,
              (SELECT EstadoId FROM CatEstadoSesion WHERE Codigo = @estadoAnterior),
@@ -258,12 +249,12 @@ async function releaseConversation(telefono) {
 }
 
 /**
- * Agente envía mensaje al usuario
+ * Agente envia mensaje al usuario
  */
 async function sendAgentMessage(telefono, mensaje, agenteId) {
   const pool = await connectionPool.getPool();
 
-  // Verificar que la sesión está en modo agente
+  // Verificar que la sesion esta en modo agente
   const checkResult = await pool.request().input('telefono', telefono).query(`
       SELECT ce.Codigo AS Estado, s.AgenteId
       FROM SesionesChat s
@@ -272,14 +263,14 @@ async function sendAgentMessage(telefono, mensaje, agenteId) {
     `);
 
   if (checkResult.recordset.length === 0) {
-    return { success: false, error: 'Sesión no encontrada' };
+    return { success: false, error: 'Sesion no encontrada' };
   }
 
   const session = checkResult.recordset[0];
   if (session.Estado !== ESTADO.AGENTE_ACTIVO) {
     return {
       success: false,
-      error: 'La conversación no está en modo agente. Primero debe tomar la conversación.',
+      error: 'La conversacion no esta en modo agente. Primero debe tomar la conversacion.',
     };
   }
 
@@ -290,8 +281,7 @@ async function sendAgentMessage(telefono, mensaje, agenteId) {
     return { success: false, error: `Error enviando mensaje: ${error.message}` };
   }
 
-  // Guardar mensaje en historial con tipo 'A' (Agente)
-  // Usamos 'B' porque la BD actual solo tiene 'U' y 'B', pero guardamos AgenteId
+  // Guardar mensaje en historial con tipo 'B' (Bot/Agente saliente)
   await pool
     .request()
     .input('telefono', telefono)
@@ -311,57 +301,87 @@ async function sendAgentMessage(telefono, mensaje, agenteId) {
 
 /**
  * Obtiene datos para el dashboard de KPIs
+ * Adaptado para Sign Bot: metricas de documentos y firma
  */
 async function getKPIsData() {
   const pool = await connectionPool.getPool();
 
-  // Query 1: Reportes por periodo (hoy, ayer, semana)
-  const reportesQuery = await pool.request().query(`
-    SELECT
-      SUM(CASE WHEN FechaCreacion >= CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) AS ReportesHoy,
-      SUM(CASE WHEN FechaCreacion >= DATEADD(DAY, -1, CAST(GETDATE() AS DATE))
-               AND FechaCreacion < CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) AS ReportesAyer,
-      SUM(CASE WHEN FechaCreacion >= DATEADD(DAY, -7, GETDATE()) THEN 1 ELSE 0 END) AS ReportesSemana,
-      COUNT(*) AS TotalReportes
-    FROM Reportes
-    WHERE FechaCreacion >= DATEADD(DAY, -30, GETDATE())
-  `);
+  // Query 1: Documentos por periodo (hoy, ayer, semana)
+  let documentosData = {
+    DocumentosHoy: 0,
+    DocumentosAyer: 0,
+    DocumentosSemana: 0,
+    TotalDocumentos: 0,
+  };
+  try {
+    const documentosQuery = await pool.request().query(`
+      SELECT
+        SUM(CASE WHEN FechaCreacion >= CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) AS DocumentosHoy,
+        SUM(CASE WHEN FechaCreacion >= DATEADD(DAY, -1, CAST(GETDATE() AS DATE))
+                 AND FechaCreacion < CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) AS DocumentosAyer,
+        SUM(CASE WHEN FechaCreacion >= DATEADD(DAY, -7, GETDATE()) THEN 1 ELSE 0 END) AS DocumentosSemana,
+        COUNT(*) AS TotalDocumentos
+      FROM DocumentosFirma
+      WHERE FechaCreacion >= DATEADD(DAY, -30, GETDATE())
+    `);
+    documentosData = documentosQuery.recordset[0] || documentosData;
+  } catch (_e) {
+    // Table may not exist yet
+  }
 
-  // Query 2: Por estado (para tasa resolucion y barras)
-  const porEstadoQuery = await pool.request().query(`
-    SELECT
-      er.Codigo AS Estado,
-      er.Nombre AS EstadoNombre,
-      COUNT(*) AS Total
-    FROM Reportes r
-    INNER JOIN CatEstadoReporte er ON r.EstadoReporteId = er.EstadoReporteId
-    WHERE r.FechaCreacion >= DATEADD(DAY, -30, GETDATE())
-    GROUP BY er.Codigo, er.Nombre, er.Orden
-    ORDER BY er.Orden
-  `);
+  // Query 2: Por estado de documento
+  let porEstado = [];
+  try {
+    const porEstadoQuery = await pool.request().query(`
+      SELECT
+        ed.Codigo AS Estado,
+        ed.Nombre AS EstadoNombre,
+        COUNT(*) AS Total
+      FROM DocumentosFirma df
+      INNER JOIN CatEstadoDocumento ed ON df.EstadoDocumentoId = ed.EstadoDocumentoId
+      WHERE df.FechaCreacion >= DATEADD(DAY, -30, GETDATE())
+      GROUP BY ed.Codigo, ed.Nombre, ed.Orden
+      ORDER BY ed.Orden
+    `);
+    porEstado = porEstadoQuery.recordset || [];
+  } catch (_e) {
+    // Table may not exist yet
+  }
 
-  // Query 3: Por tipo (para donut)
-  const porTipoQuery = await pool.request().query(`
-    SELECT
-      tr.Codigo AS TipoReporte,
-      tr.Nombre AS TipoNombre,
-      COUNT(*) AS Total
-    FROM Reportes r
-    INNER JOIN CatTipoReporte tr ON r.TipoReporteId = tr.TipoReporteId
-    WHERE r.FechaCreacion >= DATEADD(DAY, -30, GETDATE())
-    GROUP BY tr.Codigo, tr.Nombre
-  `);
+  // Query 3: Por tipo de documento
+  let porTipo = [];
+  try {
+    const porTipoQuery = await pool.request().query(`
+      SELECT
+        td.Codigo AS TipoDocumento,
+        td.Nombre AS TipoNombre,
+        COUNT(*) AS Total
+      FROM DocumentosFirma df
+      INNER JOIN CatTipoDocumento td ON df.TipoDocumentoId = td.TipoDocumentoId
+      WHERE df.FechaCreacion >= DATEADD(DAY, -30, GETDATE())
+      GROUP BY td.Codigo, td.Nombre
+    `);
+    porTipo = porTipoQuery.recordset || [];
+  } catch (_e) {
+    // Table may not exist yet
+  }
 
   // Query 4: Tendencia 7 dias
-  const tendenciaQuery = await pool.request().query(`
-    SELECT
-      CAST(FechaCreacion AS DATE) AS Fecha,
-      COUNT(*) AS Total
-    FROM Reportes
-    WHERE FechaCreacion >= DATEADD(DAY, -7, GETDATE())
-    GROUP BY CAST(FechaCreacion AS DATE)
-    ORDER BY Fecha
-  `);
+  let tendencia = [];
+  try {
+    const tendenciaQuery = await pool.request().query(`
+      SELECT
+        CAST(FechaCreacion AS DATE) AS Fecha,
+        COUNT(*) AS Total
+      FROM DocumentosFirma
+      WHERE FechaCreacion >= DATEADD(DAY, -7, GETDATE())
+      GROUP BY CAST(FechaCreacion AS DATE)
+      ORDER BY Fecha
+    `);
+    tendencia = tendenciaQuery.recordset || [];
+  } catch (_e) {
+    // Table may not exist yet
+  }
 
   // Query 5: Sesiones activas
   const sesionesQuery = await pool.request().query(`
@@ -383,39 +403,28 @@ async function getKPIsData() {
     WHERE FechaCreacion >= CAST(GETDATE() AS DATE)
   `);
 
-  // Query 7: Satisfaccion (promedio de encuestas)
-  const satisfaccionQuery = await pool.request().query(`
-    SELECT
-      CAST(AVG(CAST(r.Valor AS DECIMAL(5,2))) AS DECIMAL(3,1)) AS PromedioSatisfaccion,
-      COUNT(DISTINCT e.EncuestaId) AS TotalEncuestas
-    FROM RespuestasEncuesta r
-    INNER JOIN Encuestas e ON r.EncuestaId = e.EncuestaId
-    INNER JOIN CatEstadoEncuesta ce ON e.EstadoEncuestaId = ce.EstadoEncuestaId
-    WHERE ce.Codigo = 'COMPLETADA'
-      AND e.FechaEnvio >= DATEADD(DAY, -30, GETDATE())
-  `);
-
-  // Calcular tasa de resolucion
-  const estados = porEstadoQuery.recordset || [];
-  const total = estados.reduce((sum, e) => sum + e.Total, 0);
-  const resueltos = estados.find((e) => e.Estado === 'RESUELTO')?.Total || 0;
-  const tasaResolucion = total > 0 ? Math.round((resueltos / total) * 100) : 0;
+  // Calcular tasa de firma
+  const total = porEstado.reduce((sum, e) => sum + e.Total, 0);
+  const firmados = porEstado.find((e) => e.Estado === 'FIRMADO')?.Total || 0;
+  const tasaFirma = total > 0 ? Math.round((firmados / total) * 100) : 0;
 
   // Calcular tendencia (comparar hoy vs ayer)
-  const reportes = reportesQuery.recordset[0] || {};
-  const tendenciaReportes =
-    reportes.ReportesAyer > 0
-      ? Math.round(((reportes.ReportesHoy - reportes.ReportesAyer) / reportes.ReportesAyer) * 100)
+  const tendenciaDocumentos =
+    documentosData.DocumentosAyer > 0
+      ? Math.round(
+          ((documentosData.DocumentosHoy - documentosData.DocumentosAyer) /
+            documentosData.DocumentosAyer) *
+            100
+        )
       : 0;
 
   return {
     success: true,
     kpis: {
-      reportesHoy: reportes.ReportesHoy || 0,
-      reportesSemana: reportes.ReportesSemana || 0,
-      tendenciaReportes: tendenciaReportes,
-      tasaResolucion: tasaResolucion,
-      satisfaccion: satisfaccionQuery.recordset[0]?.PromedioSatisfaccion || 0,
+      documentosHoy: documentosData.DocumentosHoy || 0,
+      documentosSemana: documentosData.DocumentosSemana || 0,
+      tendenciaDocumentos: tendenciaDocumentos,
+      tasaFirma: tasaFirma,
       sesionesActivas: sesionesQuery.recordset[0]?.SesionesActivas || 0,
       sesionesConAgente: sesionesQuery.recordset[0]?.ConAgente || 0,
       mensajesHoy: mensajesQuery.recordset[0]?.MensajesHoy || 0,
@@ -423,9 +432,9 @@ async function getKPIsData() {
       mensajesSalientes: mensajesQuery.recordset[0]?.Salientes || 0,
     },
     charts: {
-      porEstado: porEstadoQuery.recordset || [],
-      porTipo: porTipoQuery.recordset || [],
-      tendencia7dias: tendenciaQuery.recordset || [],
+      porEstado: porEstado,
+      porTipo: porTipo,
+      tendencia7dias: tendencia,
     },
     timestamp: new Date().toISOString(),
   };

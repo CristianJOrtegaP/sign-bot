@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Sanitizer de Logs
+ * Sign Bot - Sanitizer de Logs
  * Elimina datos sensibles antes de loguear para prevenir exposición de credenciales
  */
 

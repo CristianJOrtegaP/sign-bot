@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Retry Utilities
+ * Sign Bot - Retry Utilities
  * Utilities para reintentar operaciones con exponential backoff
  */
 

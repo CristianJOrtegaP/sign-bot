@@ -1,0 +1,10 @@
+{
+  "bindings": [
+    {
+      "name": "myTimer",
+      "type": "timerTrigger",
+      "direction": "in",
+      "schedule": "%FIRMA_TIMER_SCHEDULE%"
+    }
+  ]
+}

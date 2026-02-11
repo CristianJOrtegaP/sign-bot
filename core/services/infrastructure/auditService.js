@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Audit Service
+ * Sign Bot - Audit Service
  * Logging de auditoria para operaciones administrativas y de seguridad
  * FASE 3: Persistencia en SQL para compliance y análisis
  */

@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Connection Pool Singleton
+ * Sign Bot - Connection Pool Singleton
  * Pool de conexiones SQL compartido entre todos los servicios
  * Elimina la duplicación de lógica de conexión
  */

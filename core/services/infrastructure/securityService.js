@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Security Service
+ * Sign Bot - Security Service
  * Manejo centralizado de seguridad: firmas, autenticacion, validacion
  */
 

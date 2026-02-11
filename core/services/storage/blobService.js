@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Servicio de Azure Blob Storage
+ * Sign Bot - Servicio de Azure Blob Storage
  * Maneja el almacenamiento de imágenes con SAS tokens para acceso seguro
  */
 

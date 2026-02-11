@@ -2,7 +2,7 @@
  * Handler: Metrics Dashboard
  * Rutas: GET /api/admin/metrics
  *
- * Autenticación: Azure Function Keys (validado automáticamente por Azure)
+ * Autenticacion: Azure Function Keys (validado automaticamente por Azure)
  * Rate Limiting: Manejado en index.js (60 req/min por IP)
  */
 
@@ -10,13 +10,14 @@ const metricsService = require('../../core/services/infrastructure/metricsServic
 const { applySecurityHeaders } = require('../../core/middleware/securityHeaders');
 
 /**
- * Formatea métricas para respuesta HTTP
+ * Formatea metricas para respuesta HTTP
  */
 function formatMetricsResponse(summary, options = {}) {
   const response = {
     timestamp: summary.timestamp,
     environment: process.env.NODE_ENV || 'development',
     version: process.env.npm_package_version || '1.0.0',
+    service: 'sign-bot',
   };
 
   if (options.operation) {
@@ -48,7 +49,7 @@ function formatMetricsResponse(summary, options = {}) {
 }
 
 /**
- * Obtiene métricas históricas
+ * Obtiene metricas historicas
  */
 async function getHistoricalMetricsData(date, operationType) {
   try {
@@ -80,7 +81,7 @@ async function getHistoricalMetricsData(date, operationType) {
 module.exports = async function metricsHandler(context, req) {
   const startTime = Date.now();
 
-  // Autenticación: Azure valida Function Key antes de llegar aquí
+  // Autenticacion: Azure valida Function Key antes de llegar aqui
   // Rate Limiting: Manejado en index.js
 
   try {

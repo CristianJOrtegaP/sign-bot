@@ -1,5 +1,5 @@
 // ==============================================================================
-// AC FIXBOT - Azure OpenAI Module
+// Sign Bot - Azure OpenAI Module (DEPRECATED - kept for reference)
 // Azure OpenAI con despliegue de modelo gpt-4o-mini
 // ==============================================================================
 
@@ -15,7 +15,7 @@ param environment string
 
 // Tags comunes para todos los recursos del modulo
 var tags = {
-  project: 'acfixbot'
+  project: 'signbot'
   environment: environment
 }
 

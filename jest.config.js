@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Jest Configuration
+ * Sign Bot - Jest Configuration
  * Multi-project: unit, integration, e2e
  */
 const baseConfig = {

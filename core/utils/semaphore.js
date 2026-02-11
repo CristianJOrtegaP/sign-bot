@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Semáforo de concurrencia
+ * Sign Bot - Semáforo de concurrencia
  * Limita la cantidad de operaciones asíncronas ejecutándose simultáneamente
  */
 

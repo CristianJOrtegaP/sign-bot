@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Métricas: Performance Timer
+ * Sign Bot - Métricas: Performance Timer
  * Clase para medir tiempos de operaciones
  */
 

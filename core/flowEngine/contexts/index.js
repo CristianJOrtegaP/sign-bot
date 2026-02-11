@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Flow Contexts
+ * Sign Bot - Flow Contexts
  * Exporta todos los contextos de flujo
  *
  * @module core/flowEngine/contexts

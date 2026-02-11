@@ -1,14 +1,17 @@
 /**
- * AC FIXBOT - API Admin Consolidada
+ * SIGN BOT - API Admin Consolidada
  * Endpoints administrativos unificados
  *
  * Rutas:
- * - GET/POST /api/admin/cache?type=...     - Gestión de caché
- * - GET      /api/admin/metrics            - Métricas en tiempo real
- * - POST     /api/admin/tickets/resolve    - Resolver tickets
+ * - GET/POST /api/admin/cache?type=...         - Gestion de cache
+ * - GET      /api/admin/metrics                - Metricas en tiempo real
+ * - GET      /api/admin/documents              - Listar documentos
+ * - GET      /api/admin/documents/detail       - Detalle de documento
+ * - GET      /api/admin/documents/stats        - Estadisticas de documentos
+ * - POST     /api/admin/documents/void         - Anular documento
  *
- * Autenticación: Azure Function Key (authLevel: "function")
- * - Azure valida automáticamente el parámetro ?code=xxx o header x-functions-key
+ * Autenticacion: Azure Function Key (authLevel: "function")
+ * - Azure valida automaticamente el parametro ?code=xxx o header x-functions-key
  * - Las keys se gestionan en Azure Portal > Function App > App Keys
  * Rate Limiting: 60 requests/minuto por IP
  */
@@ -20,7 +23,7 @@ const { logger } = require('../core/services/infrastructure/errorHandler');
 // Handlers
 const cacheHandler = require('./handlers/cache');
 const metricsHandler = require('./handlers/metrics');
-const ticketsHandler = require('./handlers/tickets');
+const documentsHandler = require('./handlers/documents');
 
 module.exports = async function (context, req) {
   const action = context.bindingData.action?.toLowerCase();
@@ -42,9 +45,9 @@ module.exports = async function (context, req) {
   }
 
   // ============================================
-  // AUTENTICACIÓN: Azure Function Key (nativa)
-  // Azure ya validó la key antes de llegar aquí
-  // Si el request llegó, la key es válida
+  // AUTENTICACION: Azure Function Key (nativa)
+  // Azure ya valido la key antes de llegar aqui
+  // Si el request llego, la key es valida
   // ============================================
 
   // Rate limiting por IP (la key ya fue validada por Azure)
@@ -86,24 +89,39 @@ module.exports = async function (context, req) {
     case 'metrics':
       return metricsHandler(context, req);
 
-    case 'tickets':
-      if (subaction === 'resolve') {
-        return ticketsHandler.resolve(context, req);
+    case 'documents':
+      switch (subaction) {
+        case 'void':
+          return documentsHandler.voidDocument(context, req);
+        case 'detail':
+          return documentsHandler.detail(context, req);
+        case 'stats':
+          return documentsHandler.stats(context, req);
+        default:
+          // No subaction = list documents
+          if (!subaction) {
+            return documentsHandler.list(context, req);
+          }
+          context.res = {
+            status: 400,
+            headers: applySecurityHeaders({
+              'Content-Type': 'application/json',
+              ...rateLimitHeaders,
+            }),
+            body: {
+              success: false,
+              error: 'Subaccion no valida para documents',
+              available: ['detail', 'stats', 'void'],
+              examples: [
+                'GET  /api/admin/documents',
+                'GET  /api/admin/documents/detail?id=123',
+                'GET  /api/admin/documents/stats',
+                'POST /api/admin/documents/void',
+              ],
+            },
+          };
+          return;
       }
-      context.res = {
-        status: 400,
-        headers: applySecurityHeaders({
-          'Content-Type': 'application/json',
-          ...rateLimitHeaders,
-        }),
-        body: {
-          success: false,
-          error: 'Subacción no válida para tickets',
-          available: ['resolve'],
-          example: 'POST /api/admin/tickets/resolve',
-        },
-      };
-      return;
 
     default:
       context.res = {
@@ -114,12 +132,15 @@ module.exports = async function (context, req) {
         }),
         body: {
           success: false,
-          error: 'Acción no válida',
-          available_actions: ['cache', 'metrics', 'tickets'],
+          error: 'Accion no valida',
+          available_actions: ['cache', 'metrics', 'documents'],
           examples: [
             'GET  /api/admin/cache?type=stats',
             'GET  /api/admin/metrics',
-            'POST /api/admin/tickets/resolve',
+            'GET  /api/admin/documents',
+            'GET  /api/admin/documents/detail?id=123',
+            'GET  /api/admin/documents/stats',
+            'POST /api/admin/documents/void',
           ],
         },
       };

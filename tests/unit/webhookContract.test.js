@@ -1,7 +1,7 @@
 /**
  * Contract Tests: Meta WhatsApp Webhook Payloads
  * Valida que los schemas Zod coincidan con la estructura
- * esperada de Meta Graph API v22.0
+ * esperada de Meta Graph API v22.0 - Sign Bot
  *
  * Documentacion: https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/components
  */
@@ -20,37 +20,25 @@ const payloads = require('../factories/whatsappPayloads');
 describe('Contract Tests: Meta Webhook v22.0', () => {
   describe('Payloads validos (factories)', () => {
     test('mensaje de texto debe pasar validacion', () => {
-      const payload = payloads.createTextMessage('Hola');
+      const payload = payloads.createTextMessage('mis documentos');
       const result = validateWebhookPayload(payload);
       expect(result.success).toBe(true);
     });
 
     test('respuesta de boton debe pasar validacion', () => {
-      const payload = payloads.createButtonResponse('btn_tipo_refrigerador');
-      const result = validateWebhookPayload(payload);
-      expect(result.success).toBe(true);
-    });
-
-    test('mensaje de imagen debe pasar validacion', () => {
-      const payload = payloads.createImageMessage('media-123');
-      const result = validateWebhookPayload(payload);
-      expect(result.success).toBe(true);
-    });
-
-    test('mensaje de ubicacion debe pasar validacion', () => {
-      const payload = payloads.createLocationMessage(19.43, -99.13);
-      const result = validateWebhookPayload(payload);
-      expect(result.success).toBe(true);
-    });
-
-    test('mensaje de audio debe pasar validacion', () => {
-      const payload = payloads.createAudioMessage('audio-123');
+      const payload = payloads.createButtonResponse('btn_ver_documentos');
       const result = validateWebhookPayload(payload);
       expect(result.success).toBe(true);
     });
 
     test('notificacion de estado debe pasar validacion', () => {
       const payload = payloads.createStatusNotification('msg-1', 'delivered');
+      const result = validateWebhookPayload(payload);
+      expect(result.success).toBe(true);
+    });
+
+    test('callback de template debe pasar validacion', () => {
+      const payload = payloads.createTemplateStatusCallback('wamid.tmpl_1', 'delivered');
       const result = validateWebhookPayload(payload);
       expect(result.success).toBe(true);
     });
@@ -86,7 +74,7 @@ describe('Contract Tests: Meta Webhook v22.0', () => {
                       id: 'wamid.ABCDEfghij123456789',
                       timestamp: '1677000000',
                       type: 'text',
-                      text: { body: 'Hello' },
+                      text: { body: 'mis documentos' },
                     },
                   ],
                 },
@@ -98,52 +86,6 @@ describe('Contract Tests: Meta Webhook v22.0', () => {
       };
 
       const result = validateWebhookPayload(metaRealPayload);
-      expect(result.success).toBe(true);
-    });
-
-    test('payload de imagen con caption segun docs de Meta', () => {
-      const metaImagePayload = {
-        object: 'whatsapp_business_account',
-        entry: [
-          {
-            id: '123456789',
-            changes: [
-              {
-                value: {
-                  messaging_product: 'whatsapp',
-                  metadata: {
-                    display_phone_number: '15551234567',
-                    phone_number_id: '123456789012345',
-                  },
-                  contacts: [
-                    {
-                      profile: { name: 'Maria' },
-                      wa_id: '5215500000000',
-                    },
-                  ],
-                  messages: [
-                    {
-                      from: '5215500000000',
-                      id: 'wamid.IMG_123',
-                      timestamp: '1677000000',
-                      type: 'image',
-                      image: {
-                        id: '1234567890',
-                        mime_type: 'image/jpeg',
-                        sha256: 'abc123hash',
-                        caption: 'Mi refrigerador esta descompuesto',
-                      },
-                    },
-                  ],
-                },
-                field: 'messages',
-              },
-            ],
-          },
-        ],
-      };
-
-      const result = validateWebhookPayload(metaImagePayload);
       expect(result.success).toBe(true);
     });
 
@@ -176,8 +118,8 @@ describe('Contract Tests: Meta Webhook v22.0', () => {
                       interactive: {
                         type: 'button_reply',
                         button_reply: {
-                          id: 'btn_rating_5',
-                          title: 'Excelente',
+                          id: 'btn_rechazar',
+                          title: 'Rechazar',
                         },
                       },
                     },
@@ -191,50 +133,6 @@ describe('Contract Tests: Meta Webhook v22.0', () => {
       };
 
       const result = validateWebhookPayload(metaButtonPayload);
-      expect(result.success).toBe(true);
-    });
-
-    test('payload de audio con mime_type ogg/opus', () => {
-      const metaAudioPayload = {
-        object: 'whatsapp_business_account',
-        entry: [
-          {
-            id: '123456789',
-            changes: [
-              {
-                value: {
-                  messaging_product: 'whatsapp',
-                  metadata: {
-                    display_phone_number: '15551234567',
-                    phone_number_id: '123456789012345',
-                  },
-                  contacts: [
-                    {
-                      profile: { name: 'Luis' },
-                      wa_id: '5215500000002',
-                    },
-                  ],
-                  messages: [
-                    {
-                      from: '5215500000002',
-                      id: 'wamid.AUD_456',
-                      timestamp: '1677000000',
-                      type: 'audio',
-                      audio: {
-                        id: '9876543210',
-                        mime_type: 'audio/ogg; codecs=opus',
-                      },
-                    },
-                  ],
-                },
-                field: 'messages',
-              },
-            ],
-          },
-        ],
-      };
-
-      const result = validateWebhookPayload(metaAudioPayload);
       expect(result.success).toBe(true);
     });
   });
@@ -271,17 +169,6 @@ describe('Contract Tests: Meta Webhook v22.0', () => {
         from: '5215512345678',
         timestamp: '1677000000',
         type: 'text',
-        text: { body: 'Hello' },
-      });
-      expect(result.success).toBe(false);
-    });
-
-    test('debe rechazar tipo de mensaje no soportado', () => {
-      const result = messageSchema.safeParse({
-        from: '5215512345678',
-        id: 'wamid.test',
-        timestamp: '1677000000',
-        type: 'unknown_type',
         text: { body: 'Hello' },
       });
       expect(result.success).toBe(false);

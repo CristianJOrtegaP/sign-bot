@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Rate Limiter Inteligente
+ * Sign Bot - Rate Limiter Inteligente
  * Previene spam, protege APIs externas y deduplica mensajes
  * FASE 3: Soporte para rate limiting distribuido con Redis
  */

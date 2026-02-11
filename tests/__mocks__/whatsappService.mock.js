@@ -13,6 +13,7 @@ const whatsappMock = {
   sendAndSaveText: jest.fn().mockResolvedValue({ success: true }),
   sendAndSaveInteractive: jest.fn().mockResolvedValue({ success: true }),
   sendAndSaveList: jest.fn().mockResolvedValue({ success: true }),
+  sendTemplate: jest.fn().mockResolvedValue({ success: true, messageId: 'wamid.template_123' }),
   sendTypingIndicator: jest.fn().mockResolvedValue(undefined),
   downloadMedia: jest.fn().mockResolvedValue(Buffer.from('fake-image')),
 
@@ -60,6 +61,11 @@ whatsappMock.sendAndSaveInteractive.mockImplementation(async (to, header, body, 
 whatsappMock.sendAndSaveList.mockImplementation(async (to, header, body, btnText, rows) => {
   _messages.push({ type: 'list', to, header, body, btnText, rows });
   return { success: true };
+});
+
+whatsappMock.sendTemplate.mockImplementation(async (to, templateName, templateData) => {
+  _messages.push({ type: 'template', to, templateName, templateData });
+  return { success: true, messageId: 'wamid.template_123' };
 });
 
 module.exports = whatsappMock;

@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - BaseContext
+ * Sign Bot - BaseContext
  * Contexto base con métodos comunes para todos los tipos de flujos
  *
  * Proporciona inyección de dependencias para:

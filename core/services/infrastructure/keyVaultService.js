@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Key Vault Service
+ * Sign Bot - Key Vault Service
  * Servicio para obtener secretos desde Azure Key Vault
  *
  * En producción, los secretos se obtienen de Key Vault usando Managed Identity.

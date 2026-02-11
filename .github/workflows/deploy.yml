@@ -29,7 +29,7 @@ jobs:
     if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'dev')
     environment:
       name: dev
-      url: https://func-acfixbot-dev.azurewebsites.net
+      url: https://func-signbot-dev.azurewebsites.net
 
     steps:
       - name: Checkout codigo
@@ -60,7 +60,7 @@ jobs:
       - name: Deploy a Azure Functions
         uses: Azure/functions-action@v1
         with:
-          app-name: func-acfixbot-dev
+          app-name: func-signbot-dev
           package: .
           respect-funcignore: true
 
@@ -68,7 +68,7 @@ jobs:
         run: |
           for i in 1 2 3 4 5 6; do
             echo "Intento $i/6..."
-            if curl -sf --max-time 10 https://func-acfixbot-dev.azurewebsites.net/api/health > /dev/null 2>&1; then
+            if curl -sf --max-time 10 https://func-signbot-dev.azurewebsites.net/api/health > /dev/null 2>&1; then
               echo "Health check DEV exitoso"
               exit 0
             fi
@@ -85,7 +85,7 @@ jobs:
     if: github.ref == 'refs/heads/staging' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'tst')
     environment:
       name: tst
-      url: https://func-acfixbot-tst.azurewebsites.net
+      url: https://func-signbot-tst.azurewebsites.net
 
     steps:
       - name: Checkout codigo
@@ -116,7 +116,7 @@ jobs:
       - name: Deploy a Azure Functions
         uses: Azure/functions-action@v1
         with:
-          app-name: func-acfixbot-tst
+          app-name: func-signbot-tst
           package: .
           respect-funcignore: true
 
@@ -124,7 +124,7 @@ jobs:
         run: |
           for i in 1 2 3 4 5 6; do
             echo "Intento $i/6..."
-            if curl -sf --max-time 10 https://func-acfixbot-tst.azurewebsites.net/api/health > /dev/null 2>&1; then
+            if curl -sf --max-time 10 https://func-signbot-tst.azurewebsites.net/api/health > /dev/null 2>&1; then
               echo "Health check TST exitoso"
               exit 0
             fi
@@ -141,7 +141,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.environment == 'prod'
     environment:
       name: prod
-      url: https://func-acfixbot-prod.azurewebsites.net
+      url: https://func-signbot-prod.azurewebsites.net
 
     steps:
       - name: Verificar rama
@@ -176,7 +176,7 @@ jobs:
       - name: Deploy a Azure Functions
         uses: Azure/functions-action@v1
         with:
-          app-name: func-acfixbot-prod
+          app-name: func-signbot-prod
           package: .
           respect-funcignore: true
 
@@ -184,7 +184,7 @@ jobs:
         run: |
           for i in 1 2 3 4 5 6 7 8; do
             echo "Intento $i/8..."
-            response=$(curl -sf --max-time 10 https://func-acfixbot-prod.azurewebsites.net/api/health 2>/dev/null || true)
+            response=$(curl -sf --max-time 10 https://func-signbot-prod.azurewebsites.net/api/health 2>/dev/null || true)
             if echo "$response" | grep -q '"status":"healthy"'; then
               echo "Health check PROD exitoso: healthy"
               exit 0
@@ -201,7 +201,7 @@ jobs:
         run: |
           echo "Deploy a PRODUCCION completado"
           echo "Version: ${{ github.sha }}"
-          echo "URL: https://func-acfixbot-prod.azurewebsites.net"
+          echo "URL: https://func-signbot-prod.azurewebsites.net"
           echo ""
           echo "Verificar manualmente:"
           echo "  1. Dashboard funcionando"

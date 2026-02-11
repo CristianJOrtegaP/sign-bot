@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Manejador Centralizado de Errores
+ * Sign Bot - Manejador Centralizado de Errores
  * Logger unificado y funciones de manejo de errores
  *
  * Las clases de error se importan desde la carpeta errors/ para mejor organizacion

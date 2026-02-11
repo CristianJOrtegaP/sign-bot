@@ -1,18 +1,18 @@
 /**
- * AC FIXBOT - Exportacion centralizada de schemas
+ * SIGN BOT - Exportacion centralizada de schemas
  */
 
 const webhookPayload = require('./webhookPayload');
-const ticketResolvePayload = require('./ticketResolvePayload');
-const reportePayload = require('./reportePayload');
+const sapDocumentPayload = require('./sapDocumentPayload');
+const docusignWebhookPayload = require('./docusignWebhookPayload');
 
 module.exports = {
-    // Webhook de WhatsApp
-    ...webhookPayload,
+  // Webhook de WhatsApp
+  ...webhookPayload,
 
-    // API de resolver tickets
-    ...ticketResolvePayload,
+  // API de documentos desde SAP
+  ...sapDocumentPayload,
 
-    // Reportes
-    ...reportePayload
+  // Webhook de DocuSign Connect
+  ...docusignWebhookPayload,
 };

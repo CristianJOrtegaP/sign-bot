@@ -1,4 +1,4 @@
-# Arquitectura — AC FIXBOT
+# Arquitectura — Sign Bot
 
 > Audiencia: Senior Developers, Tech Leads
 > Última actualización: Febrero 2026
@@ -223,7 +223,7 @@ Mensaje entrante
 
 ### Bloqueo Optimista (Version++)
 
-Con ~3,000 reportes/mes y procesamiento asíncrono (background image processing, múltiples handlers), las condiciones de carrera son un riesgo real. AC FIXBOT implementa bloqueo optimista a nivel de sesión:
+Con ~3,000 reportes/mes y procesamiento asíncrono (background image processing, múltiples handlers), las condiciones de carrera son un riesgo real. Sign Bot implementa bloqueo optimista a nivel de sesión:
 
 ```sql
 -- Lectura: obtener versión actual
@@ -316,7 +316,7 @@ ON SesionesChat(Telefono, Version);
 
 ## Capas de Cache
 
-AC FIXBOT implementa un sistema de cache de 3 niveles para minimizar consultas a SQL Server:
+Sign Bot implementa un sistema de cache de 3 niveles para minimizar consultas a SQL Server:
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -332,7 +332,7 @@ AC FIXBOT implementa un sistema de cache de 3 niveles para minimizar consultas a
               ┌────────▼─────────┐
               │  Nivel 2: Redis  │  Azure Cache for Redis (TLS:6380)
               │  TTL configurable│  Compartido entre instancias
-              │  (~1-3 ms)       │  Prefijo: acfixbot:*
+              │  (~1-3 ms)       │  Prefijo: signbot:*
               └────────┬─────────┘
                        │ MISS o Redis deshabilitado
               ┌────────▼─────────┐
@@ -382,7 +382,7 @@ class RedisService {
 
 ## Deduplicación de Mensajes
 
-Meta puede reenviar el mismo mensaje múltiples veces (retries, at-least-once delivery). AC FIXBOT implementa deduplicación en dos capas:
+Meta puede reenviar el mismo mensaje múltiples veces (retries, at-least-once delivery). Sign Bot implementa deduplicación en dos capas:
 
 ### Capa 1: Memoria (Set)
 

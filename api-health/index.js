@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Health Check Endpoint
+ * SIGN BOT - Health Check Endpoint
  * Verifica el estado de los servicios principales
  *
  * Endpoint:
@@ -14,31 +14,32 @@ const deadLetterService = require('../core/services/infrastructure/deadLetterSer
 const config = require('../core/config');
 
 // ==============================================================
-// HELPER FUNCTIONS - Cada check es una función separada
+// HELPER FUNCTIONS - Cada check es una funcion separada
 // ==============================================================
 
 /**
- * Check 1: Database connection (FASE 2: Enhanced con verificación de tablas)
+ * Check 1: Database connection (Enhanced con verificacion de tablas)
  */
 async function checkDatabase(startTime) {
   try {
     const pool = await connectionPool.getPool();
 
-    // Check 1a: Conexión básica
+    // Check 1a: Conexion basica
     await pool.request().query('SELECT 1 as test');
 
-    // Check 1b: Verificar tablas críticas existen
+    // Check 1b: Verificar tablas criticas existen
     const tables = await pool.request().query(`
             SELECT TABLE_NAME
             FROM INFORMATION_SCHEMA.TABLES
-            WHERE TABLE_NAME IN ('SesionesChat', 'MensajesProcessados', 'DeadLetterMessages', 'Reportes')
+            WHERE TABLE_NAME IN ('SesionesChat', 'MensajesProcessados', 'DeadLetterMessages', 'DocumentosFirma', 'EventosDocuSign')
         `);
 
     const expectedTables = [
       'SesionesChat',
       'MensajesProcessados',
       'DeadLetterMessages',
-      'Reportes',
+      'DocumentosFirma',
+      'EventosDocuSign',
     ];
     const foundTables = tables.recordset.map((t) => t.TABLE_NAME);
     const missingTables = expectedTables.filter((t) => !foundTables.includes(t));
@@ -128,24 +129,28 @@ function checkUptime() {
  */
 function checkCircuitBreakers() {
   try {
-    const aiBreaker = getBreaker(
-      config.ai.provider === 'azure-openai' ? SERVICES.AZURE_OPENAI : SERVICES.GEMINI
-    );
     const waBreaker = getBreaker(SERVICES.WHATSAPP);
 
     const circuitBreakers = {
-      ai: {
-        status: aiBreaker.canExecute().allowed ? 'closed' : 'open',
-        provider: config.ai.provider,
-        enabled: config.ai.enabled,
-      },
       whatsapp: {
         status: waBreaker.canExecute().allowed ? 'closed' : 'open',
       },
     };
 
+    // Check DocuSign circuit breaker if available
+    try {
+      const dsBreaker = getBreaker(SERVICES.DOCUSIGN);
+      circuitBreakers.docusign = {
+        status: dsBreaker.canExecute().allowed ? 'closed' : 'open',
+      };
+    } catch (_e) {
+      circuitBreakers.docusign = { status: 'unknown' };
+    }
+
     const allClosed =
-      circuitBreakers.ai.status === 'closed' && circuitBreakers.whatsapp.status === 'closed';
+      circuitBreakers.whatsapp.status === 'closed' &&
+      (circuitBreakers.docusign.status === 'closed' ||
+        circuitBreakers.docusign.status === 'unknown');
 
     return {
       status: allClosed ? 'healthy' : 'degraded',
@@ -187,22 +192,22 @@ async function checkDeadLetter() {
  * Check 7: External services configuration
  */
 function checkExternalServices() {
-  const aiConfigured =
-    config.ai.enabled &&
-    ((config.ai.provider === 'gemini' && Boolean(config.ai.gemini.apiKey)) ||
-      (config.ai.provider === 'azure-openai' && Boolean(config.ai.azureOpenAI.endpoint)));
+  const docusignConfigured =
+    Boolean(config.docusign.integrationKey) &&
+    Boolean(config.docusign.userId) &&
+    Boolean(config.docusign.accountId) &&
+    Boolean(config.docusign.rsaPrivateKey);
 
   const services = {
-    ai: {
-      configured: aiConfigured,
-      provider: config.ai.provider,
-      enabled: config.ai.enabled,
-    },
-    vision: {
-      configured: Boolean(config.vision.endpoint) && Boolean(config.vision.apiKey),
+    docusign: {
+      configured: docusignConfigured,
+      baseUrl: config.docusign.baseUrl ? 'set' : 'missing',
     },
     whatsapp: {
       configured: Boolean(config.whatsapp.accessToken) && Boolean(config.whatsapp.phoneNumberId),
+    },
+    blobStorage: {
+      configured: Boolean(config.blob.connectionString),
     },
   };
 
@@ -213,7 +218,7 @@ function checkExternalServices() {
 }
 
 /**
- * Check 8: WhatsApp API Active Health Check (FASE 2)
+ * Check 8: WhatsApp API Active Health Check
  * Verifica que el API de WhatsApp responda correctamente
  */
 async function checkWhatsAppApiActive() {
@@ -226,7 +231,7 @@ async function checkWhatsAppApiActive() {
 
   try {
     const axios = require('axios');
-    const url = `https://graph.facebook.com/v21.0/${config.whatsapp.phoneNumberId}`;
+    const url = `https://graph.facebook.com/v22.0/${config.whatsapp.phoneNumberId}`;
 
     const response = await axios.get(url, {
       headers: {
@@ -254,91 +259,57 @@ async function checkWhatsAppApiActive() {
 }
 
 /**
- * Check 9: AI Provider Active Health Check (FASE 2)
- * Verifica que el proveedor de AI responda
+ * Check 9: DocuSign API Active Health Check
+ * Verifica que DocuSign responda (intenta obtener apiClient)
  */
-async function checkAiProviderActive() {
-  if (!config.ai.enabled) {
+async function checkDocuSignActive() {
+  if (!config.docusign.integrationKey || !config.docusign.rsaPrivateKey) {
     return {
       status: 'skipped',
-      message: 'AI not enabled',
+      message: 'DocuSign not configured',
     };
   }
 
   try {
-    const axios = require('axios');
-    let response;
-
-    if (config.ai.provider === 'gemini') {
-      // Test simple request a Gemini
-      const model = config.ai.gemini.model || 'gemini-1.5-flash';
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.ai.gemini.apiKey}`;
-      response = await axios.post(
-        url,
-        {
-          contents: [
-            {
-              parts: [{ text: 'test' }],
-            },
-          ],
-        },
-        {
-          timeout: 5000,
-        }
-      );
-
-      return {
-        status: response.status === 200 ? 'healthy' : 'degraded',
-        message: 'Gemini API responding',
-        provider: 'gemini',
-      };
-    }
-    if (config.ai.provider === 'azure-openai') {
-      // Test Azure OpenAI with a minimal chat completion
-      const url = config.ai.azureOpenAI.endpoint;
-      const deployment = config.ai.azureOpenAI.deployment || 'gpt-4o-mini';
-      response = await axios.post(
-        `${url}openai/deployments/${deployment}/chat/completions?api-version=2024-02-01`,
-        {
-          messages: [{ role: 'user', content: 'test' }],
-          max_tokens: 1,
-        },
-        {
-          headers: {
-            'api-key': config.ai.azureOpenAI.apiKey,
-            'Content-Type': 'application/json',
-          },
-          timeout: 10000,
-        }
-      );
-
-      return {
-        status: response.status === 200 ? 'healthy' : 'degraded',
-        message: 'Azure OpenAI responding',
-        provider: 'azure-openai',
-        details: {
-          model: response.data?.model,
-          deployment: deployment,
-        },
-      };
-    }
+    const docusignService = require('../core/services/external/docusignService');
+    // getEnvelopeStatus with a dummy ID would fail, but getApiClient tests auth
+    // We just test that we can get a valid API client (JWT token)
+    await docusignService.getEnvelopeStatus('00000000-0000-0000-0000-000000000000').catch((err) => {
+      // 404 = DocuSign is responding (envelope not found, but auth works)
+      // 401 = auth issue
+      const status = err.status || err.response?.status;
+      if (status === 404 || status === 400) {
+        return { status: 'healthy' }; // API is responding
+      }
+      throw err;
+    });
 
     return {
-      status: 'unknown',
-      message: `Unknown AI provider: ${config.ai.provider}`,
+      status: 'healthy',
+      message: 'DocuSign API responding',
+      baseUrl: config.docusign.baseUrl,
     };
   } catch (error) {
+    // If we got a 404 or 400, DocuSign is reachable
+    const httpStatus = error.status || error.response?.status;
+    if (httpStatus === 404 || httpStatus === 400) {
+      return {
+        status: 'healthy',
+        message: 'DocuSign API responding (auth OK)',
+        baseUrl: config.docusign.baseUrl,
+      };
+    }
+
     return {
       status: 'unhealthy',
-      message: error.response?.data?.error?.message || error.message,
-      errorCode: error.response?.status,
-      provider: config.ai.provider,
+      message: error.message,
+      errorCode: httpStatus,
     };
   }
 }
 
 /**
- * Check 10: Metrics Service Health (FASE 2)
+ * Check 10: Metrics Service Health
  */
 function checkMetricsService() {
   try {
@@ -482,12 +453,12 @@ module.exports = async function (context, req) {
     return;
   }
 
-  // Ejecutar todos los checks (FASE 2: Agregados checks activos)
-  const [dbCheck, deadLetterCheck, whatsappCheck, aiCheck] = await Promise.all([
+  // Ejecutar todos los checks (incluyendo DocuSign en lugar de AI)
+  const [dbCheck, deadLetterCheck, whatsappCheck, docusignCheck] = await Promise.all([
     checkDatabase(startTime),
     checkDeadLetter(),
     checkWhatsAppApiActive(),
-    checkAiProviderActive(),
+    checkDocuSignActive(),
   ]);
 
   const configCheck = checkConfiguration();
@@ -500,7 +471,7 @@ module.exports = async function (context, req) {
   const serviceBusCheck = checkServiceBus();
   const bgProcessorCheck = checkBackgroundProcessor();
 
-  // Determinar estado global (FASE 2: Considerar checks activos)
+  // Determinar estado global
   const isUnhealthy =
     dbCheck.status === 'unhealthy' ||
     configCheck.status === 'unhealthy' ||
@@ -510,7 +481,7 @@ module.exports = async function (context, req) {
     dbCheck.status === 'degraded' ||
     deadLetterCheck.status === 'warning' ||
     circuitBreakerCheck.status === 'degraded' ||
-    aiCheck.status === 'degraded' ||
+    docusignCheck.status === 'unhealthy' ||
     redisCheck.status === 'degraded' ||
     serviceBusCheck.status === 'degraded' ||
     bgProcessorCheck.status === 'warning';
@@ -519,6 +490,7 @@ module.exports = async function (context, req) {
     status: isUnhealthy ? 'unhealthy' : isDegraded ? 'degraded' : 'healthy',
     timestamp,
     version: process.env.npm_package_version || '2.0.0',
+    service: 'sign-bot',
     environment: process.env.NODE_ENV || 'development',
     responseTimeMs: Date.now() - startTime,
     checks: {
@@ -529,9 +501,9 @@ module.exports = async function (context, req) {
       circuitBreakers: circuitBreakerCheck,
       deadLetter: deadLetterCheck,
       externalServices: externalServicesCheck,
-      // FASE 2: Enhanced Health Checks
+      // Active Health Checks
       whatsappApi: whatsappCheck,
-      aiProvider: aiCheck,
+      docusignApi: docusignCheck,
       metrics: metricsCheck,
       redis: redisCheck,
       serviceBus: serviceBusCheck,
@@ -539,7 +511,7 @@ module.exports = async function (context, req) {
     },
   };
 
-  // FASE 2: Status code más granular
+  // Status code granular
   const statusCode = health.status === 'healthy' ? 200 : health.status === 'degraded' ? 200 : 503;
   context.log(`Health check completed: ${health.status} (${health.responseTimeMs}ms)`);
 

@@ -1,5 +1,5 @@
 // ==============================================================================
-// AC FIXBOT - Azure SQL Module
+// Sign Bot - Azure SQL Module
 // Azure SQL Server + Database with environment-based SKU
 // ==============================================================================
 
@@ -24,7 +24,7 @@ param adminLogin string
 param adminPassword string
 
 var tags = {
-  project: 'acfixbot'
+  project: 'signbot'
   environment: environment
 }
 

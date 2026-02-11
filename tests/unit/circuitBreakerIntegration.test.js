@@ -1,6 +1,6 @@
 /**
- * Unit Test: Circuit Breaker integration with Vision and Blob services
- * Verifica gate checks, recordSuccess y recordFailure
+ * Unit Test: Circuit Breaker integration with DocuSign and Blob services
+ * Verifica gate checks, recordSuccess y recordFailure - Sign Bot
  */
 
 jest.mock('../../core/services/infrastructure/appInsightsService', () =>
@@ -15,7 +15,6 @@ jest.mock('../../core/services/infrastructure/errorHandler', () => ({
     warn: jest.fn(),
     error: jest.fn(),
     debug: jest.fn(),
-    vision: jest.fn(),
   },
 }));
 
@@ -24,6 +23,55 @@ const {
   SERVICES,
   resetAll,
 } = require('../../core/services/infrastructure/circuitBreaker');
+
+describe('Circuit Breaker - DOCUSIGN service', () => {
+  beforeEach(() => {
+    resetAll();
+  });
+
+  test('should have DOCUSIGN defined in SERVICES', () => {
+    expect(SERVICES.DOCUSIGN).toBe('docusign');
+  });
+
+  test('should allow execution when circuit is closed', () => {
+    const breaker = getBreaker(SERVICES.DOCUSIGN);
+    const result = breaker.canExecute();
+    expect(result.allowed).toBe(true);
+  });
+
+  test('should open circuit after threshold failures', () => {
+    const breaker = getBreaker(SERVICES.DOCUSIGN);
+
+    // DocuSign has failureThreshold: 5
+    for (let i = 0; i < 5; i++) {
+      breaker.recordFailure(new Error(`fail-${i}`));
+    }
+
+    const result = breaker.canExecute();
+    expect(result.allowed).toBe(false);
+  });
+
+  test('should close circuit after reset', () => {
+    const breaker = getBreaker(SERVICES.DOCUSIGN);
+
+    // Open the circuit
+    for (let i = 0; i < 5; i++) {
+      breaker.recordFailure(new Error(`fail-${i}`));
+    }
+    expect(breaker.canExecute().allowed).toBe(false);
+
+    breaker.reset();
+    expect(breaker.canExecute().allowed).toBe(true);
+  });
+
+  test('should record success and keep circuit closed', () => {
+    const breaker = getBreaker(SERVICES.DOCUSIGN);
+
+    breaker.recordSuccess();
+    const result = breaker.canExecute();
+    expect(result.allowed).toBe(true);
+  });
+});
 
 describe('Circuit Breaker - BLOB_STORAGE service', () => {
   beforeEach(() => {
@@ -66,74 +114,6 @@ describe('Circuit Breaker - BLOB_STORAGE service', () => {
   });
 });
 
-describe('Circuit Breaker - AZURE_VISION service', () => {
-  beforeEach(() => {
-    resetAll();
-  });
-
-  test('should have AZURE_VISION defined in SERVICES', () => {
-    expect(SERVICES.AZURE_VISION).toBe('azure-vision');
-  });
-
-  test('should allow execution when circuit is closed', () => {
-    const breaker = getBreaker(SERVICES.AZURE_VISION);
-    const result = breaker.canExecute();
-    expect(result.allowed).toBe(true);
-  });
-
-  test('should open circuit after threshold failures', () => {
-    const breaker = getBreaker(SERVICES.AZURE_VISION);
-
-    // Vision has failureThreshold: 5
-    for (let i = 0; i < 5; i++) {
-      breaker.recordFailure(new Error(`fail-${i}`));
-    }
-
-    const result = breaker.canExecute();
-    expect(result.allowed).toBe(false);
-  });
-});
-
-describe('Circuit Breaker - Vision Service gate check', () => {
-  beforeEach(() => {
-    resetAll();
-  });
-
-  test('should reject OCR when vision circuit breaker is open', async () => {
-    // Open the vision circuit breaker
-    const breaker = getBreaker(SERVICES.AZURE_VISION);
-    for (let i = 0; i < 5; i++) {
-      breaker.recordFailure(new Error(`fail-${i}`));
-    }
-
-    // Mock Azure Vision client to prevent real API calls
-    jest.mock('@azure/cognitiveservices-computervision', () => ({
-      ComputerVisionClient: jest.fn(() => ({
-        readInStream: jest.fn(),
-        getReadResult: jest.fn(),
-      })),
-    }));
-    jest.mock('@azure/ms-rest-js', () => ({
-      ApiKeyCredentials: jest.fn(),
-    }));
-
-    const {
-      extractTextFromImage,
-      OCR_ERROR_TYPES,
-    } = require('../../core/services/ai/visionService');
-
-    const imageBuffer = Buffer.alloc(5 * 1024); // 5KB valid size
-    try {
-      await extractTextFromImage(imageBuffer);
-      // Should not reach here
-      expect(true).toBe(false);
-    } catch (error) {
-      expect(error.name).toBe('OCRError');
-      expect(error.type).toBe(OCR_ERROR_TYPES.SERVICE_ERROR);
-    }
-  });
-});
-
 describe('Circuit Breaker - Blob Service gate check', () => {
   beforeEach(() => {
     resetAll();
@@ -156,8 +136,8 @@ describe('Circuit Breaker - Blob Service gate check', () => {
 
     const blobService = require('../../core/services/storage/blobService');
 
-    const imageBuffer = Buffer.alloc(1024); // 1KB
-    await expect(blobService.uploadImage(imageBuffer, '5551234567', 'jpg')).rejects.toThrow(
+    const buffer = Buffer.alloc(1024); // 1KB
+    await expect(blobService.uploadImage(buffer, '5551234567', 'jpg')).rejects.toThrow(
       'circuit breaker abierto'
     );
   });
@@ -168,16 +148,9 @@ describe('Circuit Breaker - all services pre-configured', () => {
     resetAll();
   });
 
-  test('should have all 6 services in SERVICES enum', () => {
+  test('should have all 4 services in SERVICES enum', () => {
     expect(Object.keys(SERVICES)).toEqual(
-      expect.arrayContaining([
-        'WHATSAPP',
-        'GEMINI',
-        'AZURE_OPENAI',
-        'AZURE_VISION',
-        'DATABASE',
-        'BLOB_STORAGE',
-      ])
+      expect.arrayContaining(['WHATSAPP', 'DOCUSIGN', 'DATABASE', 'BLOB_STORAGE'])
     );
   });
 

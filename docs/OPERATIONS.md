@@ -1,4 +1,4 @@
-# Operaciones y Mantenimiento — AC FIXBOT
+# Operaciones y Mantenimiento — Sign Bot
 
 > Audiencia: SRE, DevOps, Operaciones
 > Última actualización: Febrero 2026
@@ -19,7 +19,7 @@
 
 ## Azure Functions Timers
 
-AC FIXBOT tiene 3 timers que se ejecutan automáticamente. Todos están configurados en `host.json` con un timeout global de 5 minutos.
+Sign Bot tiene 3 timers que se ejecutan automáticamente. Todos están configurados en `host.json` con un timeout global de 5 minutos.
 
 ### timer-session-cleanup
 
@@ -509,7 +509,7 @@ Métricas clave en Azure Cache for Redis:
 
 ```
 1. Verificar estado de la Function App:
-   az functionapp show --name func-acfixbot-prod --query "state"
+   az functionapp show --name func-signbot-prod --query "state"
 
 2. Verificar health check:
    curl https://<function-app>.azurewebsites.net/api/health
@@ -517,10 +517,10 @@ Métricas clave en Azure Cache for Redis:
 3. Si health check falla → verificar SQL:
    - ¿Connection pool agotado?
    - ¿Azure SQL disponible?
-   - Revisar: az sql db show --name db-acfixbot ...
+   - Revisar: az sql db show --name db-signbot ...
 
 4. Reiniciar Function App (último recurso):
-   az functionapp restart --name func-acfixbot-prod
+   az functionapp restart --name func-signbot-prod
 ```
 
 ### Escenario 2: Bloqueos optimistas frecuentes
@@ -581,7 +581,7 @@ Métricas clave en Azure Cache for Redis:
    → Puede haber mayor latencia en intenciones AI
 
 2. Verificar Azure Redis:
-   az redis show --name redis-acfixbot --query "provisioningState"
+   az redis show --name redis-signbot --query "provisioningState"
 
 3. Si Redis vuelve:
    → Reconexión automática (max 3 retries)

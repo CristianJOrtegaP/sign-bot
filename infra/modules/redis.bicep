@@ -1,5 +1,5 @@
 // ==============================================================================
-// AC FIXBOT - Azure Cache for Redis Module
+// Sign Bot - Azure Cache for Redis Module
 // Redis Cache with TLS enforcement and environment-based SKU
 // ==============================================================================
 
@@ -14,7 +14,7 @@ param location string
 param environment string
 
 var tags = {
-  project: 'acfixbot'
+  project: 'signbot'
   environment: environment
 }
 

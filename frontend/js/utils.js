@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Utility Functions
+ * SIGN BOT - Utility Functions
  */
 
 /**
@@ -33,6 +33,22 @@ function formatFullDate(dateStr) {
     minute: '2-digit',
     day: '2-digit',
     month: 'short',
+  });
+}
+
+/**
+ * Format date with full detail (for timelines)
+ */
+function formatDetailDate(dateStr) {
+  if (!dateStr) {
+    return '';
+  }
+  return new Date(dateStr).toLocaleString('es-MX', {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
   });
 }
 
@@ -112,12 +128,91 @@ function simpleHash(str) {
   return hash;
 }
 
+/**
+ * Format document state with emoji, label, and CSS class
+ */
+function formatDocumentState(estado) {
+  const states = {
+    PENDIENTE_ENVIO: {
+      emoji: '\u23F3',
+      label: 'Pendiente de Envio',
+      cssClass: 'status-pendiente-envio',
+    },
+    ENVIADO: { emoji: '\uD83D\uDCE8', label: 'Enviado', cssClass: 'status-enviado' },
+    ENTREGADO: { emoji: '\uD83D\uDCEC', label: 'Entregado', cssClass: 'status-entregado' },
+    VISTO: { emoji: '\uD83D\uDC41\uFE0F', label: 'Visto', cssClass: 'status-visto' },
+    FIRMADO: { emoji: '\u2705', label: 'Firmado', cssClass: 'status-firmado' },
+    RECHAZADO: { emoji: '\u274C', label: 'Rechazado', cssClass: 'status-rechazado' },
+    ANULADO: { emoji: '\uD83D\uDEAB', label: 'Anulado', cssClass: 'status-anulado' },
+    ERROR: { emoji: '\u26A0\uFE0F', label: 'Error', cssClass: 'status-error' },
+  };
+  return (
+    states[estado] || { emoji: '\u2753', label: estado || 'Desconocido', cssClass: 'status-error' }
+  );
+}
+
+/**
+ * Format document type with label
+ */
+function formatDocumentType(tipo) {
+  const types = {
+    CONTRATO: 'Contrato',
+    ADENDUM: 'Adendum',
+    NDA: 'NDA',
+    PODER: 'Poder Notarial',
+    ACUERDO: 'Acuerdo',
+    CONVENIO: 'Convenio',
+    CARTA_RESPONSIVA: 'Carta Responsiva',
+    OTRO: 'Otro',
+  };
+  return types[tipo] || tipo || 'Sin tipo';
+}
+
+/**
+ * Format number with thousands separator
+ */
+function formatNumber(num) {
+  if (num == null || isNaN(num)) {
+    return '0';
+  }
+  return Number(num).toLocaleString('es-MX');
+}
+
+/**
+ * Format percentage
+ */
+function formatPercent(num) {
+  if (num == null || isNaN(num)) {
+    return '0%';
+  }
+  return `${Number(num).toFixed(1)}%`;
+}
+
+/**
+ * Format hours
+ */
+function formatHours(num) {
+  if (num == null || isNaN(num)) {
+    return '0h';
+  }
+  if (num < 1) {
+    return `${Math.round(num * 60)}min`;
+  }
+  return `${Number(num).toFixed(1)}h`;
+}
+
 // Export for use in other modules
 window.Utils = {
   formatDate,
   formatFullDate,
+  formatDetailDate,
   maskPhone,
   escapeHtml,
   renderMarkdown,
   simpleHash,
+  formatDocumentState,
+  formatDocumentType,
+  formatNumber,
+  formatPercent,
+  formatHours,
 };

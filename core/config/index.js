@@ -1,10 +1,10 @@
 /**
- * AC FIXBOT - Configuración Centralizada
+ * SIGN BOT - Configuracion Centralizada
  * Todas las constantes, magic numbers y variables de entorno en un solo lugar
  */
 
 // ============================================================================
-// VALIDACIÓN DE VARIABLES DE ENTORNO REQUERIDAS
+// VALIDACION DE VARIABLES DE ENTORNO REQUERIDAS
 // ============================================================================
 
 const REQUIRED_ENV_VARS = [
@@ -15,40 +15,35 @@ const REQUIRED_ENV_VARS = [
 ];
 
 const OPTIONAL_ENV_VARS = [
-  'GEMINI_API_KEY',
-  'USE_AI',
-  'AI_PROVIDER', // 'gemini' o 'azure-openai'
-  'AZURE_OPENAI_ENDPOINT', // Endpoint de Azure OpenAI
-  'AZURE_OPENAI_KEY', // API Key de Azure OpenAI
-  'AZURE_OPENAI_DEPLOYMENT', // Nombre del deployment (modelo)
-  'AZURE_AUDIO_DEPLOYMENT', // Nombre del deployment de audio (gpt-4o-mini-audio)
-  'AUDIO_TRANSCRIPTION_ENABLED', // Habilitar transcripción de audio (true/false)
-  // TRANSCRIPCIÓN DE AUDIO AZURE
-  'AZURE_SPEECH_KEY', // Azure Speech Services: 5 hrs/mes gratis (fallback)
-  'AZURE_SPEECH_REGION', // Región de Azure Speech (ej: eastus)
-  // Google Speech solo para desarrollo (NO usar en producción Arca Continental)
-  'GOOGLE_SPEECH_API_KEY', // Google Speech: 60 min/mes gratis - SOLO DEV
-  'VISION_ENDPOINT',
-  'VISION_KEY',
+  // DOCUSIGN
+  'DOCUSIGN_INTEGRATION_KEY',
+  'DOCUSIGN_USER_ID',
+  'DOCUSIGN_ACCOUNT_ID',
+  'DOCUSIGN_BASE_URL',
+  'DOCUSIGN_RSA_PRIVATE_KEY',
+  'DOCUSIGN_WEBHOOK_SECRET',
+  'DOCUSIGN_ENVELOPE_EXPIRATION_DAYS',
+  // FIRMA CONFIG
+  'FIRMA_REMINDER_HOURS_CLIENTE',
+  'FIRMA_MAX_RECORDATORIOS_CLIENTE',
+  'FIRMA_REMINDER_DAYS_SAP',
+  'FIRMA_HOUSEKEEPING_DAYS',
+  'FIRMA_TIMER_SCHEDULE',
+  // STORAGE
   'BLOB_CONNECTION_STRING',
+  // SESIONES
   'SESSION_TIMEOUT_MINUTES',
   'SESSION_WARNING_MINUTES',
   'TIMER_SCHEDULE',
-  'SURVEY_TIMER_SCHEDULE', // Horario del timer de encuestas (CRON)
-  'SURVEY_HORAS_ESPERA', // Horas a esperar después de resolución
-  'SURVEY_HORAS_EXPIRACION', // Horas para expirar encuestas sin respuesta
   // SEGURIDAD
-  'WHATSAPP_APP_SECRET', // App Secret para verificar firma X-Hub-Signature-256
-  'ADMIN_RATE_LIMIT_MAX', // Límite de requests por IP para admin API (default: 60)
-  // AZURE MAPS
-  'AZURE_MAPS_KEY', // API Key de Azure Maps para geocoding y routing
-  'ROUTE_BUFFER_MINUTES', // Minutos adicionales a sumar al tiempo de ruta (default: 20)
-  // ALERTAS Y MONITOREO
-  'ALERT_WEBHOOK_URL', // URL de webhook para alertas (Slack/Teams)
+  'WHATSAPP_APP_SECRET',
+  'ADMIN_RATE_LIMIT_MAX',
+  // ALERTAS
+  'TEAMS_WEBHOOK_URL',
 ];
 
 /**
- * Valida que las variables de entorno requeridas estén definidas
+ * Valida que las variables de entorno requeridas esten definidas
  * Nota: Usa console.* durante startup ya que el logger puede no estar inicializado
  * @throws {Error} Si falta alguna variable requerida
  */
@@ -56,12 +51,10 @@ function validateEnvVars() {
   const missing = REQUIRED_ENV_VARS.filter((varName) => !process.env[varName]);
 
   if (missing.length > 0) {
-    // Usar console.error durante startup (logger no disponible)
     console.error('[CONFIG] ERROR: Variables de entorno faltantes:', missing.join(', '));
     throw new Error(`Variables de entorno requeridas no definidas: ${missing.join(', ')}`);
   }
 
-  // Advertir sobre variables opcionales faltantes (solo en desarrollo)
   if (process.env.NODE_ENV !== 'production') {
     const missingOptional = OPTIONAL_ENV_VARS.filter((varName) => !process.env[varName]);
     if (missingOptional.length > 0) {
@@ -74,29 +67,25 @@ function validateEnvVars() {
 }
 
 // ============================================================================
-// CONFIGURACIÓN DE BASE DE DATOS
+// CONFIGURACION DE BASE DE DATOS
 // ============================================================================
 
 const database = {
   connectionString: process.env.SQL_CONNECTION_STRING,
 
-  // Timeouts de conexión (en ms)
-  connectionTimeout: 30000, // 30 segundos para establecer conexión
-  requestTimeout: 15000, // 15s para queries - fail fast, el webhook tiene budget de 5 min
+  connectionTimeout: 30000,
+  requestTimeout: 15000,
 
-  // Cache de sesiones
   sessionCache: {
-    ttlMs: 5 * 60 * 1000, // 5 minutos
-    cleanupIntervalMs: 2 * 60 * 1000, // Limpieza cada 2 minutos
-  },
-
-  // Cache de equipos
-  equipoCache: {
-    ttlMs: 15 * 60 * 1000, // 15 minutos (equipos cambian menos)
+    ttlMs: 5 * 60 * 1000,
     cleanupIntervalMs: 2 * 60 * 1000,
   },
 
-  // Pool de conexiones (configurable via env vars para escalar)
+  documentCache: {
+    ttlMs: 10 * 60 * 1000, // 10 minutos para documentos
+    cleanupIntervalMs: 2 * 60 * 1000,
+  },
+
   pool: {
     min: Math.max(0, parseInt(process.env.SQL_POOL_MIN || '0', 10)),
     max: Math.max(1, parseInt(process.env.SQL_POOL_MAX || '10', 10)),
@@ -104,7 +93,6 @@ const database = {
     acquireTimeoutMillis: parseInt(process.env.SQL_POOL_ACQUIRE_TIMEOUT_MS || '15000', 10),
   },
 
-  // Reintentos de conexión
   retry: {
     maxRetries: 3,
     initialDelayMs: 500,
@@ -112,10 +100,8 @@ const database = {
     backoffMultiplier: 2,
   },
 
-  // Códigos de error que ameritan reconexión
   reconnectErrorCodes: ['ECONNRESET', 'ESOCKET', 'ECONNREFUSED', 'ETIMEDOUT', 'ETIMEOUT'],
 
-  // Errores transitorios de SQL que ameritan reintento
   transientErrorNumbers: [
     -2, // Timeout
     -1, // Network error
@@ -133,27 +119,23 @@ const database = {
 };
 
 // ============================================================================
-// CONFIGURACIÓN DE BLOB STORAGE
+// CONFIGURACION DE BLOB STORAGE
 // ============================================================================
 
 const blob = {
   connectionString: process.env.BLOB_CONNECTION_STRING,
-  containerName: 'imagenes-reportes',
+  containerName: 'documentos-firma',
 
-  // Expiración del SAS token en horas (default: 72 horas = 3 días)
-  // DEV: 24 | TST: 48 | PROD: 72
   sasExpiryHours: Math.min(
     Math.max(1, parseInt(process.env.BLOB_SAS_EXPIRY_HOURS || '72', 10) || 72),
-    8760 // Máximo 1 año como guardrail
+    8760
   ),
 
-  // Límites de archivo
-  maxImageSizeMB: parseInt(process.env.MAX_IMAGE_SIZE_MB || '10', 10),
-  maxAudioSizeMB: parseInt(process.env.MAX_AUDIO_SIZE_MB || '25', 10),
+  maxPdfSizeMB: parseInt(process.env.MAX_PDF_SIZE_MB || '25', 10),
 };
 
 // ============================================================================
-// CONFIGURACIÓN DE WHATSAPP
+// CONFIGURACION DE WHATSAPP
 // ============================================================================
 
 const whatsapp = {
@@ -162,13 +144,11 @@ const whatsapp = {
   accessToken: process.env.WHATSAPP_TOKEN,
   verifyToken: process.env.WHATSAPP_VERIFY_TOKEN,
 
-  // Timeouts HTTP
   timeout: {
-    defaultMs: 10000, // 10 segundos para requests normales
-    mediaDownloadMs: 30000, // 30 segundos para descarga de archivos
+    defaultMs: 10000,
+    mediaDownloadMs: 30000,
   },
 
-  // Reintentos
   retry: {
     maxRetries: 2,
     delayMs: 1000,
@@ -182,50 +162,73 @@ const whatsapp = {
     ],
   },
 
-  // Límites de la API
   limits: {
-    buttonTitleMaxLength: 20, // Máximo 20 caracteres en títulos de botones
+    buttonTitleMaxLength: 20,
   },
 };
 
 // ============================================================================
-// CONFIGURACIÓN DE IA (GEMINI / AZURE OPENAI)
+// CONFIGURACION DE DOCUSIGN
 // ============================================================================
 
-const ai = {
-  enabled: process.env.USE_AI === 'true',
+const docusign = {
+  integrationKey: process.env.DOCUSIGN_INTEGRATION_KEY,
+  userId: process.env.DOCUSIGN_USER_ID,
+  accountId: process.env.DOCUSIGN_ACCOUNT_ID,
+  baseUrl: process.env.DOCUSIGN_BASE_URL || 'https://demo.docusign.net/restapi',
+  rsaPrivateKey: process.env.DOCUSIGN_RSA_PRIVATE_KEY,
+  webhookSecret: process.env.DOCUSIGN_WEBHOOK_SECRET,
 
-  // Provider de IA: 'gemini' (desarrollo) o 'azure-openai' (producción)
-  // Cambiar esta variable para alternar entre proveedores
-  provider: process.env.AI_PROVIDER || 'gemini',
+  envelopeExpirationDays: parseInt(process.env.DOCUSIGN_ENVELOPE_EXPIRATION_DAYS || '365', 10),
 
-  // Configuración de Gemini
-  gemini: {
-    apiKey: process.env.GEMINI_API_KEY,
-    model: 'gemini-2.5-flash',
+  // OAuth
+  oauthBaseUrl: (process.env.DOCUSIGN_BASE_URL || '').includes('demo')
+    ? 'https://account-d.docusign.com'
+    : 'https://account.docusign.com',
+
+  // Timeouts
+  timeout: {
+    defaultMs: 15000,
+    uploadMs: 60000,
   },
 
-  // Configuración de Azure OpenAI (Producción)
-  azureOpenAI: {
-    endpoint: process.env.AZURE_OPENAI_ENDPOINT,
-    apiKey: process.env.AZURE_OPENAI_KEY,
-    deploymentName: process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o-mini',
+  // Reintentos
+  retry: {
+    maxRetries: 2,
+    delayMs: 2000,
   },
-
-  // Umbrales de confianza (compartidos entre proveedores)
-  confidence: {
-    high: 0.9, // Confianza alta (regex)
-    medium: 0.7, // Confianza media (threshold para usar resultado de IA)
-    low: 0.5, // Confianza baja (fallback)
-    minimum: 0.3, // Confianza mínima
-  },
-
-  // Longitud de mensaje para decidir método de detección
-  messageLengthThreshold: 30, // >30 chars = mensaje largo
 };
 
 // ============================================================================
-// CONFIGURACIÓN DE RATE LIMITING
+// CONFIGURACION DE FIRMA (RECORDATORIOS Y HOUSEKEEPING)
+// ============================================================================
+
+const firma = {
+  reminderHoursCliente: parseInt(process.env.FIRMA_REMINDER_HOURS_CLIENTE || '48', 10),
+  maxRecordatoriosCliente: parseInt(process.env.FIRMA_MAX_RECORDATORIOS_CLIENTE || '5', 10),
+  reminderDaysSap: parseInt(process.env.FIRMA_REMINDER_DAYS_SAP || '7', 10),
+  housekeepingDays: parseInt(process.env.FIRMA_HOUSEKEEPING_DAYS || '30', 10),
+  timerSchedule: process.env.FIRMA_TIMER_SCHEDULE || '0 0 * * * *',
+};
+
+// Validar configuracion de firma
+if (isNaN(firma.reminderHoursCliente) || firma.reminderHoursCliente < 1) {
+  console.warn('[CONFIG] WARN: FIRMA_REMINDER_HOURS_CLIENTE invalido, usando default de 48 horas');
+  firma.reminderHoursCliente = 48;
+}
+
+if (isNaN(firma.maxRecordatoriosCliente) || firma.maxRecordatoriosCliente < 1) {
+  console.warn('[CONFIG] WARN: FIRMA_MAX_RECORDATORIOS_CLIENTE invalido, usando default de 5');
+  firma.maxRecordatoriosCliente = 5;
+}
+
+if (isNaN(firma.housekeepingDays) || firma.housekeepingDays < 7) {
+  console.warn('[CONFIG] WARN: FIRMA_HOUSEKEEPING_DAYS invalido, usando default de 30 dias');
+  firma.housekeepingDays = 30;
+}
+
+// ============================================================================
+// CONFIGURACION DE RATE LIMITING
 // ============================================================================
 
 const rateLimiting = {
@@ -236,61 +239,32 @@ const rateLimiting = {
     windowHourMs: 3600000,
   },
 
-  images: {
-    maxPerMinute: 3,
-    maxPerHour: 20,
-    windowMinuteMs: 60000,
-    windowHourMs: 3600000,
-  },
-
-  audios: {
-    maxPerMinute: 3,
-    maxPerHour: 30,
-    windowMinuteMs: 60000,
-    windowHourMs: 3600000,
-  },
-
   spam: {
-    windowMs: 10000, // Ventana de 10 segundos
-    maxMessagesInWindow: 10, // Más de 10 mensajes = spam (aumentado para encuestas)
+    windowMs: 10000,
+    maxMessagesInWindow: 10,
   },
 
-  cleanupIntervalMs: 5 * 60 * 1000, // Limpiar cada 5 minutos
+  cleanupIntervalMs: 5 * 60 * 1000,
 };
 
 // ============================================================================
-// CONFIGURACIÓN DE SESIONES
+// CONFIGURACION DE SESIONES
 // ============================================================================
 
 const session = {
-  // Timeout total: minutos de inactividad antes de cerrar sesión
   timeoutMinutes: parseInt(process.env.SESSION_TIMEOUT_MINUTES || '30', 10),
-  // Advertencia: minutos de inactividad antes de enviar "¿Sigues ahí?"
-  // Por defecto es 5 minutos antes del timeout (ej: timeout=30, warning=25)
   warningMinutes: parseInt(process.env.SESSION_WARNING_MINUTES || '25', 10),
-  // Schedule del timer en formato CRON (segundo minuto hora dia mes dia-semana)
-  // Default: cada 5 minutos
   timerSchedule: process.env.TIMER_SCHEDULE || '0 */5 * * * *',
   defaultState: 'INICIO',
-
-  // Estados válidos de sesión
-  states: {
-    INICIO: 'INICIO',
-    ESPERA_NUMERO_EMPLEADO: 'ESPERA_NUMERO_EMPLEADO',
-    ESPERA_SAP_VEHICULO: 'ESPERA_SAP_VEHICULO',
-    ESPERA_SAP: 'ESPERA_SAP',
-    CONFIRMAR_EQUIPO: 'CONFIRMAR_EQUIPO',
-    ESPERA_DESCRIPCION: 'ESPERA_DESCRIPCION',
-  },
 };
 
-// Validar timeout de sesión
+// Validar timeout de sesion
 if (isNaN(session.timeoutMinutes) || session.timeoutMinutes <= 0) {
   console.warn('[CONFIG] WARN: SESSION_TIMEOUT_MINUTES invalido, usando default de 30 minutos');
   session.timeoutMinutes = 30;
 }
 
-// Validar warning de sesión
+// Validar warning de sesion
 if (isNaN(session.warningMinutes) || session.warningMinutes <= 0) {
   console.warn('[CONFIG] WARN: SESSION_WARNING_MINUTES invalido, usando default de 25 minutos');
   session.warningMinutes = 25;
@@ -305,247 +279,59 @@ if (session.warningMinutes >= session.timeoutMinutes) {
 }
 
 // ============================================================================
-// CONFIGURACIÓN DE VISION (OCR)
-// ============================================================================
-
-const vision = {
-  endpoint: process.env.VISION_ENDPOINT,
-  apiKey: process.env.VISION_KEY,
-
-  ocr: {
-    language: 'es',
-    maxAttempts: 15, // Máximo 15 intentos de polling
-    pollingIntervalMs: 1000, // Esperar 1 segundo entre intentos
-  },
-
-  // Patrón para código SAP (7 dígitos)
-  sapCodePattern: /\b(\d{7})\b/,
-};
-
-// ============================================================================
-// CONFIGURACIÓN DE AZURE MAPS (Geocoding + Routing)
-// ============================================================================
-
-const azureMaps = {
-  // API Key de Azure Maps (subscription key)
-  apiKey: process.env.AZURE_MAPS_KEY,
-
-  // Base URL de Azure Maps REST API
-  baseUrl: 'https://atlas.microsoft.com',
-
-  // Versión de la API
-  apiVersion: '1.0',
-
-  // Tiempo buffer a sumar al tiempo de ruta (minutos)
-  // Este es el tiempo adicional para preparación, imponderables, etc.
-  routeBufferMinutes: parseInt(process.env.ROUTE_BUFFER_MINUTES || '20', 10),
-
-  // Timeouts HTTP
-  timeout: {
-    geocodingMs: 10000, // 10 segundos para geocoding
-    routingMs: 15000, // 15 segundos para routing (puede ser más lento)
-  },
-
-  // Opciones de routing
-  routing: {
-    travelMode: 'car', // Modo de viaje: car, truck, taxi, bus, van, motorcycle, bicycle, pedestrian
-    traffic: true, // Considerar tráfico en tiempo real
-    routeType: 'fastest', // Tipo de ruta: fastest, shortest, eco, thrilling
-    computeTravelTimeFor: 'all', // all = devuelve tiempo con y sin tráfico
-  },
-};
-
-// Validar buffer de minutos
-if (isNaN(azureMaps.routeBufferMinutes) || azureMaps.routeBufferMinutes < 0) {
-  console.warn('[CONFIG] WARN: ROUTE_BUFFER_MINUTES invalido, usando default de 20 minutos');
-  azureMaps.routeBufferMinutes = 20;
-}
-
-// ============================================================================
-// CONFIGURACIÓN DE TRANSCRIPCIÓN DE AUDIO (GPT-4o-mini-audio)
-// ============================================================================
-
-const audio = {
-  // Habilitar transcripción de audio con Azure (requiere Azure OpenAI con Whisper)
-  enabled: process.env.AUDIO_TRANSCRIPTION_ENABLED === 'true',
-
-  // Endpoint de Azure OpenAI para audio (puede ser recurso separado para Whisper)
-  endpoint: process.env.AZURE_AUDIO_ENDPOINT || process.env.AZURE_OPENAI_ENDPOINT,
-
-  // API Key para el recurso de audio
-  apiKey: process.env.AZURE_AUDIO_KEY || process.env.AZURE_OPENAI_KEY,
-
-  // Nombre del deployment de audio en Azure OpenAI
-  audioDeployment: process.env.AZURE_AUDIO_DEPLOYMENT || 'whisper',
-
-  // ============================================================================
-  // PROVEEDOR FALLBACK AZURE - Azure Speech Services
-  // Si Azure Whisper no está disponible o falla, se usa Azure Speech
-  // ============================================================================
-
-  // Azure Speech Services: 5 horas gratis por mes (FALLBACK PRODUCCIÓN)
-  // Crear recurso: https://portal.azure.com/#create/Microsoft.CognitiveServicesSpeechServices
-  azureSpeechKey: process.env.AZURE_SPEECH_KEY,
-  azureSpeechRegion: process.env.AZURE_SPEECH_REGION, // ej: eastus, westus2, southcentralus
-
-  // ============================================================================
-  // PROVEEDOR DESARROLLO (NO usar en producción Arca Continental)
-  // ============================================================================
-
-  // Google Speech-to-Text: 60 minutos gratis por mes - SOLO DESARROLLO
-  // Obtener API Key: https://console.cloud.google.com/apis/credentials
-  googleApiKey: process.env.GOOGLE_SPEECH_API_KEY,
-
-  // Límites de audio
-  limits: {
-    maxFileSizeBytes: 25 * 1024 * 1024, // 25MB
-    minFileSizeBytes: 1024, // 1KB mínimo
-    maxDurationSeconds: 300, // 5 minutos máximo (recomendado)
-  },
-
-  // Timeout para transcripción (ms)
-  timeoutMs: 60000, // 60 segundos
-
-  // Idioma principal para transcripción
-  language: 'es',
-
-  // Rate limiting para audios
-  rateLimit: {
-    maxPerMinute: 30,
-    maxPerHour: 500,
-  },
-};
-
-// ============================================================================
-// CONFIGURACIÓN DE ENCUESTAS DE SATISFACCIÓN
-// ============================================================================
-
-const survey = {
-  // Schedule del timer (CRON): default 9:00 AM diario (hora del servidor/Azure)
-  timerSchedule: process.env.SURVEY_TIMER_SCHEDULE || '0 0 9 * * *',
-  // Horas mínimas de espera después de resolución antes de enviar encuesta
-  horasEspera: parseInt(process.env.SURVEY_HORAS_ESPERA || '24', 10),
-  // Horas para expirar encuestas sin respuesta
-  horasExpiracion: parseInt(process.env.SURVEY_HORAS_EXPIRACION || '72', 10),
-  // Máximo de encuestas a enviar por ejecución del timer
-  maxPorEjecucion: 50,
-  // Pausa entre envíos (ms)
-  pausaEntreEnviosMs: 1000,
-};
-
-// Validar configuración de encuestas
-if (isNaN(survey.horasEspera) || survey.horasEspera < 1) {
-  console.warn('[CONFIG] WARN: SURVEY_HORAS_ESPERA invalido, usando default de 24 horas');
-  survey.horasEspera = 24;
-}
-
-if (isNaN(survey.horasExpiracion) || survey.horasExpiracion < survey.horasEspera) {
-  console.warn('[CONFIG] WARN: SURVEY_HORAS_EXPIRACION invalido, usando default de 72 horas');
-  survey.horasExpiracion = 72;
-}
-
-// ============================================================================
-// CONFIGURACIÓN DE MÉTRICAS
+// CONFIGURACION DE METRICAS
 // ============================================================================
 
 const metrics = {
-  printIntervalMs: 5 * 60 * 1000, // Imprimir resumen cada 5 minutos
+  printIntervalMs: 5 * 60 * 1000,
 };
 
 // ============================================================================
-// CONFIGURACIÓN DE VALIDACIÓN
-// ============================================================================
-
-const validation = {
-  sapCode: {
-    minLength: 5, // Longitud mínima para código SAP
-  },
-};
-
-// ============================================================================
-// TIPOS DE EQUIPO E INTENCIONES
-// ============================================================================
-
-const equipmentTypes = {
-  REFRIGERADOR: 'REFRIGERADOR',
-  VEHICULO: 'VEHICULO',
-  OTRO: 'OTRO',
-};
-
-const intents = {
-  SALUDO: 'SALUDO',
-  REPORTAR_FALLA: 'REPORTAR_FALLA',
-  TIPO_REFRIGERADOR: 'TIPO_REFRIGERADOR',
-  TIPO_VEHICULO: 'TIPO_VEHICULO',
-  DESPEDIDA: 'DESPEDIDA',
-  OTRO: 'OTRO',
-};
-
-const reportTypes = {
-  REFRIGERADOR: 'REFRIGERADOR',
-  VEHICULO: 'VEHICULO',
-};
-
-// ============================================================================
-// CONFIGURACIÓN DE AZURE CACHE FOR REDIS (FASE 3 - Escalabilidad)
+// CONFIGURACION DE AZURE CACHE FOR REDIS
 // ============================================================================
 
 const redis = {
-  // Habilitar Redis (si false, usa cache en memoria local)
   enabled: process.env.REDIS_ENABLED === 'true',
-
-  // Configuración de conexión Azure Redis
   host: process.env.REDIS_HOST,
   port: parseInt(process.env.REDIS_PORT || '6380', 10),
   password: process.env.REDIS_PASSWORD,
-
-  // Azure Redis requiere TLS
   tls: process.env.REDIS_TLS !== 'false',
 
-  // TTLs por tipo de dato (en segundos)
   ttl: {
-    session: 5 * 60, // 5 minutos para sesiones
-    equipo: 15 * 60, // 15 minutos para equipos
-    default: 5 * 60, // Default 5 minutos
+    session: 5 * 60,
+    document: 10 * 60,
+    default: 5 * 60,
   },
 
-  // Configuración de reconexión
   reconnect: {
     maxRetries: 3,
     retryDelayMs: 1000,
   },
 
-  // Prefix para keys (evita colisiones si se comparte Redis)
-  keyPrefix: process.env.REDIS_KEY_PREFIX || 'acfixbot:',
+  keyPrefix: process.env.REDIS_KEY_PREFIX || 'signbot:',
 };
 
 // ============================================================================
-// CONFIGURACIÓN DE AZURE SERVICE BUS (FASE 3 - Dead Letter Queue)
+// CONFIGURACION DE AZURE SERVICE BUS
 // ============================================================================
 
 const serviceBus = {
-  // Habilitar Service Bus (si false, usa tabla SQL para DLQ)
   enabled: process.env.SERVICEBUS_ENABLED === 'true',
-
-  // Connection string de Azure Service Bus
   connectionString: process.env.SERVICEBUS_CONNECTION_STRING,
 
-  // Nombres de colas
-  queueName: process.env.SERVICEBUS_QUEUE_NAME || 'acfixbot-messages',
-  dlqName: process.env.SERVICEBUS_DLQ_NAME || 'acfixbot-dlq',
+  queueName: process.env.SERVICEBUS_QUEUE_NAME || 'signbot-messages',
+  dlqName: process.env.SERVICEBUS_DLQ_NAME || 'signbot-dlq',
 
-  // Configuración de mensajes
-  maxDeliveryCount: 3, // Reintentos antes de ir a DLQ
-  lockDurationMs: 60000, // 1 minuto de lock
-  messageTimeToLiveMs: 24 * 60 * 60 * 1000, // 24 horas
+  maxDeliveryCount: 3,
+  lockDurationMs: 60000,
+  messageTimeToLiveMs: 24 * 60 * 60 * 1000,
 
-  // Configuración de recepción
-  maxConcurrentCalls: 5, // Mensajes procesados en paralelo
-  receiveMode: 'peekLock', // peekLock o receiveAndDelete
+  maxConcurrentCalls: 5,
+  receiveMode: 'peekLock',
 };
 
 // ============================================================================
-// CONFIGURACIÓN DE PROCESAMIENTO EN BACKGROUND
+// CONFIGURACION DE PROCESAMIENTO EN BACKGROUND
 // ============================================================================
 
 const backgroundProcessor = {
@@ -553,37 +339,34 @@ const backgroundProcessor = {
 };
 
 // ============================================================================
-// EXPORTAR CONFIGURACIÓN
+// CONFIGURACION DE TEAMS
+// ============================================================================
+
+const teams = {
+  webhookUrl: process.env.TEAMS_WEBHOOK_URL,
+};
+
+// ============================================================================
+// EXPORTAR CONFIGURACION
 // ============================================================================
 
 module.exports = {
-  // Funciones de utilidad
   validateEnvVars,
 
-  // Configuraciones por módulo
   database,
   blob,
   whatsapp,
-  ai,
-  audio,
+  docusign,
+  firma,
   rateLimiting,
   session,
-  survey,
-  vision,
-  azureMaps,
   metrics,
-  validation,
   redis,
   serviceBus,
   backgroundProcessor,
+  teams,
 
-  // Enums/Constantes
-  equipmentTypes,
-  intents,
-  reportTypes,
-
-  // Acceso rápido a valores comunes
-  isAIEnabled: ai.enabled,
+  // Acceso rapido a valores comunes
   sessionTimeoutMinutes: session.timeoutMinutes,
   isRedisEnabled: redis.enabled,
   isServiceBusEnabled: serviceBus.enabled,

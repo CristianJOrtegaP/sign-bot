@@ -1,5 +1,5 @@
 // ==============================================================================
-// AC FIXBOT - Cognitive Services Module
+// Sign Bot - Cognitive Services Module (DEPRECATED - kept for reference)
 // Computer Vision (S1) + Speech Services (F0)
 // ==============================================================================
 
@@ -18,7 +18,7 @@ param environment string
 
 // Tags comunes para todos los recursos del modulo
 var tags = {
-  project: 'acfixbot'
+  project: 'signbot'
   environment: environment
 }
 

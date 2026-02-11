@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Procesador en Background
+ * Sign Bot - Procesador en Background
  * Ejecuta tareas pesadas de forma asíncrona sin bloquear el webhook
  */
 

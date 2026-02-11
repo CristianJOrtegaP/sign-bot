@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
-  title: AC FixBot - WhatsApp Chatbot API
+  title: Sign Bot - WhatsApp Chatbot API
   description: |
-    API para el chatbot de WhatsApp de Arca Continental (AC FixBot).
+    API para el chatbot de WhatsApp de Arca Continental (Sign Bot).
     Gestiona reportes de refrigeradores y vehículos mediante conversación automatizada con IA.
 
     ## Autenticación
@@ -43,14 +43,14 @@ info:
     | 500 | Error interno (IA, base de datos, etc.) |
   version: 2.1.0
   contact:
-    name: AC FixBot Team
+    name: Sign Bot Team
 
 servers:
   - url: https://{functionApp}.azurewebsites.net
     description: Azure Functions (Producción / Staging)
     variables:
       functionApp:
-        default: acfixbot-prod
+        default: signbot-prod
         description: Nombre de la Function App en Azure
   - url: http://localhost:7071
     description: Desarrollo local (Azure Functions Core Tools)

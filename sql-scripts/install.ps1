@@ -1,5 +1,5 @@
 # =============================================
-# AC FixBot - Script de Instalación Automática
+# Sign Bot - Script de Instalación Automática
 # Para Windows PowerShell
 # =============================================
 
@@ -8,7 +8,7 @@ $ErrorActionPreference = "Stop"
 Write-Host ""
 Write-Host "╔════════════════════════════════════════════════════════════════╗"
 Write-Host "║                                                                ║"
-Write-Host "║         AC FIXBOT - INSTALACIÓN AUTOMÁTICA DE BD              ║"
+Write-Host "║         Sign Bot - INSTALACIÓN AUTOMÁTICA DE BD              ║"
 Write-Host "║                                                                ║"
 Write-Host "╚════════════════════════════════════════════════════════════════╝"
 Write-Host ""
@@ -41,7 +41,7 @@ if (-not $env:SQL_SERVER) {
 }
 
 if (-not $env:SQL_DATABASE) {
-    $SQL_DATABASE = Read-Host "🗄️  Database Name (ej: db-acfixbot)"
+    $SQL_DATABASE = Read-Host "🗄️  Database Name (ej: db-signbot)"
 } else {
     $SQL_DATABASE = $env:SQL_DATABASE
 }

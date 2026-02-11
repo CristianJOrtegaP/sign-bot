@@ -18,13 +18,6 @@ jest.mock('../../core/services/infrastructure/metricsService', () =>
 jest.mock('../../bot/controllers/messageHandler', () => ({
   handleText: jest.fn().mockResolvedValue(undefined),
   handleButton: jest.fn().mockResolvedValue(undefined),
-  handleLocation: jest.fn().mockResolvedValue(undefined),
-}));
-jest.mock('../../bot/controllers/imageHandler', () => ({
-  handleImage: jest.fn().mockResolvedValue(undefined),
-}));
-jest.mock('../../bot/controllers/audioHandler', () => ({
-  handleAudio: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../../core/services/infrastructure/rateLimiter', () => ({
   isDuplicateMessage: jest.fn(() => false),

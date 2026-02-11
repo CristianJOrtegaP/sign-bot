@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Utilidades y Helpers
+ * Sign Bot - Utilidades y Helpers
  * Funciones auxiliares reutilizables
  */
 

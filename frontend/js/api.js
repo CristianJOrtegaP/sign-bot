@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - API Functions
+ * SIGN BOT - API Functions
  */
 
 /**
@@ -24,38 +24,75 @@ async function apiFetch(endpoint, options = {}) {
 }
 
 /**
- * Get KPIs data
+ * Get document stats (dashboard KPIs)
  */
-async function getKPIs() {
-  return apiFetch('/kpis');
+async function getDocumentStats() {
+  return apiFetch('/admin/stats');
+}
+
+/**
+ * Get documents list with filters
+ */
+async function getDocuments(filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.estado) {
+    params.append('estado', filters.estado);
+  }
+  if (filters.tipo) {
+    params.append('tipo', filters.tipo);
+  }
+  if (filters.search) {
+    params.append('search', filters.search);
+  }
+  if (filters.page) {
+    params.append('page', filters.page);
+  }
+  if (filters.pageSize) {
+    params.append('pageSize', filters.pageSize);
+  }
+  if (filters.desde) {
+    params.append('desde', filters.desde);
+  }
+  if (filters.hasta) {
+    params.append('hasta', filters.hasta);
+  }
+  const queryString = params.toString();
+  return apiFetch(`/admin/documents${queryString ? `?${queryString}` : ''}`);
+}
+
+/**
+ * Get document detail by ID
+ */
+async function getDocumentDetail(id) {
+  return apiFetch(`/admin/documents/${encodeURIComponent(id)}`);
 }
 
 /**
  * Get conversations list
  */
 async function getConversations() {
-  return apiFetch('/list');
+  return apiFetch('/conversations/list');
 }
 
 /**
  * Get chat history for a phone number
  */
 async function getChat(phone) {
-  return apiFetch(`/chat/${encodeURIComponent(phone)}`);
+  return apiFetch(`/conversations/chat/${encodeURIComponent(phone)}`);
 }
 
 /**
  * Search conversations
  */
 async function searchConversations(query) {
-  return apiFetch(`/search/${encodeURIComponent(query)}`);
+  return apiFetch(`/conversations/search/${encodeURIComponent(query)}`);
 }
 
 /**
  * Takeover a conversation (agent takes control)
  */
 async function takeoverConversation(phone, agentId, agentName) {
-  return apiFetch(`/takeover/${encodeURIComponent(phone)}`, {
+  return apiFetch(`/conversations/takeover/${encodeURIComponent(phone)}`, {
     method: 'POST',
     body: JSON.stringify({ agenteId: agentId, agenteNombre: agentName }),
   });
@@ -65,7 +102,7 @@ async function takeoverConversation(phone, agentId, agentName) {
  * Release conversation back to bot
  */
 async function releaseConversation(phone) {
-  return apiFetch(`/release/${encodeURIComponent(phone)}`, {
+  return apiFetch(`/conversations/release/${encodeURIComponent(phone)}`, {
     method: 'POST',
   });
 }
@@ -74,20 +111,30 @@ async function releaseConversation(phone) {
  * Send message as agent
  */
 async function sendAgentMessage(phone, message, agentId, agentName) {
-  return apiFetch(`/send/${encodeURIComponent(phone)}`, {
+  return apiFetch(`/conversations/send/${encodeURIComponent(phone)}`, {
     method: 'POST',
     body: JSON.stringify({ mensaje: message, agenteId: agentId, agenteNombre: agentName }),
   });
 }
 
+/**
+ * Get system health
+ */
+async function getSystemHealth() {
+  return apiFetch('/health');
+}
+
 // Export for use in other modules
 window.API = {
   fetch: apiFetch,
-  getKPIs,
+  getDocumentStats,
+  getDocuments,
+  getDocumentDetail,
   getConversations,
   getChat,
   searchConversations,
   takeoverConversation,
   releaseConversation,
   sendAgentMessage,
+  getSystemHealth,
 };

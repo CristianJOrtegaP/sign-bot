@@ -1,8 +1,10 @@
 /**
- * AC FIXBOT - Azure Function Timer Trigger
+ * SIGN BOT - Azure Function Timer Trigger
  * Revisa periodicamente sesiones inactivas:
  * 1. Envia advertencia "Sigues ahi?" a sesiones proximas a expirar
  * 2. Cierra sesiones que ya tienen advertencia y siguen inactivas
+ * 3. Limpia mensajes procesados antiguos (deduplicacion)
+ * 4. Limpia historial de sesiones >3 meses (politica de retencion)
  *
  * Schedule: Configurable via TIMER_SCHEDULE (default: cada 5 minutos)
  * Formato CRON: segundo minuto hora dia mes dia-semana
@@ -79,7 +81,7 @@ module.exports = async function (context, myTimer) {
       },
     };
   } catch (error) {
-    context.log.error('Error critico en sessionTimeoutChecker:', error);
+    context.log.error('Error critico en session cleanup timer:', error);
 
     context.res = {
       status: 500,

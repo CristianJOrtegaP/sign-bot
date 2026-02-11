@@ -1,5 +1,5 @@
 // ==============================================================================
-// AC FIXBOT - Key Vault Module
+// Sign Bot - Key Vault Module
 // Azure Key Vault with RBAC authorization and Function App access
 // ==============================================================================
 
@@ -17,7 +17,7 @@ param environment string
 param functionAppPrincipalId string
 
 var tags = {
-  project: 'acfixbot'
+  project: 'signbot'
   environment: environment
 }
 

@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Middleware de Rate Limiting
+ * Sign Bot - Middleware de Rate Limiting
  * Controla la frecuencia de mensajes por usuario y APIs
  */
 

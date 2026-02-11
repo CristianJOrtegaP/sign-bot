@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Azure Service Bus Service
+ * Sign Bot - Azure Service Bus Service
  * Servicio de mensajería para Dead Letter Queue
  * Incluye fallback automático a tabla SQL si Service Bus no está disponible
  *
@@ -128,7 +128,7 @@ async function sendToDeadLetter(messageData, error) {
       correlationId: correlationId,
       subject: messageData.type,
       applicationProperties: {
-        source: 'acfixbot-webhook',
+        source: 'signbot-webhook',
         phoneNumber: messageData.from,
         messageType: messageData.type,
         errorCode: error?.code || error?.name || 'UNKNOWN',
@@ -180,7 +180,7 @@ async function sendToQueue(payload) {
       correlationId: payload.correlationId,
       subject: payload.message?.type || 'unknown',
       applicationProperties: {
-        source: 'acfixbot-webhook',
+        source: 'signbot-webhook',
         phoneNumber: payload.from,
         messageType: payload.message?.type || 'unknown',
         enqueuedAt: new Date().toISOString(),

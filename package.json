@@ -1,7 +1,7 @@
 {
-  "name": "acfixbot",
-  "version": "2.1.0",
-  "description": "AC FixBot - Chatbot WhatsApp para reportes de refrigeradores y vehiculos (Arca Continental)",
+  "name": "signbot",
+  "version": "1.0.0",
+  "description": "Sign Bot - Chatbot WhatsApp para firma digital de documentos via DocuSign",
   "main": "api-whatsapp-webhook/index.js",
   "scripts": {
     "start": "func start",
@@ -39,27 +39,22 @@
     "whatsapp",
     "chatbot",
     "azure-functions",
-    "gemini"
+    "docusign",
+    "digital-signature"
   ],
   "author": "Arca Continental",
   "license": "ISC",
   "dependencies": {
-    "@azure/cognitiveservices-computervision": "^8.2.0",
     "@azure/data-tables": "^13.2.2",
     "@azure/identity": "^4.5.0",
     "@azure/keyvault-secrets": "^4.9.0",
-    "@azure/ms-rest-js": "^2.7.0",
-    "@azure/openai": "^2.0.0",
     "@azure/service-bus": "^7.9.5",
     "@azure/storage-blob": "^12.30.0",
-    "@google/generative-ai": "^0.24.1",
     "applicationinsights": "^3.4.0",
     "axios": "^1.13.4",
+    "docusign-esign": "^8.0.1",
     "form-data": "^4.0.5",
-    "jimp": "^1.6.0",
     "mssql": "^12.2.0",
-    "ogg-opus-decoder": "^1.7.3",
-    "openai": "^6.18.0",
     "redis": "^5.10.0",
     "zod": "^4.3.6"
   },

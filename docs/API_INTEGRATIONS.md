@@ -1,4 +1,4 @@
-# API e Integraciones — AC FIXBOT
+# API e Integraciones — Sign Bot
 
 > Audiencia: Developers, QA Engineers
 > Última actualización: Febrero 2026

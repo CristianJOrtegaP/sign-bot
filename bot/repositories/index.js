@@ -1,63 +1,51 @@
 /**
- * AC FIXBOT - Repositories Index
+ * SIGN BOT - Repositories Index
  * Exporta todos los repositorios para acceso centralizado
  */
 
 const SesionRepository = require('./SesionRepository');
-const EquipoRepository = require('./EquipoRepository');
-const ReporteRepository = require('./ReporteRepository');
-const EncuestaRepository = require('./EncuestaRepository');
-const CentroServicioRepository = require('./CentroServicioRepository');
+const DocumentoFirmaRepository = require('./DocumentoFirmaRepository');
+const EventoDocuSignRepository = require('./EventoDocuSignRepository');
 
 module.exports = {
-    // Repositorios
-    SesionRepository,
-    EquipoRepository,
-    ReporteRepository,
-    EncuestaRepository,
-    CentroServicioRepository,
+  // Repositorios
+  SesionRepository,
+  DocumentoFirmaRepository,
+  EventoDocuSignRepository,
 
-    // Alias convenientes
-    sesiones: SesionRepository,
-    equipos: EquipoRepository,
-    reportes: ReporteRepository,
-    encuestas: EncuestaRepository,
-    centrosServicio: CentroServicioRepository,
+  // Alias convenientes
+  sesiones: SesionRepository,
+  documentos: DocumentoFirmaRepository,
+  eventosDocuSign: EventoDocuSignRepository,
 
-    /**
-     * Obtiene estadísticas de todos los cachés
-     */
-    getCacheStats() {
-        return {
-            sesiones: SesionRepository.getCacheStats(),
-            equipos: EquipoRepository.getCacheStats(),
-            reportes: ReporteRepository.getCacheStats(),
-            encuestas: EncuestaRepository.getCacheStats(),
-            centrosServicio: CentroServicioRepository.getCacheStats()
-        };
-    },
+  /**
+   * Obtiene estadisticas de todos los caches
+   */
+  getCacheStats() {
+    return {
+      sesiones: SesionRepository.getCacheStats(),
+      documentos: DocumentoFirmaRepository.getCacheStats(),
+      eventosDocuSign: EventoDocuSignRepository.getCacheStats(),
+    };
+  },
 
-    /**
-     * Limpia todos los cachés
-     */
-    clearAllCaches() {
-        return {
-            sesiones: SesionRepository.clearCache(),
-            equipos: EquipoRepository.clearCache(),
-            reportes: ReporteRepository.clearCache(),
-            encuestas: EncuestaRepository.clearCache(),
-            centrosServicio: CentroServicioRepository.clearCache()
-        };
-    },
+  /**
+   * Limpia todos los caches
+   */
+  clearAllCaches() {
+    return {
+      sesiones: SesionRepository.clearCache(),
+      documentos: DocumentoFirmaRepository.clearCache(),
+      eventosDocuSign: EventoDocuSignRepository.clearCache(),
+    };
+  },
 
-    /**
-     * Detiene todos los intervalos de limpieza (para shutdown)
-     */
-    stopAllCleanup() {
-        SesionRepository.stopCacheCleanup();
-        EquipoRepository.stopCacheCleanup();
-        ReporteRepository.stopCacheCleanup();
-        EncuestaRepository.stopCacheCleanup();
-        CentroServicioRepository.stopCacheCleanup();
-    }
+  /**
+   * Detiene todos los intervalos de limpieza (para shutdown)
+   */
+  stopAllCleanup() {
+    SesionRepository.stopCacheCleanup();
+    DocumentoFirmaRepository.stopCacheCleanup();
+    EventoDocuSignRepository.stopCacheCleanup();
+  },
 };

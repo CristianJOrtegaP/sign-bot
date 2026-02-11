@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =============================================
-# AC FixBot - Script de Instalación Automática
+# Sign Bot - Script de Instalación Automática
 # Para Linux/Mac/WSL
 # =============================================
 
@@ -10,7 +10,7 @@ set -e  # Exit on error
 echo ""
 echo "╔════════════════════════════════════════════════════════════════╗"
 echo "║                                                                ║"
-echo "║         AC FIXBOT - INSTALACIÓN AUTOMÁTICA DE BD              ║"
+echo "║         Sign Bot - INSTALACIÓN AUTOMÁTICA DE BD              ║"
 echo "║                                                                ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
@@ -43,7 +43,7 @@ if [ -z "$SQL_SERVER" ]; then
 fi
 
 if [ -z "$SQL_DATABASE" ]; then
-    read -p "🗄️  Database Name (ej: db-acfixbot): " SQL_DATABASE
+    read -p "🗄️  Database Name (ej: db-signbot): " SQL_DATABASE
 fi
 
 if [ -z "$SQL_USER" ]; then

@@ -1,10 +1,10 @@
 /**
- * AC FIXBOT - Authentication & User Management
+ * SIGN BOT - Authentication & User Management
  */
 
 // User state
-let agentId = `agent_${Math.random().toString(36).substr(2, 9)}`;
-let agentName = 'Agente';
+let agentId = `admin_${Math.random().toString(36).substr(2, 9)}`;
+let agentName = 'Admin';
 let agentEmail = '';
 
 /**
@@ -52,7 +52,7 @@ async function initializeUser() {
 
       // Generate stable agent ID from email
       if (agentEmail) {
-        agentId = `agent_${agentEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        agentId = `admin_${agentEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
       }
     }
   } catch (error) {
@@ -95,7 +95,7 @@ function updateUserUI() {
     userAvatar.innerHTML = `${initials}<div class="online-dot"></div>`;
   }
   if (userRole) {
-    userRole.textContent = agentEmail || 'Agente de Soporte';
+    userRole.textContent = agentEmail || 'Administrador';
   }
 }
 

@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Shared Type Definitions
+ * Sign Bot - Shared Type Definitions
  * Tipos compartidos para la migracion incremental a TypeScript.
  * Nuevos archivos .ts pueden importar estos tipos directamente.
  */

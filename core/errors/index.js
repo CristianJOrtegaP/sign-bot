@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Exportacion centralizada de errores
+ * Sign Bot - Exportacion centralizada de errores
  */
 
 const AppError = require('./AppError');
@@ -13,13 +13,13 @@ const ConfigurationError = require('./ConfigurationError');
 const ConcurrencyError = require('./ConcurrencyError');
 
 module.exports = {
-    AppError,
-    DatabaseError,
-    ValidationError,
-    ExternalServiceError,
-    SessionError,
-    EquipoNotFoundError,
-    RateLimitError,
-    ConfigurationError,
-    ConcurrencyError
+  AppError,
+  DatabaseError,
+  ValidationError,
+  ExternalServiceError,
+  SessionError,
+  EquipoNotFoundError,
+  RateLimitError,
+  ConfigurationError,
+  ConcurrencyError,
 };

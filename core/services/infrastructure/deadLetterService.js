@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Dead Letter Service
+ * Sign Bot - Dead Letter Service
  * Guarda mensajes que fallaron durante el procesamiento para reintento posterior
  *
  * FASE 3: Soporta Azure Service Bus con fallback automático a tabla SQL

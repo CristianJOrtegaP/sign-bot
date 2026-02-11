@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Métricas: Persistencia
+ * Sign Bot - Métricas: Persistencia
  * Funciones para persistir y leer métricas de Azure Table Storage
  */
 

@@ -19,13 +19,11 @@ jest.mock('../../core/services/infrastructure/correlationService', () => ({
 // Mock message handlers used by DLQ processor for reprocessing
 const mockHandleText = jest.fn().mockResolvedValue(undefined);
 const mockHandleButton = jest.fn().mockResolvedValue(undefined);
-const mockHandleImage = jest.fn().mockResolvedValue(undefined);
+const mockHandleUnsupportedType = jest.fn().mockResolvedValue(undefined);
 jest.mock('../../bot/controllers/messageHandler', () => ({
   handleText: mockHandleText,
   handleButton: mockHandleButton,
-}));
-jest.mock('../../bot/controllers/imageHandler', () => ({
-  handleImage: mockHandleImage,
+  handleUnsupportedType: mockHandleUnsupportedType,
 }));
 
 jest.mock('../../core/services/infrastructure/alertingService', () => ({
@@ -105,12 +103,12 @@ describe('DLQ Processor - expired image skip', () => {
       1,
       expect.stringContaining('Media ID expirado')
     );
-    expect(mockHandleImage).not.toHaveBeenCalled();
+    // Image was skipped, so no handler should have been called
+    expect(mockHandleText).not.toHaveBeenCalled();
   });
 
   test('should NOT skip image messages younger than 24h', async () => {
     const recentDate = new Date(Date.now() - 2 * 60 * 60 * 1000); // 2h ago
-    mockHandleImage.mockResolvedValue(undefined);
 
     deadLetterService.getMessagesForRetry.mockResolvedValue([
       {

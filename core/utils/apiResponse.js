@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - API Response Utilities
+ * Sign Bot - API Response Utilities
  * Utilidades para respuestas HTTP estandarizadas
  *
  * @module utils/apiResponse

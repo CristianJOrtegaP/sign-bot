@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Métricas: Resumen y Logging
+ * Sign Bot - Métricas: Resumen y Logging
  * Funciones para obtener resúmenes de métricas y logging
  */
 

@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Conversations & Chat
+ * SIGN BOT - Conversations & Chat
  */
 
 let currentPhone = null;
@@ -41,9 +41,7 @@ async function loadList() {
         const statusClass = isAgent ? 'agente' : isFinalizado ? 'finalizado' : 'activo';
         const statusText = isAgent ? 'Agente' : isFinalizado ? 'Finalizado' : 'Activo';
         const displayName = conv.NombreUsuario || window.Utils.maskPhone(conv.Telefono);
-        const initial = conv.NombreUsuario
-          ? conv.NombreUsuario.charAt(0).toUpperCase()
-          : (conv.TipoReporte || 'U').charAt(0).toUpperCase();
+        const initial = conv.NombreUsuario ? conv.NombreUsuario.charAt(0).toUpperCase() : 'U';
 
         return (
           `<div class="conversation-item ${currentPhone === conv.Telefono ? 'active' : ''}" onclick="Conversations.loadChat('${conv.Telefono}')">` +
@@ -54,7 +52,7 @@ async function loadList() {
           `<span class="conv-time">${window.Utils.formatDate(conv.FechaUltimoMensaje)}</span>` +
           `</div>` +
           `<div class="conv-preview">` +
-          `<span>${conv.TipoReporte || 'Sin tipo'} \u2022 ${conv.TotalMensajes || 0} msgs</span>` +
+          `<span>${conv.NombreUsuario || 'Cliente'} \u2022 ${conv.TotalMensajes || 0} msgs</span>` +
           `<span class="status ${statusClass}">${statusText}</span>` +
           `</div>` +
           `</div>` +
@@ -121,15 +119,13 @@ async function loadChat(phone) {
     const session = data.session || {};
     const isAgentMode = session.Estado === 'AGENTE_ACTIVO';
     const displayName = session.NombreUsuario || window.Utils.maskPhone(phone);
-    const userInitial = session.NombreUsuario
-      ? session.NombreUsuario.charAt(0).toUpperCase()
-      : (session.TipoReporte || 'U').charAt(0);
+    const userInitial = session.NombreUsuario ? session.NombreUsuario.charAt(0).toUpperCase() : 'U';
 
     let html =
       `<div class="chat-header">` +
       `<button class="back-btn" onclick="Navigation.showSidebar()"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg></button>` +
       `<div class="avatar ${isAgentMode ? 'agent' : ''}">${userInitial}</div>` +
-      `<div class="chat-header-info"><h2>${displayName}</h2><span>${window.Utils.maskPhone(phone)} \u2022 ${session.TipoReporte || 'Sin tipo'}</span></div>` +
+      `<div class="chat-header-info"><h2>${displayName}</h2><span>${window.Utils.maskPhone(phone)}</span></div>` +
       `<div class="chat-header-actions">${
         !isAgentMode
           ? '<button class="btn btn-primary" onclick="Conversations.takeover()">Tomar control</button>'
@@ -141,7 +137,7 @@ async function loadChat(phone) {
       }</div></div>`;
 
     if (isAgentMode) {
-      html += `<div class="agent-banner"><span>Controlada por: ${session.AgenteNombre || 'Agente'}</span><span>Desde ${window.Utils.formatFullDate(session.FechaTomaAgente)}</span></div>`;
+      html += `<div class="agent-banner"><span>Controlada por: ${session.AgenteNombre || 'Admin'}</span><span>Desde ${window.Utils.formatFullDate(session.FechaTomaAgente)}</span></div>`;
     }
 
     html += '<div class="messages" id="messagesContainer">';
@@ -158,40 +154,16 @@ async function loadChat(phone) {
       const isAgentMsg = msg.AgenteId != null;
       const msgClass = isUser ? 'user' : isAgentMsg ? 'agent' : 'bot';
       const sender = isUser
-        ? session.NombreUsuario || 'Usuario'
+        ? session.NombreUsuario || 'Cliente'
         : isAgentMsg
-          ? msg.AgenteNombre || 'Agente'
-          : 'Bot';
+          ? msg.AgenteNombre || 'Admin'
+          : 'Sign Bot';
       const contenido = msg.Contenido || '';
-      let contentHtml = '';
-      const tipoContenido = (msg.TipoContenido || 'TEXTO').toUpperCase();
 
-      if (
-        tipoContenido === 'IMAGEN' ||
-        tipoContenido === 'IMAGE' ||
-        contenido.match(/\.(jpg|jpeg|png|gif|webp)/i)
-      ) {
-        if (
-          contenido.indexOf('[IMG_PLACEHOLDER') === 0 ||
-          contenido.indexOf('[PLACEHOLDER') === 0 ||
-          !contenido.match(/^https?:\/\//i)
-        ) {
-          contentHtml =
-            '<div style="background:linear-gradient(135deg,rgba(139,92,246,0.15),rgba(59,130,246,0.15));padding:16px;border-radius:12px;text-align:center;"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="rgba(139,92,246,0.7)" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg><div style="margin-top:8px;color:rgba(255,255,255,0.6);font-size:12px;">\uD83D\uDCF7 Imagen recibida</div></div>';
-        } else {
-          contentHtml = `<img src="${contenido}" alt="Imagen" class="msg-image" onclick="window.open('${contenido}', '_blank')">`;
-        }
-      } else if (tipoContenido === 'UBICACION' || tipoContenido === 'LOCATION') {
-        contentHtml =
-          '<div style="background:rgba(16,185,129,0.1);padding:10px;border-radius:8px;">\uD83D\uDCCD Ubicaci\u00f3n</div>';
-      } else if (tipoContenido === 'AUDIO') {
-        contentHtml =
-          '<div style="background:rgba(59,130,246,0.1);padding:10px;border-radius:8px;">\uD83C\uDFA4 Audio</div>';
-      } else {
-        contentHtml = isUser
-          ? window.Utils.escapeHtml(contenido).replace(/\n/g, '<br>')
-          : window.Utils.renderMarkdown(contenido);
-      }
+      // Sign Bot is text-only: render as text
+      const contentHtml = isUser
+        ? window.Utils.escapeHtml(contenido).replace(/\n/g, '<br>')
+        : window.Utils.renderMarkdown(contenido);
 
       html +=
         `<div class="message ${msgClass}">` +
@@ -255,7 +227,7 @@ async function takeover() {
       alert(`Error: ${data.error || 'No se pudo tomar el control'}`);
     }
   } catch (err) {
-    alert('Error de conexi\u00f3n');
+    alert('Error de conexion');
   }
 }
 
@@ -274,7 +246,7 @@ async function release() {
       alert(`Error: ${data.error || 'No se pudo liberar'}`);
     }
   } catch (err) {
-    alert('Error de conexi\u00f3n');
+    alert('Error de conexion');
   }
 }
 
@@ -299,7 +271,7 @@ async function sendMessage() {
       alert(`Error: ${data.error || 'No se pudo enviar'}`);
     }
   } catch (err) {
-    alert('Error de conexi\u00f3n');
+    alert('Error de conexion');
   } finally {
     input.disabled = false;
     input.focus();
@@ -329,18 +301,20 @@ async function handleSearch(event) {
 
     list.innerHTML = data.results
       .map((conv) => {
+        const displayName = conv.NombreUsuario || window.Utils.maskPhone(conv.Telefono);
+        const initial = conv.NombreUsuario ? conv.NombreUsuario.charAt(0).toUpperCase() : 'U';
         return (
           `<div class="conversation-item" onclick="Conversations.loadChat('${conv.Telefono}')">` +
-          `<div class="avatar">${(conv.TipoReporte || 'U').charAt(0)}</div>` +
+          `<div class="avatar">${initial}</div>` +
           `<div class="conv-info">` +
-          `<div class="conv-header"><span class="conv-name">${window.Utils.maskPhone(conv.Telefono)}</span><span class="conv-time">${window.Utils.formatDate(conv.FechaUltimoMensaje)}</span></div>` +
+          `<div class="conv-header"><span class="conv-name">${displayName}</span><span class="conv-time">${window.Utils.formatDate(conv.FechaUltimoMensaje)}</span></div>` +
           `<div class="conv-preview">${conv.TotalMensajes} mensajes</div>` +
           `</div></div>`
         );
       })
       .join('');
   } catch (err) {
-    list.innerHTML = '<div class="loading">Error en b\u00fasqueda</div>';
+    list.innerHTML = '<div class="loading">Error en busqueda</div>';
   }
 }
 

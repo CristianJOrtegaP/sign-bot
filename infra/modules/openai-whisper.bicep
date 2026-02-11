@@ -1,5 +1,5 @@
 // ==============================================================================
-// AC FIXBOT - Azure OpenAI Whisper Module
+// Sign Bot - Azure OpenAI Whisper Module (DEPRECATED - kept for reference)
 // Azure OpenAI con despliegue de modelo Whisper para transcripcion de audio
 // Desplegado en region separada (northcentralus) por disponibilidad
 // ==============================================================================
@@ -16,7 +16,7 @@ param environment string
 
 // Tags comunes para todos los recursos del modulo
 var tags = {
-  project: 'acfixbot'
+  project: 'signbot'
   environment: environment
 }
 

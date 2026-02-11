@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Métricas: Azure Table Storage
+ * Sign Bot - Métricas: Azure Table Storage
  * Inicialización y gestión de clientes de Azure Table Storage
  */
 

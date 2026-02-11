@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Métricas: Funciones Helper
+ * Sign Bot - Métricas: Funciones Helper
  * Funciones auxiliares para cálculos de métricas avanzadas
  */
 

@@ -6,17 +6,15 @@
 const _sessions = new Map();
 const _messages = [];
 const _processedMessages = new Set();
+const _documentos = new Map();
+let _nextDocumentoId = 1;
 
 const defaultSession = {
   SesionId: 1,
   Telefono: '+5215512345678',
   EstadoId: 1,
   Estado: 'INICIO',
-  TipoReporteId: null,
-  TipoReporte: null,
   DatosTemp: null,
-  EquipoIdTemp: null,
-  EquipoId: null,
   ContadorMensajes: 0,
   UltimoResetContador: new Date(),
   FechaCreacion: new Date(),
@@ -49,7 +47,6 @@ const dbMock = {
             ? datos
             : JSON.stringify(datos)
           : current.DatosTemp,
-        EquipoIdTemp: equipoId !== undefined ? equipoId : current.EquipoIdTemp,
         Version: (current.Version || 1) + 1,
         UltimaActividad: new Date(),
       };
@@ -72,42 +69,139 @@ const dbMock = {
 
   isMessageProcessed: jest.fn(async (msgId) => _processedMessages.has(msgId)),
 
-  getEquipoBySAP: jest.fn(async (sap) => {
-    if (sap === '1234567') {
-      return {
-        EquipoId: 100,
-        CodigoSAP: '1234567',
-        Tipo: 'REFRIGERADOR',
-        Marca: 'Imbera',
-        Modelo: 'VR-17',
-        UbicacionDescripcion: 'Tienda La Esquina',
-        ClienteNombre: 'Juan Pérez',
-        Activo: true,
-      };
+  // ============================================================
+  // Documento / Firma operations
+  // ============================================================
+
+  getDocumentoById: jest.fn(async (id) => {
+    return _documentos.get(id) || null;
+  }),
+
+  getDocumentoPorEnvelope: jest.fn(async (envelopeId) => {
+    for (const doc of _documentos.values()) {
+      if (doc.EnvelopeId === envelopeId) {
+        return doc;
+      }
     }
     return null;
   }),
 
-  createReporte: jest.fn(async () => ({
-    ReporteId: 1,
-    NumeroTicket: 'TKT-00000001',
+  getDocumentosPorTelefono: jest.fn(async (telefono) => {
+    const docs = [];
+    for (const doc of _documentos.values()) {
+      if (doc.ClienteTelefono === telefono) {
+        docs.push(doc);
+      }
+    }
+    return docs;
+  }),
+
+  // Alias utilizado por consultaDocumentosFlow
+  getDocumentosFirmaPorTelefono: jest.fn(async (telefono) => {
+    const docs = [];
+    for (const doc of _documentos.values()) {
+      if (doc.ClienteTelefono === telefono) {
+        docs.push(doc);
+      }
+    }
+    return docs;
+  }),
+
+  crearDocumento: jest.fn(async (data) => {
+    const id = _nextDocumentoId++;
+    const doc = { ...data, DocumentoFirmaId: id };
+    _documentos.set(id, doc);
+    return { DocumentoId: id };
+  }),
+
+  actualizarEstadoDocumento: jest.fn(async (id, estado, motivo) => {
+    const doc = _documentos.get(id);
+    if (doc) {
+      doc.EstadoDocumento = estado;
+      if (motivo) {
+        doc.MotivoRechazo = motivo;
+      }
+      _documentos.set(id, doc);
+    }
+    return true;
+  }),
+
+  updateDocumentoFirmaEstado: jest.fn(async (id, estado, motivo) => {
+    const doc = _documentos.get(id);
+    if (doc) {
+      doc.EstadoDocumento = estado;
+      if (motivo) {
+        doc.MotivoRechazo = motivo;
+      }
+      _documentos.set(id, doc);
+    }
+    return true;
+  }),
+
+  obtenerPendientesRecordatorio: jest.fn(async () => []),
+  obtenerPendientesReporteSap: jest.fn(async () => []),
+  obtenerParaHousekeeping: jest.fn(async () => []),
+
+  obtenerEstadisticas: jest.fn(async () => ({
+    total: 0,
+    porEstado: {},
+    porTipo: {},
   })),
 
-  getReportesByTelefono: jest.fn(async () => []),
-  getReporteByTicket: jest.fn(async () => null),
+  // Legacy (used by FlexibleFlowContext)
+  getEquipoBySAP: jest.fn().mockResolvedValue(null),
+
   clearSessionCache: jest.fn(),
 
+  // ============================================================
+  // Repositories
+  // ============================================================
+
   repositories: {
-    encuestas: {
-      getReportesPendientesEncuesta: jest.fn(async () => []),
-      create: jest.fn(async () => ({
-        encuestaId: 1,
-        tipoEncuesta: { Codigo: 'SAT' },
-        preguntas: [],
-      })),
-      updateEstado: jest.fn().mockResolvedValue(undefined),
-      expirarSinRespuesta: jest.fn(async () => 0),
-      getActivaByTelefono: jest.fn(async () => null),
+    documentosFirma: {
+      getById: jest.fn(async (id) => _documentos.get(id) || null),
+      getByEnvelopeId: jest.fn(async (envelopeId) => {
+        for (const doc of _documentos.values()) {
+          if (doc.EnvelopeId === envelopeId) {
+            return doc;
+          }
+        }
+        return null;
+      }),
+      getByTelefono: jest.fn(async (telefono) => {
+        const docs = [];
+        for (const doc of _documentos.values()) {
+          if (doc.ClienteTelefono === telefono) {
+            docs.push(doc);
+          }
+        }
+        return docs;
+      }),
+      create: jest.fn(async (data) => {
+        const id = _nextDocumentoId++;
+        const doc = { ...data, DocumentoFirmaId: id };
+        _documentos.set(id, doc);
+        return doc;
+      }),
+      updateEstado: jest.fn(async (id, estado, motivo) => {
+        const doc = _documentos.get(id);
+        if (doc) {
+          doc.EstadoDocumento = estado;
+          if (motivo) {
+            doc.MotivoRechazo = motivo;
+          }
+          _documentos.set(id, doc);
+        }
+        return true;
+      }),
+      getPendientesRecordatorio: jest.fn(async () => []),
+      getPendientesReporteSap: jest.fn(async () => []),
+      getParaHousekeeping: jest.fn(async () => []),
+    },
+    eventosDocuSign: {
+      create: jest.fn(async (data) => ({ EventoId: 1, ...data })),
+      getByEnvelopeId: jest.fn(async () => []),
+      exists: jest.fn(async () => false),
     },
     sesiones: {
       getSession: jest.fn(
@@ -116,22 +210,40 @@ const dbMock = {
     },
   },
 
+  // ============================================================
   // Helpers para tests
+  // ============================================================
+
   __setSession(tel, session) {
     _sessions.set(tel, { ...defaultSession, ...session, Telefono: tel });
   },
   __getStoredSession(tel) {
     return _sessions.get(tel) || null;
   },
+  __setDocumento(id, documento) {
+    _documentos.set(id, { DocumentoFirmaId: id, ...documento });
+  },
+  __getStoredDocumento(id) {
+    return _documentos.get(id) || null;
+  },
   __reset() {
     _sessions.clear();
     _messages.length = 0;
     _processedMessages.clear();
-    Object.values(dbMock).forEach((fn) => {
-      if (typeof fn === 'function' && fn.mockClear) {
-        fn.mockClear();
-      }
-    });
+    _documentos.clear();
+    _nextDocumentoId = 1;
+
+    // Reset all jest.fn() mocks
+    const resetMocks = (obj) => {
+      Object.values(obj).forEach((fn) => {
+        if (typeof fn === 'function' && fn.mockClear) {
+          fn.mockClear();
+        } else if (typeof fn === 'object' && fn !== null && !Buffer.isBuffer(fn)) {
+          resetMocks(fn);
+        }
+      });
+    };
+    resetMocks(dbMock);
   },
 };
 

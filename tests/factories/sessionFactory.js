@@ -1,6 +1,6 @@
 /**
  * Factory: Session Objects
- * Crea objetos de sesion para testing
+ * Crea objetos de sesion para testing - Sign Bot
  */
 
 function createSession(overrides = {}) {
@@ -9,11 +9,7 @@ function createSession(overrides = {}) {
     Telefono: '+5215512345678',
     EstadoId: 1,
     Estado: 'INICIO',
-    TipoReporteId: null,
-    TipoReporte: null,
     DatosTemp: null,
-    EquipoIdTemp: null,
-    EquipoId: null,
     ContadorMensajes: 0,
     UltimoResetContador: new Date(),
     FechaCreacion: new Date(),
@@ -24,62 +20,54 @@ function createSession(overrides = {}) {
   };
 }
 
-function createActiveRefriSession(telefono = '+5215512345678', overrides = {}) {
+function createConsultaDocumentosSession(telefono = '+5215512345678', overrides = {}) {
   return createSession({
     Telefono: telefono,
-    EstadoId: 23,
-    Estado: 'REFRIGERADOR_ACTIVO',
-    TipoReporteId: 1,
-    TipoReporte: 'REFRIGERADOR',
+    EstadoId: 10,
+    Estado: 'CONSULTA_DOCUMENTOS',
     DatosTemp: JSON.stringify({
-      tipoReporte: 'REFRIGERADOR',
-      camposRequeridos: {
-        codigoSAP: { valor: null, completo: false },
-        problema: { valor: null, completo: false },
-      },
-      campoSolicitado: 'codigoSAP',
+      documentos: [],
     }),
     Version: 2,
     ...overrides,
   });
 }
 
-function createActiveVehiculoSession(telefono = '+5215512345678', overrides = {}) {
+function createConsultaDetalleSession(
+  telefono = '+5215512345678',
+  documentoId = 1,
+  overrides = {}
+) {
   return createSession({
     Telefono: telefono,
-    EstadoId: 24,
-    Estado: 'VEHICULO_ACTIVO',
-    TipoReporteId: 2,
-    TipoReporte: 'VEHICULO',
+    EstadoId: 11,
+    Estado: 'CONSULTA_DETALLE',
     DatosTemp: JSON.stringify({
-      tipoReporte: 'VEHICULO',
-      camposRequeridos: {
-        numeroEmpleado: { valor: null, completo: false },
-        codigoSAP: { valor: null, completo: false },
-        problema: { valor: null, completo: false },
-        ubicacion: { valor: null, completo: false },
-      },
-      campoSolicitado: 'numeroEmpleado',
+      documentoFirmaId: documentoId,
+      documentos: [],
+      documentoSeleccionado: 0,
     }),
-    Version: 2,
+    Version: 3,
     ...overrides,
   });
 }
 
-function createEncuestaSession(telefono = '+5215512345678', pregunta = 1) {
-  const estados = {
-    1: 'ENCUESTA_PREGUNTA_1',
-    2: 'ENCUESTA_PREGUNTA_2',
-    3: 'ENCUESTA_PREGUNTA_3',
-    4: 'ENCUESTA_PREGUNTA_4',
-    5: 'ENCUESTA_PREGUNTA_5',
-    6: 'ENCUESTA_PREGUNTA_6',
-  };
+function createEsperandoConfirmacionSession(
+  telefono = '+5215512345678',
+  documentoId = 1,
+  overrides = {}
+) {
   return createSession({
     Telefono: telefono,
-    Estado: estados[pregunta] || 'ENCUESTA_INVITACION',
-    DatosTemp: JSON.stringify({ encuestaId: 1, preguntaActual: pregunta }),
-    Version: pregunta + 1,
+    EstadoId: 12,
+    Estado: 'ESPERANDO_CONFIRMACION',
+    DatosTemp: JSON.stringify({
+      documentoFirmaId: documentoId,
+      documentoNombre: 'Contrato Test',
+      accion: 'RECHAZO',
+    }),
+    Version: 2,
+    ...overrides,
   });
 }
 
@@ -87,25 +75,16 @@ function createTimedOutSession(telefono = '+5215512345678') {
   const thirtyMinutesAgo = new Date(Date.now() - 31 * 60 * 1000);
   return createSession({
     Telefono: telefono,
-    Estado: 'REFRIGERADOR_ACTIVO',
+    Estado: 'CONSULTA_DOCUMENTOS',
     UltimaActividad: thirtyMinutesAgo,
     Version: 3,
   });
 }
 
-function createConsultaSession(telefono = '+5215512345678') {
-  return createSession({
-    Telefono: telefono,
-    Estado: 'CONSULTA_ESPERA_TICKET',
-    Version: 2,
-  });
-}
-
 module.exports = {
   createSession,
-  createActiveRefriSession,
-  createActiveVehiculoSession,
-  createEncuestaSession,
+  createConsultaDocumentosSession,
+  createConsultaDetalleSession,
+  createEsperandoConfirmacionSession,
   createTimedOutSession,
-  createConsultaSession,
 };

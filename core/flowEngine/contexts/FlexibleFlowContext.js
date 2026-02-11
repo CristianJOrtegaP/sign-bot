@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - FlexibleFlowContext
+ * Sign Bot - FlexibleFlowContext
  * Contexto para flujos flexibles/dinámicos (refrigerador, vehículo)
  *
  * Extiende BaseContext con métodos específicos para flujos

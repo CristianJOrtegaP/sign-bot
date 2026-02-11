@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - StaticFlowRegistry
+ * Sign Bot - StaticFlowRegistry
  * Registro central de flujos estáticos/secuenciales
  * Permite agregar/eliminar flujos sin modificar código core
  *

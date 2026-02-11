@@ -155,11 +155,11 @@ jobs:
         run: |
           mkdir -p dist
           cp -r api-* timer-* queue-* core/ bot/ node_modules/ host.json package.json dist/
-          cd dist && zip -r ../acfixbot-${{ github.sha }}.zip .
+          cd dist && zip -r ../signbot-${{ github.sha }}.zip .
 
       - name: Subir artifact
         uses: actions/upload-artifact@v4
         with:
           name: deployment-package
-          path: acfixbot-${{ github.sha }}.zip
+          path: signbot-${{ github.sha }}.zip
           retention-days: 7

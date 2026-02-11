@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Servicio de WhatsApp
+ * SIGN BOT - Servicio de WhatsApp
  * Funciones para enviar mensajes a través de la API de Meta
  * Con Circuit Breaker para protección contra fallos en cascada
  */
@@ -396,9 +396,48 @@ async function sendListMessage(to, headerText, bodyText, buttonText, rows) {
   }
 }
 
+/**
+ * Envia un mensaje de template (Message Templates de WhatsApp)
+ * Usado para notificaciones outbound (recordatorios de firma, etc.)
+ * @param {string} to - Numero de telefono del destinatario
+ * @param {Object} templatePayload - Payload del template { name, language: { code }, components: [...] }
+ * @returns {Promise<string>} - Message ID (wamid)
+ */
+async function sendTemplate(to, templatePayload) {
+  try {
+    const { apiUrl, phoneNumberId } = getWhatsAppConfig();
+    const axiosInstance = getAxiosInstance();
+
+    const response = await executeWithRetry(() =>
+      axiosInstance.post(`${apiUrl}/${phoneNumberId}/messages`, {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'template',
+        template: templatePayload,
+      })
+    );
+
+    const messageId = response.data?.messages?.[0]?.id || null;
+    logger.info('[WhatsApp] Template enviado', {
+      to,
+      templateName: templatePayload?.name,
+      messageId,
+    });
+    return messageId;
+  } catch (error) {
+    logger.error('Error enviando template', error, {
+      to,
+      templateName: templatePayload?.name,
+      service: 'WhatsApp',
+      operation: 'sendTemplate',
+    });
+    throw new ExternalServiceError('No se pudo enviar el template de WhatsApp', 'WhatsApp', error);
+  }
+}
+
 // ==============================================================
 // HELPERS CON GUARDADO AUTOMÁTICO EN BD
-// Envían mensaje Y lo guardan en MensajesChat automáticamente
+// Envian mensaje Y lo guardan en MensajesChat automaticamente
 // ==============================================================
 
 // Lazy load para evitar dependencia circular
@@ -463,14 +502,15 @@ async function sendAndSaveList(to, headerText, bodyText, buttonText, rows) {
 }
 
 module.exports = {
-  // Funciones básicas (sin guardado)
+  // Funciones basicas (sin guardado)
   sendText,
   sendButtons,
   sendInteractiveMessage,
   sendListMessage,
+  sendTemplate,
   downloadMedia,
   sendTypingIndicator,
-  // Funciones con guardado automático en BD
+  // Funciones con guardado automatico en BD
   sendAndSaveText,
   sendAndSaveInteractive,
   sendAndSaveList,

@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Webhook Principal
+ * SIGN BOT - Webhook Principal
  * Recibe mensajes de WhatsApp y los procesa
  * Incluye correlation ID para tracing distribuido
  */
@@ -34,7 +34,7 @@ function createLoggers(context, correlationId) {
 }
 
 /**
- * Maneja verificación del webhook (GET request de Meta)
+ * Maneja verificacion del webhook (GET request de Meta)
  */
 function handleWebhookVerification(context, req, log) {
   const mode = req.query['hub.mode'];
@@ -82,39 +82,29 @@ function extractProfileName(body) {
 }
 
 /**
- * Verifica si el mensaje es un botón de encuesta
- */
-function isEncuestaButton(message) {
-  return (
-    message.type === 'interactive' &&
-    message.interactive?.button_reply?.id?.startsWith('btn_rating_')
-  );
-}
-
-/**
  * Registra mensaje y verifica si es duplicado (IDEMPOTENTE)
- * Usa MERGE atómico en BD para tracking de reintentos
+ * Usa MERGE atomico en BD para tracking de reintentos
  *
- * IMPORTANTE: Esta función SIEMPRE devuelve 200 OK (idempotencia)
+ * IMPORTANTE: Esta funcion SIEMPRE devuelve 200 OK (idempotencia)
  * - Si es nuevo: registra y permite procesamiento
- * - Si es duplicado: incrementa contador de reintentos, NO procesa lógica de negocio
+ * - Si es duplicado: incrementa contador de reintentos, NO procesa logica de negocio
  *
  * @param {Object} message - Mensaje de WhatsApp
- * @param {string} from - Número de teléfono del remitente
- * @param {Function} log - Función de logging
- * @param {Function} logWarn - Función de logging de warnings
+ * @param {string} from - Numero de telefono del remitente
+ * @param {Function} log - Funcion de logging
+ * @param {Function} logWarn - Funcion de logging de warnings
  * @returns {Promise<{isDuplicate: boolean, retryCount: number}>}
  */
 async function checkAndRegisterMessage(message, from, log, logWarn) {
   const messageId = message.id;
 
-  // 1. Verificar en memoria (rápido)
+  // 1. Verificar en memoria (rapido)
   if (rateLimiter.isDuplicateMessage(messageId)) {
     log(`[Dedup] Mensaje duplicado ignorado (memoria): ${messageId}`);
     return { isDuplicate: true, retryCount: 0 };
   }
 
-  // 2. Registrar en base de datos de forma atómica (MERGE)
+  // 2. Registrar en base de datos de forma atomica (MERGE)
   try {
     const result = await db.registerMessageAtomic(messageId, from);
 
@@ -128,9 +118,9 @@ async function checkAndRegisterMessage(message, from, log, logWarn) {
     log(`[Dedup] Mensaje nuevo registrado: ${messageId}`);
     return { isDuplicate: false, retryCount: 0 };
   } catch (dbError) {
-    // Para botones de encuesta: si falla BD, NO procesar (evitar race conditions)
-    if (isEncuestaButton(message)) {
-      logWarn(`[Dedup] Error BD en boton encuesta, ignorando: ${dbError.message}`);
+    // Para botones interactivos: si falla BD, NO procesar (evitar race conditions)
+    if (message.type === 'interactive') {
+      logWarn(`[Dedup] Error BD en boton interactivo, ignorando: ${dbError.message}`);
       return { isDuplicate: true, retryCount: 0 };
     }
 
@@ -141,50 +131,13 @@ async function checkAndRegisterMessage(message, from, log, logWarn) {
 }
 
 /**
- * Verifica duplicados en memoria y base de datos
- * @deprecated Usar checkAndRegisterMessage() en su lugar (más completo e idempotente)
- */
-async function _checkDuplicates(message, log, logWarn) {
-  const messageId = message.id;
-
-  // 1. Verificar en memoria (rápido)
-  if (rateLimiter.isDuplicateMessage(messageId)) {
-    log(`[Dedup] Mensaje duplicado ignorado (memoria): ${messageId}`);
-    return { isDuplicate: true };
-  }
-
-  // 2. Verificar en base de datos
-  try {
-    const isProcessedInDB = await db.isMessageProcessed(messageId);
-    if (isProcessedInDB) {
-      log(`[Dedup] Mensaje duplicado ignorado (BD): ${messageId}`);
-      return { isDuplicate: true };
-    }
-  } catch (dbError) {
-    // Para botones de encuesta: si falla BD, NO procesar
-    if (isEncuestaButton(message)) {
-      logWarn(`[Dedup] Error BD en boton encuesta, ignorando: ${dbError.message}`);
-      return { isDuplicate: true };
-    }
-    logWarn(`[Dedup] Error verificando en BD, continuando: ${dbError.message}`);
-  }
-
-  return { isDuplicate: false };
-}
-
-/**
  * Guarda mensaje fallido en Dead Letter Queue
- * CRÍTICO: Siempre loguear errores de DLQ para no perder trazabilidad
+ * CRITICO: Siempre loguear errores de DLQ para no perder trazabilidad
  */
 function saveToDeadLetter(message, error, logError) {
   let messageContent;
   try {
-    messageContent =
-      message.text?.body ||
-      message.interactive?.button_reply?.id ||
-      (message.location ? JSON.stringify(message.location) : null) ||
-      (message.image ? `image:${message.image.id}` : null) ||
-      (message.audio ? `audio:${message.audio.id}` : null);
+    messageContent = message.text?.body || message.interactive?.button_reply?.id || null;
   } catch (_e) {
     messageContent = 'error-extracting-content';
   }
@@ -200,7 +153,7 @@ function saveToDeadLetter(message, error, logError) {
       error
     )
     .catch((dlqError) => {
-      // CRÍTICO: Nunca silenciar errores de DLQ - loguear siempre
+      // CRITICO: Nunca silenciar errores de DLQ - loguear siempre
       if (logError) {
         logError('Error guardando en Dead Letter Queue - MENSAJE PERDIDO', {
           originalError: error?.message,
@@ -249,14 +202,14 @@ module.exports = async function (context, req) {
   // ==========================================
   if (req.method === 'POST') {
     // ============================================================
-    // VALIDACIÓN DE FIRMA - SEGURIDAD CRÍTICA
+    // VALIDACION DE FIRMA - SEGURIDAD CRITICA
     // ============================================================
-    // La firma X-Hub-Signature-256 es OBLIGATORIA en producción.
+    // La firma X-Hub-Signature-256 es OBLIGATORIA en produccion.
     // SKIP_SIGNATURE_VALIDATION SOLO funciona en desarrollo local.
     // Cualquier ambiente Azure SIEMPRE valida la firma.
     // ============================================================
 
-    // Detectar ambiente de producción (múltiples señales para Azure)
+    // Detectar ambiente de produccion (multiples signals para Azure)
     const isAzureEnvironment =
       process.env.AZURE_FUNCTIONS_ENVIRONMENT ||
       process.env.WEBSITE_SITE_NAME ||
@@ -265,7 +218,7 @@ module.exports = async function (context, req) {
     const isProductionEnv = process.env.NODE_ENV === 'production';
     const isAzureProduction = process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Production';
 
-    // Producción = cualquier ambiente Azure O NODE_ENV=production
+    // Produccion = cualquier ambiente Azure O NODE_ENV=production
     const isProduction = isAzureEnvironment || isProductionEnv || isAzureProduction;
 
     // El bypass SOLO funciona en desarrollo local (fuera de Azure)
@@ -273,14 +226,14 @@ module.exports = async function (context, req) {
 
     // SEGURIDAD: En cualquier ambiente Azure, SIEMPRE validar
     if (skipValidationRequested && isProduction) {
-      logError('🚨 SEGURIDAD: SKIP_SIGNATURE_VALIDATION ignorado en ambiente Azure/producción', {
+      logError('SEGURIDAD: SKIP_SIGNATURE_VALIDATION ignorado en ambiente Azure/produccion', {
         isAzureEnvironment: Boolean(isAzureEnvironment),
         nodeEnv: process.env.NODE_ENV,
         azureFunctionsEnv: process.env.AZURE_FUNCTIONS_ENVIRONMENT,
       });
     }
 
-    // SIEMPRE validar en producción, independiente del flag
+    // SIEMPRE validar en produccion, independiente del flag
     const mustValidateSignature = isProduction || !skipValidationRequested;
 
     if (mustValidateSignature) {
@@ -288,7 +241,7 @@ module.exports = async function (context, req) {
       const rawBody = req.rawBody || JSON.stringify(req.body);
 
       if (!security.verifyWebhookSignature(rawBody, signature)) {
-        logWarn('🔒 Firma del webhook inválida - request rechazado', {
+        logWarn('Firma del webhook invalida - request rechazado', {
           hasSignature: Boolean(signature),
           correlationId,
         });
@@ -297,7 +250,7 @@ module.exports = async function (context, req) {
       }
     } else {
       // Solo en desarrollo local, nunca en Azure
-      logWarn('⚠️ DEV: Validación de firma omitida (SKIP_SIGNATURE_VALIDATION=true)');
+      logWarn('DEV: Validacion de firma omitida (SKIP_SIGNATURE_VALIDATION=true)');
     }
 
     try {
@@ -326,7 +279,7 @@ module.exports = async function (context, req) {
       const profileName = extractProfileName(body);
       if (profileName) {
         log(`Perfil WhatsApp: "${profileName}"`);
-        // Actualizar nombre de usuario en la sesión (async, no bloquea)
+        // Actualizar nombre de usuario en la sesion (async, no bloquea)
         db.updateUserName(from, profileName).catch((err) => {
           logWarn(`Error actualizando nombre de usuario: ${err.message}`);
         });
@@ -349,7 +302,7 @@ module.exports = async function (context, req) {
         return;
       }
 
-      // Enqueue-or-fallback: si Service Bus está habilitado, encolar para procesamiento async
+      // Enqueue-or-fallback: si Service Bus esta habilitado, encolar para procesamiento async
       let enqueued = false;
       if (config.isServiceBusEnabled) {
         enqueued = await serviceBus.sendToQueue({
@@ -365,7 +318,7 @@ module.exports = async function (context, req) {
         }
       }
 
-      // Fallback: procesar sincrónicamente si SB deshabilitado o enqueue falló
+      // Fallback: procesar sincronicamente si SB deshabilitado o enqueue fallo
       if (!enqueued) {
         const budget = new TimeoutBudget(240000, correlationId);
         await processMessageByType(message, from, messageId, context, log, budget);

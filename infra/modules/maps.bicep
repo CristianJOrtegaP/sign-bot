@@ -1,5 +1,5 @@
 // ==============================================================================
-// AC FIXBOT - Azure Maps Module
+// Sign Bot - Azure Maps Module (DEPRECATED - kept for reference)
 // Azure Maps Gen2 para geolocalizacion de tecnicos y clientes
 // ==============================================================================
 
@@ -15,7 +15,7 @@ param environment string
 
 // Tags comunes para todos los recursos del modulo
 var tags = {
-  project: 'acfixbot'
+  project: 'signbot'
   environment: environment
 }
 

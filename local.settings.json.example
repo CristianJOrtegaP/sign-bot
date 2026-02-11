@@ -5,7 +5,7 @@
         "AzureWebJobsStorage": "UseDevelopmentStorage=true",
 
         "// ========== DATABASE ==========": "",
-        "SQL_CONNECTION_STRING": "Server=localhost;Database=acfixbot;User Id=sa;Password=YOUR_PASSWORD;TrustServerCertificate=true",
+        "SQL_CONNECTION_STRING": "Server=localhost;Database=signbot;User Id=sa;Password=YOUR_PASSWORD;TrustServerCertificate=true",
 
         "// ========== WHATSAPP (Meta Business) ==========": "",
         "WHATSAPP_TOKEN": "",
@@ -13,18 +13,21 @@
         "WHATSAPP_VERIFY_TOKEN": "",
         "WHATSAPP_APP_SECRET": "",
 
-        "// ========== AI PROVIDER ==========": "",
-        "USE_AI": "true",
-        "AI_PROVIDER": "azure-openai",
-        "AZURE_OPENAI_ENDPOINT": "",
-        "AZURE_OPENAI_KEY": "",
-        "AZURE_OPENAI_DEPLOYMENT": "gpt-4o-mini",
-        "AZURE_AUDIO_DEPLOYMENT": "whisper",
-        "AUDIO_TRANSCRIPTION_ENABLED": "false",
+        "// ========== DOCUSIGN ==========": "",
+        "DOCUSIGN_INTEGRATION_KEY": "",
+        "DOCUSIGN_USER_ID": "",
+        "DOCUSIGN_ACCOUNT_ID": "",
+        "DOCUSIGN_BASE_URL": "https://demo.docusign.net/restapi",
+        "DOCUSIGN_RSA_PRIVATE_KEY": "",
+        "DOCUSIGN_WEBHOOK_SECRET": "",
+        "DOCUSIGN_ENVELOPE_EXPIRATION_DAYS": "365",
 
-        "// ========== VISION (OCR) ==========": "",
-        "VISION_ENDPOINT": "",
-        "VISION_KEY": "",
+        "// ========== FIRMA CONFIG ==========": "",
+        "FIRMA_REMINDER_HOURS_CLIENTE": "48",
+        "FIRMA_MAX_RECORDATORIOS_CLIENTE": "5",
+        "FIRMA_REMINDER_DAYS_SAP": "7",
+        "FIRMA_HOUSEKEEPING_DAYS": "30",
+        "FIRMA_TIMER_SCHEDULE": "0 0 * * * *",
 
         "// ========== STORAGE ==========": "",
         "BLOB_CONNECTION_STRING": "",
@@ -34,18 +37,11 @@
         "SESSION_WARNING_MINUTES": "25",
         "TIMER_SCHEDULE": "0 */5 * * * *",
 
-        "// ========== SURVEY CONFIG ==========": "",
-        "SURVEY_TIMER_SCHEDULE": "0 0 9 * * *",
-        "SURVEY_HORAS_ESPERA": "24",
-        "SURVEY_HORAS_EXPIRACION": "72",
-
         "// ========== SECURITY ==========": "",
-        "// Admin API usa Azure Function Keys (ver Azure Portal > App Keys)": "",
         "ADMIN_RATE_LIMIT_MAX": "60",
 
-        "// ========== AZURE MAPS ==========": "",
-        "AZURE_MAPS_KEY": "",
-        "ROUTE_BUFFER_MINUTES": "20",
+        "// ========== TEAMS NOTIFICATIONS ==========": "",
+        "TEAMS_WEBHOOK_URL": "",
 
         "// ========== KEY VAULT (Production) ==========": "",
         "KEY_VAULT_URI": "",

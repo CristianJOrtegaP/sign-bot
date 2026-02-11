@@ -1,5 +1,5 @@
 // ==============================================================================
-// AC FIXBOT - Static Web App Module
+// Sign Bot - Static Web App Module
 // Azure Static Web App para el panel de administracion (frontend)
 // ==============================================================================
 
@@ -16,7 +16,7 @@ param environment string
 
 // Tags comunes para todos los recursos del modulo
 var tags = {
-  project: 'acfixbot'
+  project: 'signbot'
   environment: environment
 }
 

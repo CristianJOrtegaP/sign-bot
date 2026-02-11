@@ -1,5 +1,5 @@
 // ==============================================================================
-// AC FIXBOT - Function App Module
+// Sign Bot - Function App Module
 // Azure Function App with App Service Plan (Consumption Y1)
 // Runtime: Node.js 22, Linux, Azure Functions v4
 // ==============================================================================
@@ -23,7 +23,7 @@ param appInsightsConnectionString string
 @description('Connection string de Storage Account')
 param storageConnectionString string
 
-@description('URI del Key Vault (e.g. https://kv-acfixbot-dev.vault.azure.net/)')
+@description('URI del Key Vault (e.g. https://kv-signbot-dev.vault.azure.net/)')
 param keyVaultUri string
 
 @description('Desplegar Redis (habilita referencia Key Vault)')
@@ -34,7 +34,7 @@ param deployServiceBus bool = false
 
 // Tags comunes para todos los recursos del modulo
 var tags = {
-  project: 'acfixbot'
+  project: 'signbot'
   environment: environment
 }
 
@@ -125,7 +125,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'WEBSITE_CONTENTSHARE'
           value: toLower(name)
         }
-        // Blob Storage para imágenes de reportes (misma Storage Account)
+        // Blob Storage para documentos (misma Storage Account)
         {
           name: 'BLOB_CONNECTION_STRING'
           value: storageConnectionString
@@ -173,62 +173,77 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'WHATSAPP_VERIFY_TOKEN'
           value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/WHATSAPP-VERIFY-TOKEN/)'
         }
-        // ----------------------------------------------------------------
-        // Azure OpenAI (referencias a Key Vault)
-        // ----------------------------------------------------------------
         {
-          name: 'AZURE_OPENAI_KEY'
-          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/AZURE-OPENAI-KEY/)'
-        }
-        {
-          name: 'AZURE_OPENAI_ENDPOINT'
-          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/AZURE-OPENAI-ENDPOINT/)'
+          name: 'WHATSAPP_APP_SECRET'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/WHATSAPP-APP-SECRET/)'
         }
         // ----------------------------------------------------------------
-        // Azure OpenAI Whisper / Audio (referencias a Key Vault)
+        // DocuSign (referencias a Key Vault para secretos)
         // ----------------------------------------------------------------
         {
-          name: 'AZURE_AUDIO_ENDPOINT'
-          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/AZURE-AUDIO-ENDPOINT/)'
+          name: 'DOCUSIGN_INTEGRATION_KEY'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/DOCUSIGN-INTEGRATION-KEY/)'
         }
         {
-          name: 'AZURE_AUDIO_KEY'
-          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/AZURE-AUDIO-KEY/)'
+          name: 'DOCUSIGN_USER_ID'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/DOCUSIGN-USER-ID/)'
         }
         {
-          name: 'AZURE_AUDIO_DEPLOYMENT'
-          value: 'whisper'
-        }
-        // ----------------------------------------------------------------
-        // Computer Vision / OCR (referencias a Key Vault)
-        // Nombres deben coincidir con VISION_ENDPOINT / VISION_KEY en core/config
-        // ----------------------------------------------------------------
-        {
-          name: 'VISION_KEY'
-          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/VISION-KEY/)'
+          name: 'DOCUSIGN_ACCOUNT_ID'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/DOCUSIGN-ACCOUNT-ID/)'
         }
         {
-          name: 'VISION_ENDPOINT'
-          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/VISION-ENDPOINT/)'
-        }
-        // ----------------------------------------------------------------
-        // Azure Speech Services (referencia a Key Vault)
-        // Nombre debe coincidir con AZURE_SPEECH_KEY en core/config
-        // ----------------------------------------------------------------
-        {
-          name: 'AZURE_SPEECH_KEY'
-          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/AZURE-SPEECH-KEY/)'
+          name: 'DOCUSIGN_BASE_URL'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/DOCUSIGN-BASE-URL/)'
         }
         {
-          name: 'AZURE_SPEECH_REGION'
-          value: location
+          name: 'DOCUSIGN_RSA_PRIVATE_KEY'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/DOCUSIGN-RSA-PRIVATE-KEY/)'
+        }
+        {
+          name: 'DOCUSIGN_WEBHOOK_SECRET'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/DOCUSIGN-WEBHOOK-SECRET/)'
+        }
+        {
+          name: 'DOCUSIGN_ENVELOPE_EXPIRATION_DAYS'
+          value: '30'
         }
         // ----------------------------------------------------------------
-        // Azure Maps (referencia a Key Vault)
+        // Firma (configuracion de recordatorios y housekeeping)
         // ----------------------------------------------------------------
         {
-          name: 'AZURE_MAPS_KEY'
-          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/AZURE-MAPS-KEY/)'
+          name: 'FIRMA_REMINDER_HOURS_CLIENTE'
+          value: '48'
+        }
+        {
+          name: 'FIRMA_MAX_RECORDATORIOS_CLIENTE'
+          value: '3'
+        }
+        {
+          name: 'FIRMA_REMINDER_DAYS_SAP'
+          value: '7'
+        }
+        {
+          name: 'FIRMA_HOUSEKEEPING_DAYS'
+          value: '30'
+        }
+        {
+          name: 'FIRMA_TIMER_SCHEDULE'
+          value: '0 0 9 * * *'
+        }
+        // ----------------------------------------------------------------
+        // Teams Webhook
+        // ----------------------------------------------------------------
+        {
+          name: 'TEAMS_WEBHOOK_URL'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/TEAMS-WEBHOOK-URL/)'
+        }
+        // ----------------------------------------------------------------
+        // Admin
+        // ----------------------------------------------------------------
+        {
+          name: 'ADMIN_RATE_LIMIT_MAX'
+          value: '60'
         }
         // ----------------------------------------------------------------
         // Redis Cache (opcional, referencia a Key Vault)
@@ -241,21 +256,12 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         }
         // ----------------------------------------------------------------
         // Service Bus (opcional, referencia a Key Vault)
-        // Nombre DEBE coincidir con queue-message-processor/function.json
         // ----------------------------------------------------------------
         {
           name: 'SERVICEBUS_CONNECTION_STRING'
           value: deployServiceBus
             ? '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/SERVICE-BUS-CONNECTION-STRING/)'
             : ''
-        }
-        // ----------------------------------------------------------------
-        // WhatsApp App Secret (referencia a Key Vault)
-        // Usado para verificar firma X-Hub-Signature-256 en webhooks
-        // ----------------------------------------------------------------
-        {
-          name: 'WHATSAPP_APP_SECRET'
-          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/WHATSAPP-APP-SECRET/)'
         }
       ]
     }

@@ -1,5 +1,5 @@
 /**
- * AC FIXBOT - Redis Cache Service
+ * Sign Bot - Redis Cache Service
  * Servicio de cache distribuido con Azure Cache for Redis
  * Incluye fallback automático a cache local (Map) si Redis no está disponible
  *

@@ -1,177 +1,156 @@
-# AC FIXBOT
+# Sign Bot
 
-**Chatbot de WhatsApp para gestión de reportes de servicio y encuestas de satisfacción.**
+WhatsApp chatbot for digital document signing via DocuSign.
 
-AC FIXBOT recibe reportes de fallas (refrigeradores comerciales y vehículos de flota) vía WhatsApp, los procesa con IA para extraer datos estructurados, y los enruta al centro de servicio más cercano. Después de la resolución, envía encuestas de satisfacción automatizadas.
+Sign Bot sends outbound document notifications to clients via WhatsApp, provides embedded signing links through DocuSign recipient views, and handles rejection flows with reason capture. Designed for Arca Continental's document signing workflows with automatic reminders and housekeeping.
 
-Diseñado para **~3,000 reportes/mes** con consistencia transaccional garantizada mediante bloqueo optimista (`Version++`) en SQL Server.
-
-> **Versión actual:** 2.1.0 | **Schema DB:** 5.4 | **Runtime:** Node.js 20 LTS
+> **Version:** 1.0.0 | **Runtime:** Node.js 22 LTS | **Azure Functions v4**
 
 ---
 
-## Stack Tecnológico
+## Architecture
 
-| Capa                | Tecnología                                      | Propósito                                                 |
-| ------------------- | ----------------------------------------------- | --------------------------------------------------------- |
-| **Runtime**         | Node.js 20 LTS                                  | Azure Functions v4                                        |
-| **Mensajería**      | Meta Graph API v22.0                            | WhatsApp Business Platform                                |
-| **IA — Intención**  | Azure OpenAI (`gpt-4o-mini`) / Gemini 2.5 Flash | Detección de intención, extracción de datos estructurados |
-| **IA — Visión**     | Azure Computer Vision                           | OCR de etiquetas SAP y códigos de barras                  |
-| **IA — Audio**      | Azure Whisper → Azure Speech (fallback)         | Transcripción de notas de voz (español)                   |
-| **Base de datos**   | Azure SQL Server                                | Persistencia con bloqueo optimista + stored procedures    |
-| **Cache**           | Azure Cache for Redis (TLS:6380) + Map local    | Sesiones (5 min), equipos (15 min), intenciones (5 min)   |
-| **Almacenamiento**  | Azure Blob Storage                              | Imágenes comprimidas de reportes                          |
-| **Geocodificación** | Azure Maps                                      | Cálculo Haversine → centro de servicio más cercano        |
-| **Monitoreo**       | Application Insights                            | Tracing distribuido W3C + métricas custom                 |
-| **Error Recovery**  | Dead Letter Queue (SQL)                         | Reintentos automáticos de mensajes fallidos               |
+| Layer             | Technology                       | Purpose                                            |
+| ----------------- | -------------------------------- | -------------------------------------------------- |
+| **Runtime**       | Node.js 22 LTS                   | Azure Functions v4                                 |
+| **Messaging**     | Meta Graph API v22.0             | WhatsApp Business Platform                         |
+| **Signing**       | DocuSign eSign API (JWT Grant)   | Document envelope creation and embedded signing    |
+| **Database**      | Azure SQL Server                 | Persistence with optimistic locking + stored procs |
+| **Cache**         | Azure Cache for Redis (TLS:6380) | Sessions, distributed locking                      |
+| **Storage**       | Azure Blob Storage               | Document storage                                   |
+| **Frontend**      | Azure Static Web Apps            | Real-time dashboard with document analytics        |
+| **Monitoring**    | Application Insights             | W3C distributed tracing + custom metrics           |
+| **Notifications** | Microsoft Teams Webhooks         | SAP/internal alerts for stale documents            |
 
 ---
 
-## Arquitectura de Alto Nivel
+## Features
 
-```
-┌──────────────┐          ┌──────────────────────────────┐          ┌──────────────┐
-│              │  HTTPS   │      Azure Functions v4       │          │  Azure SQL   │
-│   WhatsApp   │─────────▶│                               │────────▶│   Server     │
-│   (Meta)     │◀─────────│  HTTP Triggers:                │          │  (db-acfixbot)│
-│              │          │   • api-whatsapp-webhook       │          └──────┬───────┘
-└──────────────┘          │   • api-health                 │                 │
-                          │   • api-admin/{action}         │          ┌──────┴───────┐
-                          │   • api-conversations          │          │ Azure Redis  │
-                          │                               │          │ Cache (TLS)  │
-                          │  Timer Triggers:               │          └──────────────┘
-                          │   • session-cleanup (*/5 min)  │
-                          │   • survey-sender  (9 AM)      │          ┌──────────────┐
-                          │   • dlq-processor              │          │  Blob Storage│
-                          └──────────────┬────────────────┘          └──────────────┘
-                                         │
-                          ┌──────────────┴────────────────┐
-                          │  Azure OpenAI / Gemini         │
-                          │  Computer Vision (OCR)         │
-                          │  Azure Maps (geocoding)        │
-                          │  Azure Speech (audio fallback) │
-                          └───────────────────────────────┘
-```
+- Outbound document notifications via WhatsApp templates
+- Embedded signing links (DocuSign recipient view)
+- Rejection handling with reason capture
+- Automatic reminders (48h client, 7d SAP/Teams)
+- 30-day housekeeping for stale documents
+- Real-time dashboard with document analytics
+- Circuit breaker pattern for external services
+- Dead letter queue for failed message reprocessing
+- Optimistic locking for session consistency
 
 ---
 
-## Estructura del Proyecto
+## High-Level Architecture
 
 ```
-acfixbot/
-│
-├── api-whatsapp-webhook/              # Webhook principal de Meta (HTTP POST/GET)
-├── api-health/                        # Health check con diagnósticos de conectividad
-├── api-admin/                         # API admin: cache, métricas, tickets (Function Key auth)
-├── api-conversations/                 # Historial de conversaciones por teléfono
-│
-├── timer-session-cleanup/             # Cierre de sesiones inactivas (cada 5 min)
-├── timer-survey-sender/               # Envío de encuestas post-resolución (9:00 AM)
-├── timer-dlq-processor/               # Reprocesamiento de Dead Letter Queue
-│
-├── bot/
-│   ├── controllers/
-│   │   ├── messageHandler/            # Router principal por tipo de mensaje
-│   │   │   ├── handlers/textHandler.js    # Texto → detección de intención → flujo
-│   │   │   ├── handlers/buttonHandler.js  # Botones interactivos (StaticFlowRegistry)
-│   │   │   └── handlers/locationHandler.js # Ubicación GPS → centro de servicio
-│   │   ├── imageHandler.js            # OCR + AI Vision + background compression
-│   │   └── audioHandler.js            # Whisper → Speech → texto
-│   ├── flows/
-│   │   ├── reporteFlow.js             # Flujo flexible: refrigerador y vehículo
-│   │   ├── encuestaFlow.js            # Encuesta de satisfacción (6 preguntas + comentario)
-│   │   ├── consultaFlow.js            # Consulta de estado de ticket
-│   │   └── index.js                   # Registro de flujos en StaticFlowRegistry
-│   ├── repositories/                  # Capa de acceso a datos (SQL + cache)
-│   │   ├── BaseRepository.js          # Connection pool + cache TTL + reintentos
-│   │   ├── SesionRepository.js        # Sesiones con bloqueo optimista (Version)
-│   │   ├── ReporteRepository.js       # Creación de reportes (refrigerador/vehículo)
-│   │   ├── EquipoRepository.js        # Equipos SAP con cache (15 min)
-│   │   └── EncuestaRepository.js      # Encuestas y respuestas
-│   ├── services/                      # Lógica de negocio
-│   └── constants/                     # Estados de sesión, mensajes del bot
-│
-├── core/
-│   ├── config/index.js                # Configuración centralizada + validación de env vars
-│   ├── flowEngine/
-│   │   ├── contexts/BaseContext.js         # Métodos base: responder, cambiarEstado, finalizar
-│   │   ├── contexts/FlexibleFlowContext.js # Campos en cualquier orden + validación
-│   │   ├── StaticFlowRegistry.js           # Registro de flujos estáticos (encuesta, consulta)
-│   │   └── index.js                        # Exports del engine
-│   ├── services/
-│   │   ├── ai/
-│   │   │   ├── aiService.js               # Abstracción multi-provider (Gemini/Azure)
-│   │   │   ├── intentService.js           # 3-tier: cache → regex → IA
-│   │   │   ├── audioTranscriptionService.js # Multi-provider con fallback
-│   │   │   └── providers/
-│   │   │       ├── azureOpenAIProvider.js  # SDK openai v6 + token logging
-│   │   │       ├── geminiProvider.js       # Google Generative AI
-│   │   │       └── prompts.js             # System prompts (intención, extracción)
-│   │   ├── cache/redisService.js          # Redis con fallback automático a Map local
-│   │   ├── external/whatsappService.js    # Meta Graph API v22.0 + circuit breaker
-│   │   ├── infrastructure/                # Logger, métricas, seguridad, circuit breaker
-│   │   ├── processing/                    # Background processor, session timeout
-│   │   └── storage/                       # Connection pool (SQL), blob, database service
-│   └── middleware/                        # Rate limiting, security headers
-│
-├── sql-scripts/
-│   └── install-full-database.sql          # Schema completo v5.4 (idempotente)
-├── docs/                                  # Documentación técnica
-└── tests/                                 # Jest: unit, integration, e2e
+                                        +-------------------------------+
+                                        |      Azure Functions v4       |
++---------------+   HTTPS   +--------->|                               |--------->+--------------+
+|               |            |          |  HTTP Triggers:               |          |  Azure SQL   |
+|   WhatsApp    |------------+          |   - api-whatsapp-webhook      |          |  (db-signbot)|
+|   (Meta)      |<-----------+          |   - api-sap-document          |          +--------------+
+|               |            |          |   - api-docusign-webhook      |
++---------------+            |          |   - api-health                |          +--------------+
+                             |          |   - api-admin/{action}        |          | Azure Redis  |
+                             |          |   - api-conversations         |          | Cache (TLS)  |
+                             |          |                               |          +--------------+
++---------------+            |          |  Timer Triggers:              |
+|   DocuSign    |<-----------+          |   - timer-session-cleanup     |          +--------------+
+|   eSign API   |                       |   - timer-firma-reminder      |          | Blob Storage |
++---------------+                       |   - timer-dlq-processor       |          +--------------+
+                                        |                               |
++---------------+                       |  Queue Trigger:               |          +--------------+
+|   Teams       |<----------------------|   - queue-message-processor   |          | Static Web   |
+|   Webhooks    |                       +-------------------------------+          | App (SWA)    |
++---------------+                                                                 +--------------+
 ```
 
 ---
 
-## Prerequisitos
+## Project Structure
 
-| Componente                 | Versión                  | Notas                                                 |
-| -------------------------- | ------------------------ | ----------------------------------------------------- |
-| Node.js                    | >= 20 LTS                | Runtime de Azure Functions v4                         |
-| Azure Functions Core Tools | v4                       | `npm i -g azure-functions-core-tools@4`               |
-| SQL Server                 | Azure SQL o Docker local | Schema v5.4                                           |
-| Redis                      | Azure Cache for Redis    | **Opcional** — fallback automático a cache en memoria |
-| Meta Business Account      | —                        | WhatsApp Business API configurada                     |
-| Azure OpenAI               | `gpt-4o-mini` deployment | O Gemini API Key para desarrollo local                |
+```
+sign-bot/
+|
++-- api-whatsapp-webhook/              # WhatsApp webhook (HTTP POST/GET)
++-- api-sap-document/                  # SAP document ingestion endpoint
++-- api-docusign-webhook/              # DocuSign Connect webhook
++-- api-health/                        # Health check with connectivity diagnostics
++-- api-admin/                         # Admin API: cache, metrics, documents
++-- api-conversations/                 # Conversation history by phone number
+|
++-- timer-session-cleanup/             # Close inactive sessions (every 5 min)
++-- timer-firma-reminder/              # Send reminders + housekeeping (9:00 AM)
++-- timer-dlq-processor/               # Reprocess dead letter queue
++-- queue-message-processor/           # Service Bus queue consumer
+|
++-- bot/
+|   +-- controllers/
+|   |   +-- messageHandler/            # Main router by message type
+|   +-- flows/
+|   |   +-- firmaFlow.js              # Document signing flow
+|   |   +-- consultaDocumentosFlow.js  # Document status inquiry
+|   |   +-- index.js                   # Flow registry
+|   +-- repositories/                  # Data access layer (SQL + cache)
+|   |   +-- BaseRepository.js         # Connection pool + cache TTL + retries
+|   |   +-- SesionRepository.js       # Sessions with optimistic locking (Version)
+|   |   +-- DocumentoFirmaRepository.js # Document signing records
+|   |   +-- EventoDocuSignRepository.js # DocuSign event tracking
+|   +-- schemas/                       # Zod validation schemas
+|   +-- constants/                     # Session states, messages, templates
+|
++-- core/
+|   +-- config/index.js               # Centralized config + env var validation
+|   +-- flowEngine/                    # Conversation flow engine
+|   +-- services/
+|   |   +-- cache/redisService.js     # Redis with automatic fallback to local Map
+|   |   +-- external/whatsappService.js # Meta Graph API v22.0 + circuit breaker
+|   |   +-- infrastructure/           # Logger, metrics, security, circuit breaker
+|   |   +-- processing/               # Background processor, session timeout
+|   |   +-- storage/                   # Connection pool (SQL), blob, database
+|   |   +-- messaging/                # Service Bus integration
+|   +-- middleware/                    # Rate limiting, security headers
+|   +-- errors/                        # Custom error classes
+|   +-- utils/                         # Retry, helpers, sanitizer, semaphore
+|
++-- frontend/                          # Static Web App dashboard
+|   +-- css/                           # Dashboard styles
+|   +-- js/                            # Dashboard JS modules
+|   +-- index.html                     # Main dashboard page
+|
++-- sql-scripts/
+|   +-- install-full-database.sql     # Complete idempotent DB schema
+|
++-- infra/                             # Bicep IaC templates
+|   +-- main.bicep                    # Main orchestrator
+|   +-- modules/                       # Individual resource modules
+|   +-- parameters/                    # Environment-specific params
+|
++-- tests/                             # Jest: unit, integration, e2e
++-- docs/                              # Technical documentation
++-- scripts/                           # Azure deployment scripts
+```
 
 ---
 
-## Guía Rápida de Despliegue
+## Setup
 
-### 1. Instalar dependencias
+### 1. Install dependencies
 
 ```bash
-git clone <repo-url> && cd acfixbot
+git clone <repo-url> && cd sign-bot
 npm install
 ```
 
-### 2. Instalar base de datos
+### 2. Install database
 
 ```bash
-# El script es idempotente: crea tablas, índices, SPs y datos de catálogo
-sqlcmd -S <server> -d db-acfixbot -U <user> -P <password> \
+# The script is idempotent: creates tables, indexes, SPs, and catalog data
+sqlcmd -S <server> -d db-signbot -U <user> -P <password> \
   -i sql-scripts/install-full-database.sql
 ```
 
-**Tablas principales creadas:**
+### 3. Configure environment variables
 
-| Tabla                 | Propósito                                                                  |
-| --------------------- | -------------------------------------------------------------------------- |
-| `SesionesChat`        | Estado de conversación por teléfono (con `Version` para bloqueo optimista) |
-| `Reportes`            | Tickets de falla — refrigerador o vehículo (formato `TKT-XXXXXXXX`)        |
-| `Equipos`             | Catálogo de equipos con código SAP y código de barras                      |
-| `Clientes`            | Catálogo de clientes vinculados a equipos                                  |
-| `CentrosServicio`     | Centros de servicio con coordenadas (Haversine)                            |
-| `Encuestas`           | Encuestas de satisfacción post-resolución                                  |
-| `RespuestasEncuesta`  | Respuestas individuales (escala 1-5)                                       |
-| `MensajesProcessados` | Deduplicación atómica (`MERGE`)                                            |
-| `DeadLetterMessages`  | Cola de errores para reintento automático                                  |
-| `HistorialSesiones`   | Auditoría de cambios de estado                                             |
-| `MensajesChat`        | Historial completo de conversación                                         |
-
-### 3. Configurar variables de entorno
-
-Crear `local.settings.json`:
+Copy `.env.example` to `.env` and fill in the values, or create `local.settings.json`:
 
 ```json
 {
@@ -180,151 +159,133 @@ Crear `local.settings.json`:
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "node",
 
-    "SQL_CONNECTION_STRING": "Server=tcp:srv.database.windows.net,1433;Database=db-acfixbot;User Id=...;Password=...;Encrypt=true",
+    "SQL_CONNECTION_STRING": "Server=tcp:srv.database.windows.net,1433;Database=db-signbot;...",
 
     "WHATSAPP_TOKEN": "<Meta Graph API access token>",
     "WHATSAPP_PHONE_ID": "<Phone Number ID>",
     "WHATSAPP_VERIFY_TOKEN": "<webhook verification token>",
-    "WHATSAPP_APP_SECRET": "<App Secret para HMAC-SHA256>",
+    "WHATSAPP_APP_SECRET": "<App Secret for HMAC-SHA256>",
 
-    "USE_AI": "true",
-    "AI_PROVIDER": "azure-openai",
-    "AZURE_OPENAI_ENDPOINT": "https://<resource>.openai.azure.com",
-    "AZURE_OPENAI_KEY": "<key>",
-    "AZURE_OPENAI_DEPLOYMENT": "gpt-4o-mini"
+    "DOCUSIGN_INTEGRATION_KEY": "<DocuSign integration key>",
+    "DOCUSIGN_USER_ID": "<DocuSign user ID for JWT>",
+    "DOCUSIGN_ACCOUNT_ID": "<DocuSign account ID>",
+    "DOCUSIGN_BASE_URL": "https://demo.docusign.net/restapi",
+    "DOCUSIGN_RSA_PRIVATE_KEY": "<RSA private key for JWT Grant>",
+    "DOCUSIGN_WEBHOOK_SECRET": "<DocuSign Connect HMAC secret>",
+    "DOCUSIGN_ENVELOPE_EXPIRATION_DAYS": "30"
   }
 }
 ```
 
-### 4. Ejecutar localmente
+### 4. Run locally
 
 ```bash
-# Iniciar Azure Functions
+# Start Azure Functions
 func start
 
-# O con npm
+# Or with npm
 npm start
 ```
 
-### 5. Configurar Webhook en Meta
+### 5. Configure Webhooks
 
-1. Meta Developers → WhatsApp → Configuration
-2. **Callback URL:** `https://<function-app>.azurewebsites.net/api/whatsapp-webhook`
-3. **Verify Token:** valor de `WHATSAPP_VERIFY_TOKEN`
-4. **Suscripciones:** `messages`
+**WhatsApp (Meta):**
 
----
+1. Meta Developers -> WhatsApp -> Configuration
+2. Callback URL: `https://<function-app>.azurewebsites.net/api/whatsapp-webhook`
+3. Verify Token: value of `WHATSAPP_VERIFY_TOKEN`
+4. Subscriptions: `messages`
 
-## Variables de Entorno
+**DocuSign Connect:**
 
-### Requeridas (el sistema no arranca sin estas)
-
-| Variable                | Descripción                                      |
-| ----------------------- | ------------------------------------------------ |
-| `SQL_CONNECTION_STRING` | Connection string a Azure SQL / SQL Server       |
-| `WHATSAPP_TOKEN`        | Token de acceso de Meta Graph API                |
-| `WHATSAPP_PHONE_ID`     | Phone Number ID de WhatsApp Business             |
-| `WHATSAPP_VERIFY_TOKEN` | Token para handshake de verificación del webhook |
-
-### IA y Procesamiento
-
-| Variable                      | Descripción                                         | Default             |
-| ----------------------------- | --------------------------------------------------- | ------------------- |
-| `USE_AI`                      | Habilitar servicios de IA                           | `true`              |
-| `AI_PROVIDER`                 | `azure-openai` (producción) o `gemini` (desarrollo) | `gemini`            |
-| `AZURE_OPENAI_ENDPOINT`       | Endpoint del recurso Azure OpenAI                   | —                   |
-| `AZURE_OPENAI_KEY`            | API Key                                             | —                   |
-| `AZURE_OPENAI_DEPLOYMENT`     | Nombre del deployment                               | `gpt-4o-mini`       |
-| `GEMINI_API_KEY`              | API Key de Google Gemini                            | —                   |
-| `VISION_ENDPOINT`             | Azure Computer Vision endpoint                      | —                   |
-| `VISION_KEY`                  | API Key de Computer Vision                          | —                   |
-| `AUDIO_TRANSCRIPTION_ENABLED` | Habilitar transcripción de notas de voz             | `true`              |
-| `AZURE_AUDIO_DEPLOYMENT`      | Deployment de Whisper en Azure OpenAI               | `gpt-4o-mini-audio` |
-| `AZURE_SPEECH_KEY`            | Azure Speech Services (fallback audio)              | —                   |
-| `AZURE_SPEECH_REGION`         | Región de Speech Services                           | `eastus`            |
-
-### Cache y Almacenamiento
-
-| Variable                 | Descripción                                 | Default     |
-| ------------------------ | ------------------------------------------- | ----------- |
-| `REDIS_ENABLED`          | Habilitar cache distribuido                 | `false`     |
-| `REDIS_HOST`             | Host de Azure Cache for Redis               | —           |
-| `REDIS_PORT`             | Puerto (TLS requerido en Azure)             | `6380`      |
-| `REDIS_PASSWORD`         | Access Key                                  | —           |
-| `REDIS_KEY_PREFIX`       | Prefijo para evitar colisiones multi-tenant | `acfixbot:` |
-| `BLOB_CONNECTION_STRING` | Connection string de Azure Blob Storage     | —           |
-
-### Sesiones y Encuestas
-
-| Variable                  | Descripción                                      | Default         |
-| ------------------------- | ------------------------------------------------ | --------------- |
-| `SESSION_TIMEOUT_MINUTES` | Minutos de inactividad antes de cerrar sesión    | `30`            |
-| `SESSION_WARNING_MINUTES` | Minutos antes del cierre para enviar aviso       | `25`            |
-| `TIMER_SCHEDULE`          | CRON del timer de cleanup                        | `0 */5 * * * *` |
-| `SURVEY_TIMER_SCHEDULE`   | CRON del envío de encuestas                      | `0 0 9 * * *`   |
-| `SURVEY_HORAS_ESPERA`     | Horas post-resolución antes de enviar encuesta   | `24`            |
-| `SURVEY_HORAS_EXPIRACION` | Horas para que expire una encuesta sin responder | `72`            |
-| `SURVEY_HORA_INICIO`      | Hora inicio de ventana de envío                  | `8`             |
-| `SURVEY_HORA_FIN`         | Hora fin de ventana de envío                     | `20`            |
-| `TIMEZONE_OFFSET_HOURS`   | Offset UTC (México Central)                      | `-6`            |
-
-### Seguridad y Geocodificación
-
-| Variable                    | Descripción                                      | Default |
-| --------------------------- | ------------------------------------------------ | ------- |
-| `WHATSAPP_APP_SECRET`       | App Secret de Meta para verificación HMAC-SHA256 | —       |
-| `SKIP_SIGNATURE_VALIDATION` | Bypass de firma (**solo desarrollo local**)      | `false` |
-| `ADMIN_RATE_LIMIT_MAX`      | Requests por minuto al API admin                 | `60`    |
-| `AZURE_MAPS_KEY`            | API Key de Azure Maps                            | —       |
-| `ROUTE_BUFFER_MINUTES`      | Buffer adicional en cálculo de ETA               | `20`    |
-
-> La validación de variables se ejecuta al arrancar (`config/index.js`). Si falta una variable requerida, el sistema lanza un error inmediato.
+1. DocuSign Admin -> Connect
+2. URL: `https://<function-app>.azurewebsites.net/api/docusign-webhook`
+3. Enable HMAC signature verification
 
 ---
 
-## Flujos Conversacionales
+## Environment Variables
 
-### Reporte de Refrigerador (flujo flexible)
+### Required
 
+| Variable                   | Description                                   |
+| -------------------------- | --------------------------------------------- |
+| `SQL_CONNECTION_STRING`    | Connection string to Azure SQL / SQL Server   |
+| `WHATSAPP_TOKEN`           | Meta Graph API access token                   |
+| `WHATSAPP_PHONE_ID`        | WhatsApp Business Phone Number ID             |
+| `WHATSAPP_VERIFY_TOKEN`    | Token for webhook verification handshake      |
+| `DOCUSIGN_INTEGRATION_KEY` | DocuSign app integration key                  |
+| `DOCUSIGN_USER_ID`         | DocuSign user ID for JWT Grant authentication |
+| `DOCUSIGN_ACCOUNT_ID`      | DocuSign account ID                           |
+| `DOCUSIGN_BASE_URL`        | DocuSign REST API base URL                    |
+| `DOCUSIGN_RSA_PRIVATE_KEY` | RSA private key for JWT Grant auth            |
+
+### DocuSign & Firma
+
+| Variable                            | Description                                   | Default       |
+| ----------------------------------- | --------------------------------------------- | ------------- |
+| `DOCUSIGN_WEBHOOK_SECRET`           | HMAC secret for DocuSign Connect verification | --            |
+| `DOCUSIGN_ENVELOPE_EXPIRATION_DAYS` | Days before an envelope expires               | `30`          |
+| `FIRMA_REMINDER_HOURS_CLIENTE`      | Hours before sending client reminder          | `48`          |
+| `FIRMA_MAX_RECORDATORIOS_CLIENTE`   | Max reminder count per client                 | `3`           |
+| `FIRMA_REMINDER_DAYS_SAP`           | Days before escalating to SAP/Teams           | `7`           |
+| `FIRMA_HOUSEKEEPING_DAYS`           | Days before cleaning up stale documents       | `30`          |
+| `FIRMA_TIMER_SCHEDULE`              | CRON schedule for reminders timer             | `0 0 9 * * *` |
+
+### Cache and Storage
+
+| Variable                 | Description                             | Default    |
+| ------------------------ | --------------------------------------- | ---------- |
+| `REDIS_ENABLED`          | Enable distributed cache                | `false`    |
+| `REDIS_HOST`             | Azure Cache for Redis host              | --         |
+| `REDIS_PORT`             | Port (TLS required on Azure)            | `6380`     |
+| `REDIS_PASSWORD`         | Access Key                              | --         |
+| `REDIS_KEY_PREFIX`       | Prefix to avoid multi-tenant collisions | `signbot:` |
+| `BLOB_CONNECTION_STRING` | Azure Blob Storage connection string    | --         |
+
+### Security and Notifications
+
+| Variable                    | Description                                  | Default |
+| --------------------------- | -------------------------------------------- | ------- |
+| `WHATSAPP_APP_SECRET`       | Meta App Secret for HMAC-SHA256 verification | --      |
+| `SKIP_SIGNATURE_VALIDATION` | Bypass signature check (**local dev only**)  | `false` |
+| `ADMIN_RATE_LIMIT_MAX`      | Requests per minute to admin API             | `60`    |
+| `TEAMS_WEBHOOK_URL`         | Microsoft Teams incoming webhook URL         | --      |
+
+---
+
+## Database
+
+Run the full idempotent database installation script:
+
+```bash
+sqlcmd -S <server> -d db-signbot -U <user> -P <password> \
+  -i sql-scripts/install-full-database.sql
 ```
-Usuario: "El refrigerador no enfría"
-   Bot: Detecta intención REPORTAR_FALLA → pregunta tipo
-Usuario: "Refrigerador"
-   Bot: Solicita código SAP (texto o foto de etiqueta)
-Usuario: [Envía foto de la etiqueta]
-   Bot: OCR extrae código SAP → busca equipo en BD → confirma datos
-Usuario: "Sí, es correcto"
-   Bot: Solicita descripción del problema
-Usuario: "No enfría y hace ruido"
-   Bot: Extrae datos con IA → solicita foto del equipo
-Usuario: [Envía foto]
-   Bot: Comprime → sube a Blob → genera ticket TKT-XXXXXXXX
+
+---
+
+## Deployment
+
+### Azure Functions (Backend)
+
+```bash
+# Build and deploy
+func azure functionapp publish func-signbot-<env>
 ```
 
-### Reporte de Vehículo (flujo flexible)
+### Static Web App (Frontend Dashboard)
 
-```
-Usuario: "Mi camión no arranca"
-   Bot: Detecta intención → solicita número de empleado
-Usuario: "12345"
-   Bot: Solicita código SAP del vehículo
-Usuario: "1234567"
-   Bot: Solicita ubicación GPS
-Usuario: [Envía ubicación]
-   Bot: Azure Maps → calcula centro de servicio más cercano → genera ticket
-```
+The frontend is deployed separately via Azure Static Web Apps. See `.github/workflows/` for CI/CD pipelines.
 
-### Encuesta de Satisfacción (flujo estático)
+### Infrastructure (Bicep)
 
-```
-[24h después de resolución — 9:00 AM]
-   Bot: "¿Podrías ayudarnos con una breve encuesta?"
-Usuario: [Acepta]
-   Bot: 6 preguntas en escala 1-5 (botones interactivos)
-Usuario: Responde cada pregunta
-   Bot: "¿Algún comentario adicional?"
-Usuario: "Todo bien" / [Salta]
-   Bot: Agradece y cierra encuesta
+```bash
+# Deploy infrastructure for an environment
+az deployment sub create \
+  --location eastus \
+  --template-file infra/main.bicep \
+  --parameters infra/parameters/<env>.bicepparam
 ```
 
 ---
@@ -332,28 +293,20 @@ Usuario: "Todo bien" / [Salta]
 ## Tests
 
 ```bash
-# Ejecutar todos los tests
+# Run all tests
 npm test
 
-# Con cobertura
+# With coverage
 npm run test:coverage
 
-# Archivo específico
-npx jest tests/unit/FlowManager.test.js
+# Specific project
+npm run test:unit
+npm run test:integration
+npm run test:e2e
 ```
 
 ---
 
-## Documentación Técnica
+## License
 
-| Documento                                           | Audiencia    | Contenido                                                                                         |
-| --------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------- |
-| **[ARCHITECTURE.md](docs/ARCHITECTURE.md)**         | Senior Devs  | Flujo de datos completo, máquina de estados, bloqueo optimista, capas de cache, diagramas Mermaid |
-| **[API_INTEGRATIONS.md](docs/API_INTEGRATIONS.md)** | Devs / QA    | Meta Graph API, Azure OpenAI, Vision OCR, Audio, Azure Maps, API admin                            |
-| **[OPERATIONS.md](docs/OPERATIONS.md)**             | SRE / DevOps | Timers, monitoreo con KQL en App Insights, DLQ, procedimientos de recuperación                    |
-
----
-
-## Licencia
-
-Proyecto privado — AC Servicios. Todos los derechos reservados.
+Private project -- Arca Continental. All rights reserved.

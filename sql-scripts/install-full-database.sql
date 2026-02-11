@@ -1,547 +1,257 @@
 -- =============================================
--- AC FIXBOT - Script de Instalacion Completa
--- Base de Datos: db-acfixbot
--- Version: 5.4 (Centros de Servicio integrados)
--- Fecha: 2026-01-27
--- =============================================
---
--- DESCRIPCION:
--- Script unificado para instalacion completa de la base de datos.
--- Incluye todas las tablas, catalogos, indices, stored procedures y vistas.
--- Incluye modulo de encuestas NORMALIZADO con catalogos dinamicos.
--- Incluye Dead Letter Queue para mensajes fallidos.
--- Incluye Centros de Servicio para tiempos de llegada estimados.
--- Diseñado para despliegue en Azure SQL Database.
---
--- NOVEDADES v5.4:
--- - CentrosServicio: Tabla para centros de servicio con coordenadas geograficas
--- - sp_GetCentroServicioMasCercano: Buscar centro mas cercano usando Haversine
--- - sp_GetCentrosServicioActivos: Listar centros activos
--- - Nuevos campos en Reportes: CentroServicioId, TiempoEstimadoMinutos, DistanciaCentroKm
--- - 4 centros de prueba: MTY, CDMX, GDL, QRO
---
--- NOVEDADES v5.3:
--- - DeadLetterMessages: Tabla para mensajes que fallaron durante procesamiento
--- - sp_GetDeadLettersForRetry: Obtener mensajes pendientes de reintento
--- - sp_CleanOldDeadLetters: Limpieza de mensajes antiguos procesados
---
--- NOVEDADES v5.2:
--- - 6 indices de optimizacion para queries frecuentes (spam, sesiones, equipos)
--- - Covering indexes para reducir lookups
---
--- NOVEDADES v5.1:
--- - Campos de ubicacion en Reportes: Latitud, Longitud, DireccionUbicacion
--- - Nuevo estado VEHICULO_ESPERA_UBICACION para flujo de vehiculos
--- - Indice IX_Reportes_Ubicacion para consultas geograficas
---
--- NOVEDADES v5.0:
--- - CatEstadoEncuesta: Estados de encuesta normalizados (FK en lugar de CHECK)
--- - CatTipoEncuesta: Tipos de encuesta configurables
--- - PreguntasEncuesta: Preguntas dinamicas por tipo de encuesta
--- - RespuestasEncuesta: Respuestas normalizadas
--- - Encuestas con TipoEncuestaId y EstadoEncuestaId (FKs)
--- - Vistas y SPs actualizados para estructura normalizada
---
--- ADVERTENCIA:
--- Este script ELIMINARA todas las tablas existentes y sus datos.
--- Solo ejecutar en instalacion inicial o ambientes de desarrollo/prueba.
---
--- INSTRUCCIONES:
--- 1. Conectarse a Azure SQL Database
--- 2. Crear la base de datos si no existe: CREATE DATABASE [db-acfixbot]
--- 3. Ejecutar este script completo
---
--- DATOS DE CONEXION (ejemplo):
--- Servidor: sql-acfixbot.database.windows.net
--- Base de datos: db-acfixbot
--- Puerto: 1433
---
+-- SIGN BOT - Base de Datos Completa
+-- Firma digital de documentos via DocuSign + WhatsApp
 -- =============================================
 
-USE [db-acfixbot];
+USE [signbot];
 GO
 
-SET QUOTED_IDENTIFIER ON;
-GO
+SET NOCOUNT ON;
 
--- =============================================
--- PASO 1: ELIMINAR OBJETOS EXISTENTES
--- =============================================
-
-PRINT '';
 PRINT '===============================================================';
-PRINT '  AC FIXBOT - INSTALACION COMPLETA DE BASE DE DATOS';
-PRINT '  Version 5.4 - Centros de Servicio Integrados';
+PRINT '  SIGN BOT - Instalacion de Base de Datos';
+PRINT '  Fecha: ' + CONVERT(VARCHAR, GETDATE(), 120);
 PRINT '===============================================================';
 PRINT '';
-PRINT 'Paso 1: Eliminando objetos existentes...';
-GO
-
--- Eliminar vistas
-DROP VIEW IF EXISTS [dbo].[vw_Reportes];
-DROP VIEW IF EXISTS [dbo].[vw_SesionesActivas];
-DROP VIEW IF EXISTS [dbo].[vw_Encuestas];
-DROP VIEW IF EXISTS [dbo].[vw_RespuestasEncuesta];
-GO
-
--- Eliminar stored procedures
-DROP PROCEDURE IF EXISTS [dbo].[sp_CheckSpam];
-DROP PROCEDURE IF EXISTS [dbo].[sp_GetHistorialTelefono];
-DROP PROCEDURE IF EXISTS [dbo].[sp_GetMetricasSesiones];
-DROP PROCEDURE IF EXISTS [dbo].[sp_GetSesionesNeedingWarning];
-DROP PROCEDURE IF EXISTS [dbo].[sp_GetSesionesToClose];
-DROP PROCEDURE IF EXISTS [dbo].[sp_GetEstadisticasReportes];
-DROP PROCEDURE IF EXISTS [dbo].[sp_GetReportesPendientesEncuesta];
-DROP PROCEDURE IF EXISTS [dbo].[sp_GetEstadisticasEncuestas];
-DROP PROCEDURE IF EXISTS [dbo].[sp_ExpirarEncuestasSinRespuesta];
-DROP PROCEDURE IF EXISTS [dbo].[sp_GetDeadLettersForRetry];
-DROP PROCEDURE IF EXISTS [dbo].[sp_CleanOldDeadLetters];
-GO
-
--- Eliminar stored procedures de CentrosServicio
-DROP PROCEDURE IF EXISTS [dbo].[sp_GetCentroServicioMasCercano];
-DROP PROCEDURE IF EXISTS [dbo].[sp_GetCentrosServicioActivos];
-
--- Eliminar tablas en orden inverso por dependencias de foreign keys
-DROP TABLE IF EXISTS [dbo].[DeadLetterMessages];
-DROP TABLE IF EXISTS [dbo].[MensajesProcessados];
-DROP TABLE IF EXISTS [dbo].[CentrosServicio];
-DROP TABLE IF EXISTS [dbo].[MensajesChat];
-DROP TABLE IF EXISTS [dbo].[HistorialSesiones];
-DROP TABLE IF EXISTS [dbo].[RespuestasEncuesta];
-DROP TABLE IF EXISTS [dbo].[Encuestas];
-DROP TABLE IF EXISTS [dbo].[PreguntasEncuesta];
-DROP TABLE IF EXISTS [dbo].[CatTipoEncuesta];
-DROP TABLE IF EXISTS [dbo].[CatEstadoEncuesta];
-DROP TABLE IF EXISTS [dbo].[Reportes];
-DROP TABLE IF EXISTS [dbo].[SesionesChat];
-DROP TABLE IF EXISTS [dbo].[Equipos];
-DROP TABLE IF EXISTS [dbo].[Clientes];
-DROP TABLE IF EXISTS [dbo].[CatEstadoReporte];
-DROP TABLE IF EXISTS [dbo].[CatEstadoSesion];
-DROP TABLE IF EXISTS [dbo].[CatTipoReporte];
-GO
-
-PRINT '   Objetos eliminados correctamente';
 GO
 
 -- =============================================
--- PASO 2: CREAR TABLAS CATALOGO
+-- PASO 1: CREAR CATALOGO DE ESTADOS DE SESION
 -- =============================================
 
-PRINT '';
-PRINT 'Paso 2: Creando tablas catalogo...';
+PRINT 'Paso 1: Creando CatEstadoSesion...';
 GO
 
--- Catalogo de Tipos de Reporte
-CREATE TABLE [dbo].[CatTipoReporte] (
-    [TipoReporteId] INT IDENTITY(1,1) PRIMARY KEY,
-    [Codigo] NVARCHAR(20) NOT NULL UNIQUE,
-    [Nombre] NVARCHAR(50) NOT NULL,
-    [Descripcion] NVARCHAR(200) NULL,
-    [GeneraTicket] BIT DEFAULT 1,
-    [Activo] BIT DEFAULT 1,
-    [FechaCreacion] DATETIME DEFAULT GETDATE()
-);
-
-PRINT '   CatTipoReporte creada';
-GO
-
--- Catalogo de Estados de Sesion
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'CatEstadoSesion')
 CREATE TABLE [dbo].[CatEstadoSesion] (
-    [EstadoId] INT IDENTITY(1,1) PRIMARY KEY,
+    [EstadoId] INT PRIMARY KEY,
     [Codigo] NVARCHAR(50) NOT NULL UNIQUE,
-    [Nombre] NVARCHAR(50) NOT NULL,
-    [Descripcion] NVARCHAR(200) NULL,
-    [EsTerminal] BIT DEFAULT 0,
-    [Orden] INT DEFAULT 0,
-    [Activo] BIT DEFAULT 1,
-    [FechaCreacion] DATETIME DEFAULT GETDATE()
+    [Nombre] NVARCHAR(100) NOT NULL,
+    [Descripcion] NVARCHAR(500) NULL,
+    [EsTerminal] BIT NOT NULL DEFAULT 0,
+    [Orden] INT NOT NULL DEFAULT 0,
+    [Activo] BIT NOT NULL DEFAULT 1
 );
+GO
 
 PRINT '   CatEstadoSesion creada';
 GO
 
--- Catalogo de Estados de Reporte
-CREATE TABLE [dbo].[CatEstadoReporte] (
-    [EstadoReporteId] INT IDENTITY(1,1) PRIMARY KEY,
-    [Codigo] NVARCHAR(20) NOT NULL UNIQUE,
-    [Nombre] NVARCHAR(50) NOT NULL,
-    [Descripcion] NVARCHAR(200) NULL,
+-- =============================================
+-- PASO 2: CREAR CATALOGO DE ESTADOS DE DOCUMENTO
+-- =============================================
+
+PRINT '';
+PRINT 'Paso 2: Creando CatEstadoDocumento...';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'CatEstadoDocumento')
+CREATE TABLE [dbo].[CatEstadoDocumento] (
+    [EstadoDocumentoId] INT IDENTITY(1,1) PRIMARY KEY,
+    [Codigo] NVARCHAR(50) NOT NULL UNIQUE,
+    [Nombre] NVARCHAR(100) NOT NULL,
+    [Descripcion] NVARCHAR(500) NULL,
     [Emoji] NVARCHAR(10) NULL,
-    [Orden] INT DEFAULT 0,
-    [EsFinal] BIT DEFAULT 0,
-    [Activo] BIT DEFAULT 1,
-    [FechaCreacion] DATETIME DEFAULT GETDATE()
+    [EsFinal] BIT NOT NULL DEFAULT 0,
+    [Orden] INT NOT NULL DEFAULT 0,
+    [Activo] BIT NOT NULL DEFAULT 1
 );
-
-PRINT '   CatEstadoReporte creada';
 GO
 
--- Catalogo de Estados de Encuesta (NORMALIZADO)
-CREATE TABLE [dbo].[CatEstadoEncuesta] (
-    [EstadoEncuestaId] INT IDENTITY(1,1) PRIMARY KEY,
-    [Codigo] NVARCHAR(20) NOT NULL UNIQUE,
-    [Nombre] NVARCHAR(50) NOT NULL,
-    [Descripcion] NVARCHAR(200) NULL,
-    [EsFinal] BIT DEFAULT 0,
-    [Orden] INT DEFAULT 0,
-    [Activo] BIT DEFAULT 1,
-    [FechaCreacion] DATETIME DEFAULT GETDATE()
-);
-
-PRINT '   CatEstadoEncuesta creada';
+PRINT '   CatEstadoDocumento creada';
 GO
 
--- Catalogo de Tipos de Encuesta (NORMALIZADO)
-CREATE TABLE [dbo].[CatTipoEncuesta] (
-    [TipoEncuestaId] INT IDENTITY(1,1) PRIMARY KEY,
-    [Codigo] NVARCHAR(30) NOT NULL UNIQUE,
+-- =============================================
+-- PASO 3: CREAR CATALOGO DE TIPOS DE DOCUMENTO
+-- =============================================
+
+PRINT '';
+PRINT 'Paso 3: Creando CatTipoDocumento...';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'CatTipoDocumento')
+CREATE TABLE [dbo].[CatTipoDocumento] (
+    [TipoDocumentoId] INT IDENTITY(1,1) PRIMARY KEY,
+    [Codigo] NVARCHAR(50) NOT NULL UNIQUE,
     [Nombre] NVARCHAR(100) NOT NULL,
     [Descripcion] NVARCHAR(500) NULL,
-    [NumeroPreguntas] INT NOT NULL DEFAULT 6,
-    [TienePasoComentario] BIT DEFAULT 1,
-    [MensajeInvitacion] NVARCHAR(500) NULL,
-    [MensajeAgradecimiento] NVARCHAR(500) NULL,
-    [Activo] BIT DEFAULT 1,
-    [FechaCreacion] DATETIME DEFAULT GETDATE()
+    [Activo] BIT NOT NULL DEFAULT 1
 );
-
-PRINT '   CatTipoEncuesta creada';
 GO
 
--- Catalogo de Preguntas de Encuesta (NORMALIZADO)
-CREATE TABLE [dbo].[PreguntasEncuesta] (
-    [PreguntaId] INT IDENTITY(1,1) PRIMARY KEY,
-    [TipoEncuestaId] INT NOT NULL,
-    [NumeroPregunta] INT NOT NULL,
-    [TextoPregunta] NVARCHAR(500) NOT NULL,
-    [TextoCorto] NVARCHAR(50) NOT NULL,
-    [ValorMinimo] INT DEFAULT 1,
-    [ValorMaximo] INT DEFAULT 5,
-    [EtiquetaMinimo] NVARCHAR(50) DEFAULT 'Muy insatisfecho',
-    [EtiquetaMaximo] NVARCHAR(50) DEFAULT 'Muy satisfecho',
-    [Orden] INT NOT NULL,
-    [Activo] BIT DEFAULT 1,
-    [FechaCreacion] DATETIME DEFAULT GETDATE(),
-
-    CONSTRAINT [FK_PreguntasEncuesta_Tipo] FOREIGN KEY ([TipoEncuestaId])
-        REFERENCES [dbo].[CatTipoEncuesta] ([TipoEncuestaId]),
-
-    CONSTRAINT [UQ_PreguntasEncuesta_TipoNumero] UNIQUE ([TipoEncuestaId], [NumeroPregunta])
-);
-
-CREATE NONCLUSTERED INDEX [IX_PreguntasEncuesta_Tipo]
-ON [dbo].[PreguntasEncuesta] ([TipoEncuestaId], [Orden])
-INCLUDE ([TextoPregunta], [TextoCorto], [Activo]);
-
-PRINT '   PreguntasEncuesta creada';
+PRINT '   CatTipoDocumento creada';
 GO
 
 -- =============================================
--- PASO 2B: CREAR TABLA CENTROS DE SERVICIO
+-- PASO 4: CREAR TABLA SESIONES CHAT
 -- =============================================
 
 PRINT '';
-PRINT 'Paso 2B: Creando tabla CentrosServicio...';
+PRINT 'Paso 4: Creando SesionesChat...';
 GO
 
-CREATE TABLE [dbo].[CentrosServicio] (
-    [CentroServicioId] INT IDENTITY(1,1) PRIMARY KEY,
-    [Codigo] NVARCHAR(20) NOT NULL UNIQUE,
-    [Nombre] NVARCHAR(100) NOT NULL,
-    [Direccion] NVARCHAR(500) NULL,
-    [Ciudad] NVARCHAR(100) NULL,
-    [Estado] NVARCHAR(100) NULL,
-    [CodigoPostal] NVARCHAR(10) NULL,
-
-    -- Coordenadas geograficas
-    [Latitud] DECIMAL(10, 8) NOT NULL,
-    [Longitud] DECIMAL(11, 8) NOT NULL,
-
-    -- Datos de contacto
-    [Telefono] NVARCHAR(20) NULL,
-    [Email] NVARCHAR(100) NULL,
-
-    -- Horario de atencion (opcional)
-    [HorarioApertura] TIME NULL,
-    [HorarioCierre] TIME NULL,
-    [DiasOperacion] NVARCHAR(50) NULL,  -- Ej: 'L-V', 'L-S', 'L-D'
-
-    -- Metadata
-    [Activo] BIT DEFAULT 1,
-    [FechaCreacion] DATETIME DEFAULT GETDATE(),
-    [FechaActualizacion] DATETIME DEFAULT GETDATE()
-);
-
--- Indice para busquedas geograficas
-CREATE NONCLUSTERED INDEX [IX_CentrosServicio_Ubicacion]
-ON [dbo].[CentrosServicio] ([Latitud], [Longitud])
-WHERE [Activo] = 1;
-
--- Indice para busquedas por codigo
-CREATE NONCLUSTERED INDEX [IX_CentrosServicio_Codigo]
-ON [dbo].[CentrosServicio] ([Codigo])
-INCLUDE ([Nombre], [Latitud], [Longitud], [Activo]);
-
-PRINT '   CentrosServicio creada';
-GO
-
--- =============================================
--- PASO 3: CREAR TABLA CLIENTES
--- =============================================
-
-PRINT '';
-PRINT 'Paso 3: Creando tabla Clientes...';
-GO
-
-CREATE TABLE [dbo].[Clientes] (
-    [ClienteId] INT IDENTITY(1,1) PRIMARY KEY,
-    [Nombre] NVARCHAR(200) NOT NULL,
-    [Direccion] NVARCHAR(500) NULL,
-    [Ciudad] NVARCHAR(100) NULL,
-    [Telefono] NVARCHAR(20) NULL,
-    [Email] NVARCHAR(100) NULL,
-    [FechaCreacion] DATETIME DEFAULT GETDATE(),
-    [Activo] BIT DEFAULT 1
-);
-
-PRINT '   Clientes creada';
-GO
-
--- =============================================
--- PASO 4: CREAR TABLA EQUIPOS (REFRIGERADORES)
--- =============================================
-
-PRINT '';
-PRINT 'Paso 4: Creando tabla Equipos...';
-GO
-
-CREATE TABLE [dbo].[Equipos] (
-    [EquipoId] INT IDENTITY(1,1) PRIMARY KEY,
-    [CodigoSAP] NVARCHAR(50) NOT NULL UNIQUE,
-    [CodigoBarras] NVARCHAR(100) NULL,
-    [NumeroSerie] NVARCHAR(100) NULL,
-    [Modelo] NVARCHAR(100) NULL,
-    [Marca] NVARCHAR(100) NULL,
-    [Descripcion] NVARCHAR(500) NULL,
-    [Ubicacion] NVARCHAR(200) NULL,
-    [ClienteId] INT NOT NULL,
-    [FechaInstalacion] DATETIME NULL,
-    [FechaCreacion] DATETIME DEFAULT GETDATE(),
-    [Activo] BIT DEFAULT 1,
-    CONSTRAINT [FK_Equipos_Clientes] FOREIGN KEY ([ClienteId])
-        REFERENCES [dbo].[Clientes] ([ClienteId])
-);
-
-CREATE NONCLUSTERED INDEX [IX_Equipos_CodigoSAP] ON [dbo].[Equipos] ([CodigoSAP]);
-CREATE NONCLUSTERED INDEX [IX_Equipos_ClienteId] ON [dbo].[Equipos] ([ClienteId]);
-
-PRINT '   Equipos creada';
-GO
-
--- =============================================
--- PASO 5: CREAR TABLA REPORTES (NORMALIZADA)
--- =============================================
-
-PRINT '';
-PRINT 'Paso 5: Creando tabla Reportes...';
-GO
-
-CREATE TABLE [dbo].[Reportes] (
-    [ReporteId] INT IDENTITY(1,1) PRIMARY KEY,
-    [NumeroTicket] NVARCHAR(50) NOT NULL UNIQUE,
-    [TelefonoReportante] NVARCHAR(20) NOT NULL,
-    [Descripcion] NVARCHAR(MAX) NULL,
-    [ImagenUrl] NVARCHAR(500) NULL,
-
-    -- FK a catalogos
-    [TipoReporteId] INT NOT NULL,
-    [EstadoReporteId] INT NOT NULL,
-
-    [FechaCreacion] DATETIME DEFAULT GETDATE(),
-    [FechaActualizacion] DATETIME DEFAULT GETDATE(),
-    [FechaResolucion] DATETIME NULL,  -- Para encuestas de satisfaccion
-
-    -- Campos para reportes de REFRIGERADOR
-    [EquipoId] INT NULL,
-    [ClienteId] INT NULL,
-
-    -- Campos para reportes de VEHICULO
-    [CodigoSAPVehiculo] NVARCHAR(50) NULL,
-    [NumeroEmpleado] NVARCHAR(50) NULL,
-
-    -- Campos de ubicacion (para vehiculos)
-    [Latitud] DECIMAL(10, 8) NULL,
-    [Longitud] DECIMAL(11, 8) NULL,
-    [DireccionUbicacion] NVARCHAR(500) NULL,
-
-    -- Campos de Centro de Servicio (para tiempo estimado de llegada)
-    [CentroServicioId] INT NULL,
-    [TiempoEstimadoMinutos] INT NULL,
-    [DistanciaCentroKm] DECIMAL(10, 2) NULL,
-
-    -- Foreign Keys
-    CONSTRAINT [FK_Reportes_TipoReporte] FOREIGN KEY ([TipoReporteId])
-        REFERENCES [dbo].[CatTipoReporte] ([TipoReporteId]),
-    CONSTRAINT [FK_Reportes_EstadoReporte] FOREIGN KEY ([EstadoReporteId])
-        REFERENCES [dbo].[CatEstadoReporte] ([EstadoReporteId]),
-    CONSTRAINT [FK_Reportes_Equipos] FOREIGN KEY ([EquipoId])
-        REFERENCES [dbo].[Equipos] ([EquipoId]),
-    CONSTRAINT [FK_Reportes_Clientes] FOREIGN KEY ([ClienteId])
-        REFERENCES [dbo].[Clientes] ([ClienteId]),
-    CONSTRAINT [FK_Reportes_CentroServicio] FOREIGN KEY ([CentroServicioId])
-        REFERENCES [dbo].[CentrosServicio] ([CentroServicioId])
-);
-
-CREATE NONCLUSTERED INDEX [IX_Reportes_NumeroTicket] ON [dbo].[Reportes] ([NumeroTicket]);
-CREATE NONCLUSTERED INDEX [IX_Reportes_TipoReporteId] ON [dbo].[Reportes] ([TipoReporteId]);
-CREATE NONCLUSTERED INDEX [IX_Reportes_EstadoReporteId] ON [dbo].[Reportes] ([EstadoReporteId]);
-CREATE NONCLUSTERED INDEX [IX_Reportes_EquipoId] ON [dbo].[Reportes] ([EquipoId]);
-CREATE NONCLUSTERED INDEX [IX_Reportes_FechaCreacion] ON [dbo].[Reportes] ([FechaCreacion]);
-CREATE NONCLUSTERED INDEX [IX_Reportes_TelefonoReportante] ON [dbo].[Reportes] ([TelefonoReportante]);
-
--- Filtered indexes requieren QUOTED_IDENTIFIER ON
-SET QUOTED_IDENTIFIER ON;
-CREATE NONCLUSTERED INDEX [IX_Reportes_FechaResolucion] ON [dbo].[Reportes] ([FechaResolucion], [EstadoReporteId])
-    WHERE FechaResolucion IS NOT NULL;
-
--- Indice para consultas por ubicacion
-CREATE NONCLUSTERED INDEX [IX_Reportes_Ubicacion] ON [dbo].[Reportes] ([Latitud], [Longitud])
-    WHERE Latitud IS NOT NULL AND Longitud IS NOT NULL;
-
-PRINT '   Reportes creada (incluye ubicacion y FechaResolucion)';
-GO
-
--- =============================================
--- PASO 6: CREAR TABLA SESIONES DE CHAT
--- =============================================
-
-PRINT '';
-PRINT 'Paso 6: Creando tabla SesionesChat...';
-GO
-
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'SesionesChat')
 CREATE TABLE [dbo].[SesionesChat] (
     [SesionId] INT IDENTITY(1,1) PRIMARY KEY,
-    [Telefono] NVARCHAR(20) NOT NULL UNIQUE,
-
-    -- FKs a catalogos
-    [TipoReporteId] INT NULL,
-    [EstadoId] INT NOT NULL,
-
+    [Telefono] NVARCHAR(20) NOT NULL,
+    [EstadoId] INT NOT NULL DEFAULT 1,
     [DatosTemp] NVARCHAR(MAX) NULL,
-    [EquipoIdTemp] INT NULL,
-    [FechaCreacion] DATETIME DEFAULT GETDATE(),
-    [UltimaActividad] DATETIME DEFAULT GETDATE(),
-
-    -- Control de spam
-    [ContadorMensajes] INT DEFAULT 0,
-    [UltimoResetContador] DATETIME DEFAULT GETDATE(),
-
-    -- Control de advertencia de timeout
-    [AdvertenciaEnviada] BIT DEFAULT 0 NOT NULL,
+    [ContadorMensajes] INT NOT NULL DEFAULT 0,
+    [AdvertenciaEnviada] BIT NOT NULL DEFAULT 0,
     [FechaAdvertencia] DATETIME NULL,
-
-    -- Optimistic Locking (previene race conditions)
-    [Version] INT NOT NULL DEFAULT 0,
-
-    -- Nombre de usuario de WhatsApp
     [NombreUsuario] NVARCHAR(200) NULL,
+    [FechaCreacion] DATETIME NOT NULL DEFAULT GETDATE(),
+    [UltimaActividad] DATETIME NOT NULL DEFAULT GETDATE(),
+    [Version] INT NOT NULL DEFAULT 1,
 
-    -- Soporte para Handoff a agente humano
-    [AgenteId] NVARCHAR(100) NULL,
-    [AgenteNombre] NVARCHAR(200) NULL,
-    [FechaTomaAgente] DATETIME NULL,
-
-    CONSTRAINT [FK_SesionesChat_TipoReporte] FOREIGN KEY ([TipoReporteId])
-        REFERENCES [dbo].[CatTipoReporte] ([TipoReporteId]),
+    CONSTRAINT [UQ_SesionesChat_Telefono] UNIQUE ([Telefono]),
     CONSTRAINT [FK_SesionesChat_Estado] FOREIGN KEY ([EstadoId])
         REFERENCES [dbo].[CatEstadoSesion] ([EstadoId])
 );
 
--- NOTA: IX_SesionesChat_Telefono eliminado por redundante
--- Los indices IX_SesionesChat_Telefono_Estado_Full y IX_SesionesChat_Telefono_Version ya cubren busquedas por Telefono
-CREATE NONCLUSTERED INDEX [IX_SesionesChat_EstadoId] ON [dbo].[SesionesChat] ([EstadoId]);
+CREATE NONCLUSTERED INDEX [IX_SesionesChat_Estado] ON [dbo].[SesionesChat] ([EstadoId]);
 CREATE NONCLUSTERED INDEX [IX_SesionesChat_UltimaActividad] ON [dbo].[SesionesChat] ([UltimaActividad]);
-CREATE NONCLUSTERED INDEX [IX_SesionesChat_UltimaActividad_Estado]
-    ON [dbo].[SesionesChat] ([UltimaActividad], [EstadoId])
-    INCLUDE ([Telefono], [SesionId]);
+GO
 
--- Indice para optimistic locking
-CREATE NONCLUSTERED INDEX [IX_SesionesChat_Telefono_Version]
-    ON [dbo].[SesionesChat] ([Telefono], [Version])
-    INCLUDE ([EstadoId], [DatosTemp], [EquipoIdTemp]);
-
--- Indice para buscar sesiones con agente
-CREATE NONCLUSTERED INDEX [IX_SesionesChat_AgenteId]
-    ON [dbo].[SesionesChat] ([AgenteId])
-    WHERE [AgenteId] IS NOT NULL;
-
-PRINT '   SesionesChat creada (incluye Version, NombreUsuario, Agente)';
+PRINT '   SesionesChat creada';
 GO
 
 -- =============================================
--- PASO 7: CREAR TABLA HISTORIAL DE SESIONES
+-- PASO 5: CREAR TABLA DOCUMENTOS FIRMA
 -- =============================================
 
 PRINT '';
-PRINT 'Paso 7: Creando tabla HistorialSesiones...';
+PRINT 'Paso 5: Creando DocumentosFirma...';
 GO
 
-CREATE TABLE [dbo].[HistorialSesiones] (
-    [HistorialId] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [Telefono] NVARCHAR(20) NOT NULL,
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'DocumentosFirma')
+CREATE TABLE [dbo].[DocumentosFirma] (
+    [DocumentoFirmaId] INT IDENTITY(1,1) PRIMARY KEY,
 
-    [TipoReporteId] INT NULL,
+    -- DocuSign
+    [EnvelopeId] NVARCHAR(100) NULL,
+
+    -- SAP Reference
+    [SapDocumentId] NVARCHAR(100) NOT NULL,
+    [SapCallbackUrl] NVARCHAR(500) NULL,
+
+    -- Cliente
+    [ClienteTelefono] NVARCHAR(20) NOT NULL,
+    [ClienteNombre] NVARCHAR(200) NOT NULL,
+    [ClienteEmail] NVARCHAR(200) NULL,
+
+    -- Documento
+    [TipoDocumentoId] INT NOT NULL,
+    [EstadoDocumentoId] INT NOT NULL,
+    [DocumentoNombre] NVARCHAR(500) NULL,
+    [DocumentoOriginalUrl] NVARCHAR(1000) NULL,
+    [DocumentoFirmadoUrl] NVARCHAR(1000) NULL,
+    [SigningUrl] NVARCHAR(2000) NULL,
+
+    -- Lifecycle timestamps
+    [FechaCreacion] DATETIME NOT NULL DEFAULT GETDATE(),
+    [FechaEnvioDocuSign] DATETIME NULL,
+    [FechaEnvioWhatsApp] DATETIME NULL,
+    [FechaVisto] DATETIME NULL,
+    [FechaFirmado] DATETIME NULL,
+    [FechaRechazo] DATETIME NULL,
+
+    -- Rechazo
+    [MotivoRechazo] NVARCHAR(1000) NULL,
+
+    -- Recordatorios
+    [IntentosRecordatorio] INT NOT NULL DEFAULT 0,
+    [UltimoRecordatorio] DATETIME NULL,
+    [UltimoReporteTeams] DATETIME NULL,
+
+    -- WhatsApp tracking
+    [WhatsAppMessageId] NVARCHAR(100) NULL,
+
+    -- Envelope reutilizacion
+    [EnvelopeReutilizado] BIT NOT NULL DEFAULT 0,
+    [DocumentoAnteriorId] INT NULL,
+
+    -- Error tracking
+    [MensajeError] NVARCHAR(1000) NULL,
+    [IntentosSap] INT NOT NULL DEFAULT 0,
+
+    -- Metadata
+    [DatosExtra] NVARCHAR(MAX) NULL,
+    [Version] INT NOT NULL DEFAULT 1,
+    [CreatedAt] DATETIME NOT NULL DEFAULT GETUTCDATE(),
+    [UpdatedAt] DATETIME NOT NULL DEFAULT GETUTCDATE(),
+
+    CONSTRAINT [FK_DocumentosFirma_TipoDocumento] FOREIGN KEY ([TipoDocumentoId])
+        REFERENCES [dbo].[CatTipoDocumento] ([TipoDocumentoId]),
+    CONSTRAINT [FK_DocumentosFirma_EstadoDocumento] FOREIGN KEY ([EstadoDocumentoId])
+        REFERENCES [dbo].[CatEstadoDocumento] ([EstadoDocumentoId]),
+    CONSTRAINT [FK_DocumentosFirma_DocumentoAnterior] FOREIGN KEY ([DocumentoAnteriorId])
+        REFERENCES [dbo].[DocumentosFirma] ([DocumentoFirmaId])
+);
+
+CREATE NONCLUSTERED INDEX [IX_DocumentosFirma_EnvelopeId] ON [dbo].[DocumentosFirma] ([EnvelopeId]) WHERE [EnvelopeId] IS NOT NULL;
+CREATE NONCLUSTERED INDEX [IX_DocumentosFirma_SapDocumentId] ON [dbo].[DocumentosFirma] ([SapDocumentId]);
+CREATE NONCLUSTERED INDEX [IX_DocumentosFirma_ClienteTelefono] ON [dbo].[DocumentosFirma] ([ClienteTelefono], [EstadoDocumentoId]);
+CREATE NONCLUSTERED INDEX [IX_DocumentosFirma_Estado] ON [dbo].[DocumentosFirma] ([EstadoDocumentoId]) INCLUDE ([ClienteTelefono], [EnvelopeId]);
+CREATE NONCLUSTERED INDEX [IX_DocumentosFirma_Recordatorio] ON [dbo].[DocumentosFirma] ([EstadoDocumentoId], [IntentosRecordatorio], [UltimoRecordatorio]);
+CREATE NONCLUSTERED INDEX [IX_DocumentosFirma_UpdatedAt] ON [dbo].[DocumentosFirma] ([UpdatedAt]) WHERE [EnvelopeId] IS NOT NULL;
+GO
+
+PRINT '   DocumentosFirma creada';
+GO
+
+-- =============================================
+-- PASO 6: CREAR TABLA HISTORIAL SESIONES
+-- =============================================
+
+PRINT '';
+PRINT 'Paso 6: Creando HistorialSesiones...';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'HistorialSesiones')
+CREATE TABLE [dbo].[HistorialSesiones] (
+    [HistorialId] INT IDENTITY(1,1) PRIMARY KEY,
+    [SesionId] INT NULL,
+    [Telefono] NVARCHAR(20) NOT NULL,
     [EstadoAnteriorId] INT NULL,
     [EstadoNuevoId] INT NOT NULL,
+    [OrigenAccion] NVARCHAR(20) NOT NULL DEFAULT 'SISTEMA',
+    [Descripcion] NVARCHAR(500) NULL,
+    [DocumentoFirmaId] INT NULL,
+    [FechaAccion] DATETIME NOT NULL DEFAULT GETDATE(),
 
-    [OrigenAccion] NVARCHAR(20) NOT NULL,
-    [Descripcion] NVARCHAR(200) NULL,
-    [DatosExtra] NVARCHAR(MAX) NULL,
-    [ReporteId] INT NULL,
-
-    [FechaAccion] DATETIME DEFAULT GETDATE(),
-
-    CONSTRAINT [FK_HistorialSesiones_TipoReporte] FOREIGN KEY ([TipoReporteId])
-        REFERENCES [dbo].[CatTipoReporte] ([TipoReporteId]),
-    CONSTRAINT [FK_HistorialSesiones_EstadoAnterior] FOREIGN KEY ([EstadoAnteriorId])
+    CONSTRAINT [FK_Historial_EstadoAnterior] FOREIGN KEY ([EstadoAnteriorId])
         REFERENCES [dbo].[CatEstadoSesion] ([EstadoId]),
-    CONSTRAINT [FK_HistorialSesiones_EstadoNuevo] FOREIGN KEY ([EstadoNuevoId])
+    CONSTRAINT [FK_Historial_EstadoNuevo] FOREIGN KEY ([EstadoNuevoId])
         REFERENCES [dbo].[CatEstadoSesion] ([EstadoId])
 );
 
-CREATE NONCLUSTERED INDEX [IX_HistorialSesiones_Telefono] ON [dbo].[HistorialSesiones] ([Telefono], [FechaAccion]);
-CREATE NONCLUSTERED INDEX [IX_HistorialSesiones_Fecha] ON [dbo].[HistorialSesiones] ([FechaAccion]);
-CREATE NONCLUSTERED INDEX [IX_HistorialSesiones_OrigenAccion] ON [dbo].[HistorialSesiones] ([OrigenAccion], [FechaAccion]);
+CREATE NONCLUSTERED INDEX [IX_Historial_Telefono] ON [dbo].[HistorialSesiones] ([Telefono], [FechaAccion] DESC);
+CREATE NONCLUSTERED INDEX [IX_Historial_SesionId] ON [dbo].[HistorialSesiones] ([SesionId]);
+CREATE NONCLUSTERED INDEX [IX_Historial_FechaAccion] ON [dbo].[HistorialSesiones] ([FechaAccion]);
+GO
 
 PRINT '   HistorialSesiones creada';
 GO
 
 -- =============================================
--- PASO 8: CREAR TABLA MENSAJES DE CHAT
+-- PASO 7: CREAR TABLA MENSAJES CHAT
 -- =============================================
 
 PRINT '';
-PRINT 'Paso 8: Creando tabla MensajesChat...';
+PRINT 'Paso 7: Creando MensajesChat...';
 GO
 
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'MensajesChat')
 CREATE TABLE [dbo].[MensajesChat] (
-    [MensajeId] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [SesionId] INT NOT NULL,
+    [MensajeId] INT IDENTITY(1,1) PRIMARY KEY,
+    [SesionId] INT NULL,
     [Telefono] NVARCHAR(20) NOT NULL,
-
     [Tipo] CHAR(1) NOT NULL,
-    [Contenido] NVARCHAR(2000) NULL,
-    [TipoContenido] NVARCHAR(20) DEFAULT 'TEXTO',
-
-    [IntencionDetectada] NVARCHAR(50) NULL,
-    [ConfianzaIA] DECIMAL(5,4) NULL,
-
-    -- Soporte para mensajes de agente humano (Tipo='A')
-    [AgenteId] NVARCHAR(100) NULL,
-
-    [FechaCreacion] DATETIME DEFAULT GETDATE(),
+    [TipoContenido] NVARCHAR(20) NOT NULL DEFAULT 'TEXTO',
+    [Contenido] NVARCHAR(MAX) NULL,
+    [WhatsAppMessageId] NVARCHAR(100) NULL,
+    [FechaCreacion] DATETIME NOT NULL DEFAULT GETDATE(),
 
     CONSTRAINT [FK_MensajesChat_Sesion] FOREIGN KEY ([SesionId])
         REFERENCES [dbo].[SesionesChat] ([SesionId])
@@ -550,23 +260,23 @@ CREATE TABLE [dbo].[MensajesChat] (
 CREATE NONCLUSTERED INDEX [IX_MensajesChat_Telefono] ON [dbo].[MensajesChat] ([Telefono], [FechaCreacion]);
 CREATE NONCLUSTERED INDEX [IX_MensajesChat_SesionId] ON [dbo].[MensajesChat] ([SesionId]);
 CREATE NONCLUSTERED INDEX [IX_MensajesChat_FechaCreacion] ON [dbo].[MensajesChat] ([FechaCreacion]);
-CREATE NONCLUSTERED INDEX [IX_MensajesChat_Tipo] ON [dbo].[MensajesChat] ([Tipo], [FechaCreacion]);
-CREATE NONCLUSTERED INDEX [IX_MensajesChat_AgenteId] ON [dbo].[MensajesChat] ([AgenteId]) WHERE [AgenteId] IS NOT NULL;
+CREATE NONCLUSTERED INDEX [IX_MensajesChat_Spam_Check]
+    ON [dbo].[MensajesChat] ([Telefono], [Tipo], [FechaCreacion] DESC)
+    INCLUDE ([MensajeId]);
+GO
 
 PRINT '   MensajesChat creada';
 GO
 
 -- =============================================
--- PASO 8B: CREAR TABLA MENSAJES PROCESADOS (DEDUPLICACION)
+-- PASO 8: CREAR TABLA MENSAJES PROCESADOS (DEDUPLICACION)
 -- =============================================
 
 PRINT '';
-PRINT 'Paso 8B: Creando tabla MensajesProcessados...';
+PRINT 'Paso 8: Creando MensajesProcessados...';
 GO
 
--- Tabla para deduplicacion de mensajes de WhatsApp
--- Previene procesar el mismo mensaje multiples veces (reintentos de webhook)
--- registerMessageAtomic() usa MERGE con Telefono, Reintentos, UltimoReintento
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'MensajesProcessados')
 CREATE TABLE [dbo].[MensajesProcessados] (
     [Id] BIGINT IDENTITY(1,1) PRIMARY KEY,
     [WhatsAppMessageId] NVARCHAR(100) NOT NULL,
@@ -578,317 +288,148 @@ CREATE TABLE [dbo].[MensajesProcessados] (
     CONSTRAINT [UQ_MensajesProcessados_MessageId] UNIQUE ([WhatsAppMessageId])
 );
 
--- Indice para limpieza de registros antiguos
-CREATE NONCLUSTERED INDEX [IX_MensajesProcessados_FechaCreacion] ON [dbo].[MensajesProcessados] ([FechaCreacion]);
+CREATE NONCLUSTERED INDEX [IX_MensajesProcessados_FechaCreacion]
+    ON [dbo].[MensajesProcessados] ([FechaCreacion]);
+GO
 
-PRINT '   MensajesProcessados creada (deduplicacion de webhooks)';
+PRINT '   MensajesProcessados creada';
 GO
 
 -- =============================================
--- PASO 8B2: CREAR TABLA DEAD LETTER (MENSAJES FALLIDOS)
+-- PASO 9: CREAR TABLA DEAD LETTER MESSAGES
 -- =============================================
 
 PRINT '';
-PRINT 'Paso 8B2: Creando tabla DeadLetterMessages...';
+PRINT 'Paso 9: Creando DeadLetterMessages...';
 GO
 
--- Tabla para almacenar mensajes que fallaron durante el procesamiento
--- Permite reintentos manuales o automaticos y analisis de errores
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'DeadLetterMessages')
 CREATE TABLE [dbo].[DeadLetterMessages] (
     [DeadLetterId] INT IDENTITY(1,1) PRIMARY KEY,
-
-    -- Datos del mensaje original
     [WhatsAppMessageId] NVARCHAR(100) NOT NULL,
     [Telefono] NVARCHAR(20) NOT NULL,
-    [TipoMensaje] NVARCHAR(20) NOT NULL,  -- 'text', 'image', 'interactive', 'location'
-    [Contenido] NVARCHAR(MAX) NULL,        -- Mensaje de texto o datos JSON
-    [CorrelationId] NVARCHAR(50) NULL,     -- Para tracing
-
-    -- Datos del error
+    [TipoMensaje] NVARCHAR(20) NOT NULL,
+    [Contenido] NVARCHAR(MAX) NULL,
+    [CorrelationId] NVARCHAR(50) NULL,
     [ErrorMessage] NVARCHAR(1000) NOT NULL,
     [ErrorStack] NVARCHAR(MAX) NULL,
     [ErrorCode] NVARCHAR(50) NULL,
-
-    -- Control de reintentos
     [RetryCount] INT DEFAULT 0,
     [MaxRetries] INT DEFAULT 3,
     [NextRetryAt] DATETIME NULL,
     [LastRetryAt] DATETIME NULL,
-
-    -- Estado: PENDING, RETRYING, PROCESSED, FAILED, SKIPPED
     [Estado] NVARCHAR(20) DEFAULT 'PENDING',
     [ProcessedAt] DATETIME NULL,
-
-    -- Metadata
     [FechaCreacion] DATETIME DEFAULT GETDATE(),
     [FechaActualizacion] DATETIME DEFAULT GETDATE(),
 
-    -- Evitar duplicados en la misma ventana
     CONSTRAINT [UQ_DeadLetter_MessageId] UNIQUE ([WhatsAppMessageId])
 );
 
--- Indice para buscar mensajes pendientes de reintento
 CREATE NONCLUSTERED INDEX [IX_DeadLetter_PendingRetry]
-ON [dbo].[DeadLetterMessages] ([Estado], [NextRetryAt])
-INCLUDE ([Telefono], [TipoMensaje], [RetryCount])
-WHERE [Estado] IN ('PENDING', 'RETRYING');
+    ON [dbo].[DeadLetterMessages] ([Estado], [NextRetryAt])
+    INCLUDE ([Telefono], [TipoMensaje], [RetryCount])
+    WHERE [Estado] IN ('PENDING', 'RETRYING');
+GO
 
--- Indice para buscar por telefono (analisis de usuarios con problemas)
-CREATE NONCLUSTERED INDEX [IX_DeadLetter_Telefono]
-ON [dbo].[DeadLetterMessages] ([Telefono], [FechaCreacion] DESC)
-INCLUDE ([TipoMensaje], [Estado], [ErrorMessage]);
-
--- Indice para limpieza de mensajes antiguos
-CREATE NONCLUSTERED INDEX [IX_DeadLetter_Cleanup]
-ON [dbo].[DeadLetterMessages] ([Estado], [FechaCreacion])
-WHERE [Estado] IN ('PROCESSED', 'FAILED', 'SKIPPED');
-
-PRINT '   DeadLetterMessages creada (mensajes fallidos para reintento)';
+PRINT '   DeadLetterMessages creada';
 GO
 
 -- =============================================
--- PASO 8C: CREAR TABLA ENCUESTAS DE SATISFACCION (NORMALIZADA)
+-- PASO 10: CREAR TABLA EVENTOS DOCUSIGN PROCESADOS
 -- =============================================
 
 PRINT '';
-PRINT 'Paso 8C: Creando tabla Encuestas (normalizada)...';
+PRINT 'Paso 10: Creando EventosDocuSignProcessados...';
 GO
 
-CREATE TABLE [dbo].[Encuestas] (
-    [EncuestaId] INT IDENTITY(1,1) PRIMARY KEY,
-    [ReporteId] INT NOT NULL,
-    [TelefonoEncuestado] NVARCHAR(20) NOT NULL,
-
-    -- FK a catalogos normalizados
-    [TipoEncuestaId] INT NOT NULL,
-    [EstadoEncuestaId] INT NOT NULL,
-
-    -- Control de envio
-    [FechaEnvio] DATETIME DEFAULT GETDATE(),
-    [FechaInicio] DATETIME NULL,          -- Cuando el usuario acepta
-    [FechaFinalizacion] DATETIME NULL,    -- Cuando termina
-
-    -- Estado: ENVIADA, EN_PROCESO, COMPLETADA, RECHAZADA, EXPIRADA (retrocompat)
-    [Estado] NVARCHAR(20) NOT NULL DEFAULT 'ENVIADA',
-
-    -- Respuestas legacy (1-5, NULL si no respondio) - se mantienen para retrocompatibilidad
-    [Pregunta1] TINYINT NULL,
-    [Pregunta2] TINYINT NULL,
-    [Pregunta3] TINYINT NULL,
-    [Pregunta4] TINYINT NULL,
-    [Pregunta5] TINYINT NULL,
-    [Pregunta6] TINYINT NULL,
-
-    -- Comentario opcional
-    [TieneComentario] BIT DEFAULT 0,
-    [Comentario] NVARCHAR(1000) NULL,
-
-    -- Metadatos
-    [PreguntaActual] TINYINT DEFAULT 0,   -- 0=no iniciada, 1-N=pregunta, N+1=comentario
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'EventosDocuSignProcessados')
+CREATE TABLE [dbo].[EventosDocuSignProcessados] (
+    [Id] BIGINT IDENTITY(1,1) PRIMARY KEY,
+    [EventId] NVARCHAR(200) NOT NULL,
+    [EnvelopeId] NVARCHAR(100) NOT NULL,
+    [EventType] NVARCHAR(50) NOT NULL,
     [FechaCreacion] DATETIME DEFAULT GETDATE(),
-    [FechaActualizacion] DATETIME DEFAULT GETDATE(),
 
-    -- Foreign Keys
-    CONSTRAINT [FK_Encuestas_Reportes] FOREIGN KEY ([ReporteId])
-        REFERENCES [dbo].[Reportes] ([ReporteId]),
-    CONSTRAINT [FK_Encuestas_TipoEncuesta] FOREIGN KEY ([TipoEncuestaId])
-        REFERENCES [dbo].[CatTipoEncuesta] ([TipoEncuestaId]),
-    CONSTRAINT [FK_Encuestas_EstadoEncuesta] FOREIGN KEY ([EstadoEncuestaId])
-        REFERENCES [dbo].[CatEstadoEncuesta] ([EstadoEncuestaId]),
-
-    -- Validacion de respuestas legacy 1-5
-    CONSTRAINT [CK_Encuestas_Pregunta1] CHECK (Pregunta1 IS NULL OR Pregunta1 BETWEEN 1 AND 5),
-    CONSTRAINT [CK_Encuestas_Pregunta2] CHECK (Pregunta2 IS NULL OR Pregunta2 BETWEEN 1 AND 5),
-    CONSTRAINT [CK_Encuestas_Pregunta3] CHECK (Pregunta3 IS NULL OR Pregunta3 BETWEEN 1 AND 5),
-    CONSTRAINT [CK_Encuestas_Pregunta4] CHECK (Pregunta4 IS NULL OR Pregunta4 BETWEEN 1 AND 5),
-    CONSTRAINT [CK_Encuestas_Pregunta5] CHECK (Pregunta5 IS NULL OR Pregunta5 BETWEEN 1 AND 5),
-    CONSTRAINT [CK_Encuestas_Pregunta6] CHECK (Pregunta6 IS NULL OR Pregunta6 BETWEEN 1 AND 5)
+    CONSTRAINT [UQ_EventosDocuSign_EventId] UNIQUE ([EventId])
 );
 
--- Indices para Encuestas
-CREATE NONCLUSTERED INDEX [IX_Encuestas_Estado]
-ON [dbo].[Encuestas] ([EstadoEncuestaId])
-INCLUDE ([TelefonoEncuestado], [FechaEnvio]);
+CREATE NONCLUSTERED INDEX [IX_EventosDocuSign_EnvelopeId]
+    ON [dbo].[EventosDocuSignProcessados] ([EnvelopeId]);
+CREATE NONCLUSTERED INDEX [IX_EventosDocuSign_FechaCreacion]
+    ON [dbo].[EventosDocuSignProcessados] ([FechaCreacion]);
+GO
 
-CREATE NONCLUSTERED INDEX [IX_Encuestas_Telefono]
-ON [dbo].[Encuestas] ([TelefonoEncuestado], [EstadoEncuestaId])
-INCLUDE ([EncuestaId], [ReporteId], [PreguntaActual], [TipoEncuestaId]);
-
-CREATE NONCLUSTERED INDEX [IX_Encuestas_ReporteId]
-ON [dbo].[Encuestas] ([ReporteId]);
-
-CREATE NONCLUSTERED INDEX [IX_Encuestas_TipoEncuestaId]
-ON [dbo].[Encuestas] ([TipoEncuestaId]);
-
-CREATE NONCLUSTERED INDEX [IX_Encuestas_EstadoEncuestaId]
-ON [dbo].[Encuestas] ([EstadoEncuestaId]);
-
-PRINT '   Encuestas creada (normalizada con FKs a catalogos)';
+PRINT '   EventosDocuSignProcessados creada';
 GO
 
 -- =============================================
--- PASO 8D: CREAR TABLA RESPUESTAS DE ENCUESTA (NORMALIZADA)
+-- PASO 11: INSERTAR DATOS EN CATALOGOS
 -- =============================================
 
 PRINT '';
-PRINT 'Paso 8D: Creando tabla RespuestasEncuesta...';
+PRINT 'Paso 11: Insertando datos en catalogos...';
 GO
 
-CREATE TABLE [dbo].[RespuestasEncuesta] (
-    [RespuestaId] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [EncuestaId] INT NOT NULL,
-    [PreguntaId] INT NOT NULL,
-    [Valor] TINYINT NOT NULL,
-    [FechaRespuesta] DATETIME DEFAULT GETDATE(),
-
-    CONSTRAINT [FK_RespuestasEncuesta_Encuesta] FOREIGN KEY ([EncuestaId])
-        REFERENCES [dbo].[Encuestas] ([EncuestaId]),
-    CONSTRAINT [FK_RespuestasEncuesta_Pregunta] FOREIGN KEY ([PreguntaId])
-        REFERENCES [dbo].[PreguntasEncuesta] ([PreguntaId]),
-
-    -- Una sola respuesta por encuesta-pregunta
-    CONSTRAINT [UQ_RespuestasEncuesta_EncuestaPregunta] UNIQUE ([EncuestaId], [PreguntaId]),
-
-    -- Validacion de valor
-    CONSTRAINT [CK_RespuestasEncuesta_Valor] CHECK (Valor BETWEEN 1 AND 5)
-);
-
--- Indice para obtener todas las respuestas de una encuesta
-CREATE NONCLUSTERED INDEX [IX_RespuestasEncuesta_Encuesta]
-ON [dbo].[RespuestasEncuesta] ([EncuestaId])
-INCLUDE ([PreguntaId], [Valor], [FechaRespuesta]);
-
-PRINT '   RespuestasEncuesta creada';
-GO
-
--- =============================================
--- PASO 9: INSERTAR DATOS EN CATALOGOS
--- =============================================
-
-PRINT '';
-PRINT 'Paso 9: Insertando datos en catalogos...';
-GO
-
--- Tipos de Reporte
-INSERT INTO [dbo].[CatTipoReporte] ([Codigo], [Nombre], [Descripcion], [GeneraTicket], [Activo]) VALUES
-('REFRIGERADOR', 'Reporte de Refrigerador', 'Reporte de falla en equipo de refrigeracion', 1, 1),
-('VEHICULO', 'Reporte de Vehiculo', 'Reporte de falla en vehiculo de flota', 1, 1),
-('CONSULTA', 'Consulta de Estado', 'Consulta del estado de un ticket existente', 0, 1);
-
-PRINT '   CatTipoReporte: 3 registros';
-GO
-
--- Estados de Sesion (incluye estados de encuesta)
--- IMPORTANTE: Usar IDENTITY_INSERT con IDs explicitos para que coincidan
--- con ESTADO_ID en bot/constants/sessionStates.js
+-- Estados de Sesion
 SET IDENTITY_INSERT [dbo].[CatEstadoSesion] ON;
 
 INSERT INTO [dbo].[CatEstadoSesion] ([EstadoId], [Codigo], [Nombre], [Descripcion], [EsTerminal], [Orden], [Activo]) VALUES
--- Estados terminales (IDs 1-4)
-(1, 'INICIO', 'Inicio', 'Sesion nueva o reactivada, esperando seleccion de flujo', 1, 0, 1),
-(2, 'CANCELADO', 'Cancelado', 'Sesion cancelada explicitamente por el usuario', 1, 100, 1),
-(3, 'FINALIZADO', 'Finalizado', 'Flujo completado exitosamente, reporte creado', 1, 101, 1),
-(4, 'TIMEOUT', 'Timeout', 'Sesion cerrada por inactividad', 1, 102, 1),
--- IDs 5-11 reservados (legacy secuenciales, eliminados en FASE 2b)
--- Estados de Encuesta de Satisfaccion (IDs 12-20)
-(12, 'ENCUESTA_INVITACION', 'Invitacion Encuesta', 'Esperando aceptar/rechazar encuesta', 0, 40, 1),
-(13, 'ENCUESTA_PREGUNTA_1', 'Encuesta Pregunta 1', 'Pregunta: Atencion al reportar', 0, 41, 1),
-(14, 'ENCUESTA_PREGUNTA_2', 'Encuesta Pregunta 2', 'Pregunta: Tiempo de reparacion', 0, 42, 1),
-(15, 'ENCUESTA_PREGUNTA_3', 'Encuesta Pregunta 3', 'Pregunta: Fecha compromiso', 0, 43, 1),
-(16, 'ENCUESTA_PREGUNTA_4', 'Encuesta Pregunta 4', 'Pregunta: Unidad limpia', 0, 44, 1),
-(17, 'ENCUESTA_PREGUNTA_5', 'Encuesta Pregunta 5', 'Pregunta: Informacion reparacion', 0, 45, 1),
-(18, 'ENCUESTA_PREGUNTA_6', 'Encuesta Pregunta 6', 'Pregunta: Falla corregida', 0, 46, 1),
-(19, 'ENCUESTA_COMENTARIO', 'Encuesta Comentario', 'Pregunta si desea dejar comentario', 0, 47, 1),
-(20, 'ENCUESTA_ESPERA_COMENTARIO', 'Esperando Comentario', 'Esperando texto de comentario', 0, 48, 1),
--- Estado de Consulta (ID 21)
-(21, 'CONSULTA_ESPERA_TICKET', 'Esperando Ticket', 'Usuario consulta estado, esperando numero de ticket', 0, 30, 1),
--- Estados Flexibles FASE 2b (IDs 23-27)
-(23, 'REFRIGERADOR_ACTIVO', 'Refrigerador Activo', 'Flujo flexible de refrigerador en progreso', 0, 50, 1),
-(24, 'VEHICULO_ACTIVO', 'Vehiculo Activo', 'Flujo flexible de vehiculo en progreso', 0, 51, 1),
-(25, 'REFRIGERADOR_CONFIRMAR_EQUIPO', 'Confirmar Equipo OCR', 'Esperando confirmacion de codigo SAP extraido por OCR', 0, 52, 1),
-(26, 'VEHICULO_CONFIRMAR_DATOS_AI', 'Confirmar Datos AI Vehiculo', 'Esperando confirmacion de datos extraidos por IA para vehiculo', 0, 53, 1),
-(27, 'REFRIGERADOR_CONFIRMAR_DATOS_AI', 'Confirmar Datos AI Refrigerador', 'Esperando confirmacion de datos extraidos por IA para refrigerador', 0, 54, 1),
--- Estado de Handoff a Agente Humano (ID 28)
-(28, 'AGENTE_ACTIVO', 'Atencion por Agente', 'Conversacion tomada por un agente humano', 0, 60, 1);
+(1,  'INICIO',                  'Inicio',                  'Sesion nueva o idle, sin flujo activo',               1, 0,  1),
+(2,  'CANCELADO',               'Cancelado',               'Sesion cancelada por el usuario',                     1, 100, 1),
+(3,  'FINALIZADO',              'Finalizado',              'Flujo completado exitosamente',                       1, 101, 1),
+(4,  'TIMEOUT',                 'Timeout',                 'Sesion cerrada por inactividad',                      1, 102, 1),
+(10, 'CONSULTA_DOCUMENTOS',     'Consulta Documentos',     'Usuario consultando sus documentos pendientes',       0, 10, 1),
+(11, 'CONSULTA_DETALLE',        'Consulta Detalle',        'Usuario viendo detalle de un documento',              0, 11, 1),
+(12, 'ESPERANDO_CONFIRMACION',  'Esperando Confirmacion',  'Bot pregunto algo, esperando respuesta del usuario',  0, 12, 1),
+(20, 'AGENTE_ACTIVO',           'Atencion por Agente',     'Conversacion tomada por agente humano (v2)',          0, 60, 1);
 
 SET IDENTITY_INSERT [dbo].[CatEstadoSesion] OFF;
 
-PRINT '   CatEstadoSesion: 25 registros (IDs explicitos, sincronizados con ESTADO_ID en codigo)';
+PRINT '   CatEstadoSesion: 8 registros';
 GO
 
--- Estados de Reporte
-INSERT INTO [dbo].[CatEstadoReporte] ([Codigo], [Nombre], [Descripcion], [Emoji], [Orden], [EsFinal], [Activo]) VALUES
-('PENDIENTE', 'Pendiente', 'Reporte en cola, esperando asignacion de tecnico', N'🟡', 1, 0, 1),
-('EN_PROCESO', 'En Proceso', 'Tecnico asignado y trabajando en el reporte', N'🔵', 2, 0, 1),
-('RESUELTO', 'Resuelto', 'Reporte completado exitosamente', N'🟢', 3, 1, 1),
-('CANCELADO', 'Cancelado', 'Reporte cancelado por el usuario o el sistema', N'🔴', 4, 1, 1);
+-- Estados de Documento (IDs match documentStates.js ESTADO_DOCUMENTO_ID)
+SET IDENTITY_INSERT [dbo].[CatEstadoDocumento] ON;
 
-PRINT '   CatEstadoReporte: 4 registros';
+INSERT INTO [dbo].[CatEstadoDocumento] ([EstadoDocumentoId], [Codigo], [Nombre], [Descripcion], [Emoji], [EsFinal], [Orden]) VALUES
+(1, 'PENDIENTE_ENVIO',  'Pendiente de envio',  'Documento recibido, pendiente de enviar a DocuSign',            N'📤', 0, 1),
+(2, 'ENVIADO',          'Enviado',             'Envelope creado en DocuSign, link enviado al cliente',           N'📨', 0, 2),
+(3, 'ENTREGADO',        'Entregado',           'WhatsApp confirmo entrega del mensaje al cliente',              N'✅', 0, 3),
+(4, 'VISTO',            'Visto',               'Cliente abrio el documento en DocuSign',                        N'👁️', 0, 4),
+(5, 'FIRMADO',          'Firmado',             'Documento firmado exitosamente por el cliente',                  N'✍️', 1, 5),
+(6, 'RECHAZADO',        'Rechazado',           'Cliente rechazo firmar (envelope vivo, reutilizable)',           N'❌', 0, 6),
+(7, 'ANULADO',          'Anulado',             'Envelope anulado por SAP o housekeeping',                       N'🚫', 1, 7),
+(8, 'ERROR',            'Error',               'Error en algun paso del proceso (reintentable)',                 N'⚠️', 0, 8);
+
+SET IDENTITY_INSERT [dbo].[CatEstadoDocumento] OFF;
+
+PRINT '   CatEstadoDocumento: 8 registros';
 GO
 
--- Estados de Encuesta (normalizados)
-INSERT INTO [dbo].[CatEstadoEncuesta] ([Codigo], [Nombre], [Descripcion], [EsFinal], [Orden]) VALUES
-('ENVIADA', 'Enviada', 'Encuesta enviada, esperando respuesta del usuario', 0, 1),
-('EN_PROCESO', 'En Proceso', 'Usuario respondiendo la encuesta', 0, 2),
-('COMPLETADA', 'Completada', 'Encuesta finalizada exitosamente', 1, 3),
-('RECHAZADA', 'Rechazada', 'Usuario rechazo participar en la encuesta', 1, 4),
-('EXPIRADA', 'Expirada', 'Encuesta expiro sin respuesta', 1, 5);
+-- Tipos de Documento (IDs match documentStates.js TIPO_DOCUMENTO_ID)
+SET IDENTITY_INSERT [dbo].[CatTipoDocumento] ON;
 
-PRINT '   CatEstadoEncuesta: 5 registros';
-GO
+INSERT INTO [dbo].[CatTipoDocumento] ([TipoDocumentoId], [Codigo], [Nombre], [Descripcion]) VALUES
+(1, 'CONTRATO',  'Contrato',  'Contrato general'),
+(2, 'ADENDUM',   'Adendum',   'Adendum a contrato existente'),
+(3, 'PAGARE',    'Pagare',    'Pagare'),
+(4, 'OTRO',      'Otro',      'Otro tipo de documento');
 
--- Tipos de Encuesta
-INSERT INTO [dbo].[CatTipoEncuesta]
-    ([Codigo], [Nombre], [Descripcion], [NumeroPreguntas], [TienePasoComentario], [MensajeInvitacion], [MensajeAgradecimiento])
-VALUES
-(
-    'SATISFACCION_SERVICIO',
-    'Encuesta de Satisfaccion del Servicio',
-    'Encuesta estandar de 6 preguntas para evaluar la calidad del servicio de reparacion',
-    6,
-    1,
-    N'¡Hola! Queremos conocer tu opinion sobre el servicio que recibiste para tu ticket {TICKET}. ¿Podrias ayudarnos con una breve encuesta?',
-    N'¡Gracias por completar nuestra encuesta! Tu opinion nos ayuda a mejorar.'
-);
+SET IDENTITY_INSERT [dbo].[CatTipoDocumento] OFF;
 
-PRINT '   CatTipoEncuesta: 1 registro (SATISFACCION_SERVICIO)';
-GO
-
--- Preguntas de Encuesta
-DECLARE @TipoSatisfaccionId INT;
-SELECT @TipoSatisfaccionId = TipoEncuestaId FROM [dbo].[CatTipoEncuesta] WHERE Codigo = 'SATISFACCION_SERVICIO';
-
-INSERT INTO [dbo].[PreguntasEncuesta]
-    ([TipoEncuestaId], [NumeroPregunta], [TextoPregunta], [TextoCorto], [Orden])
-VALUES
-(@TipoSatisfaccionId, 1, N'¿Como califica la atencion recibida al momento de reportar la falla?', 'Atencion al reportar', 1),
-(@TipoSatisfaccionId, 2, N'¿El tiempo de reparacion fue adecuado?', 'Tiempo de reparacion', 2),
-(@TipoSatisfaccionId, 3, N'¿Se cumplio con la fecha compromiso de reparacion?', 'Fecha compromiso', 3),
-(@TipoSatisfaccionId, 4, N'¿La unidad fue entregada limpia despues de la reparacion?', 'Unidad limpia', 4),
-(@TipoSatisfaccionId, 5, N'¿Le proporcionaron informacion sobre la reparacion realizada?', 'Info reparacion', 5),
-(@TipoSatisfaccionId, 6, N'¿La falla reportada quedo corregida?', 'Falla corregida', 6);
-
-PRINT '   PreguntasEncuesta: 6 registros';
+PRINT '   CatTipoDocumento: 4 registros';
 GO
 
 -- =============================================
--- NOTA: Tablas de datos inician vacias.
--- Los datos se crean en tiempo de ejecucion via la app.
+-- PASO 12: CREAR STORED PROCEDURES
 -- =============================================
 
 PRINT '';
-PRINT 'Paso 10: Tablas de datos vacias (primer deploy limpio)';
+PRINT 'Paso 12: Creando Stored Procedures...';
 GO
 
--- =============================================
--- PASO 14: CREAR STORED PROCEDURES
--- =============================================
-
-PRINT '';
-PRINT 'Paso 14: Creando Stored Procedures...';
-GO
-
--- SP para detectar spam
+-- SP: Detectar spam
 CREATE OR ALTER PROCEDURE [dbo].[sp_CheckSpam]
     @Telefono NVARCHAR(20),
     @UmbralMensajesPorHora INT = 30,
@@ -908,7 +449,10 @@ BEGIN
 END;
 GO
 
--- SP para historial de telefono
+PRINT '   sp_CheckSpam creado';
+GO
+
+-- SP: Historial de telefono
 CREATE OR ALTER PROCEDURE [dbo].[sp_GetHistorialTelefono]
     @Telefono NVARCHAR(20),
     @TopN INT = 50
@@ -919,14 +463,12 @@ BEGIN
     SELECT TOP (@TopN)
         h.HistorialId,
         h.FechaAccion,
-        tr.Codigo AS TipoReporte,
         ea.Codigo AS EstadoAnterior,
         en.Codigo AS EstadoNuevo,
         h.OrigenAccion,
         h.Descripcion,
-        h.ReporteId
+        h.DocumentoFirmaId
     FROM HistorialSesiones h
-    LEFT JOIN CatTipoReporte tr ON h.TipoReporteId = tr.TipoReporteId
     LEFT JOIN CatEstadoSesion ea ON h.EstadoAnteriorId = ea.EstadoId
     INNER JOIN CatEstadoSesion en ON h.EstadoNuevoId = en.EstadoId
     WHERE h.Telefono = @Telefono
@@ -934,7 +476,10 @@ BEGIN
 END;
 GO
 
--- SP para metricas de sesiones
+PRINT '   sp_GetHistorialTelefono creado';
+GO
+
+-- SP: Metricas de sesiones
 CREATE OR ALTER PROCEDURE [dbo].[sp_GetMetricasSesiones]
     @FechaInicio DATETIME = NULL,
     @FechaFin DATETIME = NULL
@@ -945,7 +490,6 @@ BEGIN
     IF @FechaInicio IS NULL SET @FechaInicio = DATEADD(DAY, -30, GETDATE());
     IF @FechaFin IS NULL SET @FechaFin = GETDATE();
 
-    -- Resumen por estado final
     SELECT
         en.Codigo AS EstadoFinal,
         COUNT(*) AS Total
@@ -956,17 +500,6 @@ BEGIN
     GROUP BY en.Codigo
     ORDER BY Total DESC;
 
-    -- Resumen por tipo de reporte
-    SELECT
-        ISNULL(tr.Codigo, 'SIN_TIPO') AS TipoReporte,
-        COUNT(*) AS TotalSesiones
-    FROM HistorialSesiones h
-    LEFT JOIN CatTipoReporte tr ON h.TipoReporteId = tr.TipoReporteId
-    WHERE h.FechaAccion BETWEEN @FechaInicio AND @FechaFin
-    GROUP BY tr.Codigo
-    ORDER BY TotalSesiones DESC;
-
-    -- Sesiones por dia
     SELECT
         CAST(FechaAccion AS DATE) AS Fecha,
         COUNT(DISTINCT Telefono) AS UsuariosUnicos,
@@ -978,7 +511,10 @@ BEGIN
 END;
 GO
 
--- SP para sesiones que necesitan warning
+PRINT '   sp_GetMetricasSesiones creado';
+GO
+
+-- SP: Sesiones que necesitan warning
 CREATE OR ALTER PROCEDURE [dbo].[sp_GetSesionesNeedingWarning]
     @MinutosInactividad INT = 10
 AS
@@ -988,13 +524,11 @@ BEGIN
     SELECT
         s.SesionId,
         s.Telefono,
-        tr.Codigo AS TipoReporte,
         es.Codigo AS Estado,
         s.UltimaActividad,
         DATEDIFF(MINUTE, s.UltimaActividad, GETDATE()) AS MinutosInactivo
     FROM SesionesChat s
     INNER JOIN CatEstadoSesion es ON s.EstadoId = es.EstadoId
-    LEFT JOIN CatTipoReporte tr ON s.TipoReporteId = tr.TipoReporteId
     WHERE es.EsTerminal = 0
       AND s.AdvertenciaEnviada = 0
       AND DATEDIFF(MINUTE, s.UltimaActividad, GETDATE()) >= @MinutosInactividad
@@ -1002,7 +536,10 @@ BEGIN
 END;
 GO
 
--- SP para sesiones a cerrar por timeout
+PRINT '   sp_GetSesionesNeedingWarning creado';
+GO
+
+-- SP: Sesiones a cerrar por timeout
 CREATE OR ALTER PROCEDURE [dbo].[sp_GetSesionesToClose]
     @MinutosTimeout INT = 15
 AS
@@ -1012,233 +549,21 @@ BEGIN
     SELECT
         s.SesionId,
         s.Telefono,
-        tr.Codigo AS TipoReporte,
         es.Codigo AS Estado,
         s.UltimaActividad,
         DATEDIFF(MINUTE, s.UltimaActividad, GETDATE()) AS MinutosInactivo
     FROM SesionesChat s
     INNER JOIN CatEstadoSesion es ON s.EstadoId = es.EstadoId
-    LEFT JOIN CatTipoReporte tr ON s.TipoReporteId = tr.TipoReporteId
     WHERE es.EsTerminal = 0
       AND s.AdvertenciaEnviada = 1
       AND DATEDIFF(MINUTE, s.UltimaActividad, GETDATE()) >= @MinutosTimeout;
 END;
 GO
 
--- SP para estadisticas de reportes
-CREATE OR ALTER PROCEDURE [dbo].[sp_GetEstadisticasReportes]
-    @FechaInicio DATETIME = NULL,
-    @FechaFin DATETIME = NULL
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    IF @FechaInicio IS NULL SET @FechaInicio = DATEADD(DAY, -30, GETDATE());
-    IF @FechaFin IS NULL SET @FechaFin = GETDATE();
-
-    -- Resumen por estado
-    SELECT
-        e.Codigo AS Estado,
-        e.Nombre AS EstadoNombre,
-        e.Emoji,
-        COUNT(*) AS Total
-    FROM Reportes r
-    INNER JOIN CatEstadoReporte e ON r.EstadoReporteId = e.EstadoReporteId
-    WHERE r.FechaCreacion BETWEEN @FechaInicio AND @FechaFin
-    GROUP BY e.Codigo, e.Nombre, e.Emoji, e.Orden
-    ORDER BY e.Orden;
-
-    -- Resumen por tipo de reporte
-    SELECT
-        tr.Codigo AS TipoReporte,
-        tr.Nombre AS TipoReporteNombre,
-        COUNT(*) AS Total
-    FROM Reportes r
-    INNER JOIN CatTipoReporte tr ON r.TipoReporteId = tr.TipoReporteId
-    WHERE r.FechaCreacion BETWEEN @FechaInicio AND @FechaFin
-    GROUP BY tr.Codigo, tr.Nombre
-    ORDER BY Total DESC;
-
-    -- Reportes por dia
-    SELECT
-        CAST(FechaCreacion AS DATE) AS Fecha,
-        COUNT(*) AS TotalReportes
-    FROM Reportes
-    WHERE FechaCreacion BETWEEN @FechaInicio AND @FechaFin
-    GROUP BY CAST(FechaCreacion AS DATE)
-    ORDER BY Fecha;
-END;
+PRINT '   sp_GetSesionesToClose creado';
 GO
 
-PRINT '   6 Stored Procedures base creados';
-GO
-
--- =============================================
--- PASO 14B: CREAR STORED PROCEDURES DE ENCUESTAS
--- =============================================
-
-PRINT '';
-PRINT 'Paso 14B: Creando Stored Procedures de Encuestas...';
-GO
-
--- SP: Obtener reportes pendientes de encuesta
-CREATE OR ALTER PROCEDURE [dbo].[sp_GetReportesPendientesEncuesta]
-    @MinutosMinimasResolucion INT = 1440,  -- Esperar al menos X minutos desde resolucion (default 24h)
-    @CooldownHorasPorTelefono INT = 24     -- No enviar mas de 1 encuesta por telefono en X horas
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    SELECT
-        r.ReporteId,
-        r.NumeroTicket,
-        r.TelefonoReportante,
-        r.FechaResolucion,
-        r.Descripcion,
-        tr.Codigo AS TipoReporte,
-        -- Nombre del cliente para refrigeradores
-        CASE
-            WHEN tr.Codigo = 'REFRIGERADOR' THEN c.Nombre
-            ELSE NULL
-        END AS NombreCliente,
-        -- Datos adicionales del equipo
-        e.CodigoSAP,
-        e.Modelo
-    FROM Reportes r
-    INNER JOIN CatEstadoReporte er ON r.EstadoReporteId = er.EstadoReporteId
-    INNER JOIN CatTipoReporte tr ON r.TipoReporteId = tr.TipoReporteId
-    LEFT JOIN Clientes c ON r.ClienteId = c.ClienteId
-    LEFT JOIN Equipos e ON r.EquipoId = e.EquipoId
-    WHERE er.Codigo = 'RESUELTO'
-      AND r.FechaResolucion IS NOT NULL
-      AND DATEDIFF(MINUTE, r.FechaResolucion, GETDATE()) >= @MinutosMinimasResolucion
-      -- No tiene encuesta creada para este reporte
-      AND NOT EXISTS (
-          SELECT 1 FROM Encuestas enc
-          WHERE enc.ReporteId = r.ReporteId
-      )
-      -- Cooldown: no enviar si ya se envio una encuesta a este telefono recientemente
-      AND NOT EXISTS (
-          SELECT 1 FROM Encuestas enc2
-          WHERE enc2.TelefonoEncuestado = r.TelefonoReportante
-            AND enc2.FechaEnvio >= DATEADD(HOUR, -@CooldownHorasPorTelefono, GETDATE())
-      )
-      -- No enviar si el usuario tiene una sesion activa (no terminal)
-      AND NOT EXISTS (
-          SELECT 1 FROM SesionesChat sc
-          INNER JOIN CatEstadoSesion ces ON sc.EstadoId = ces.EstadoSesionId
-          WHERE sc.Telefono = r.TelefonoReportante
-            AND ces.EsTerminal = 0
-      )
-    ORDER BY r.FechaResolucion ASC;
-END;
-GO
-
-PRINT '   sp_GetReportesPendientesEncuesta creado';
-GO
-
--- SP: Obtener estadisticas de encuestas (VERSION NORMALIZADA)
-CREATE OR ALTER PROCEDURE [dbo].[sp_GetEstadisticasEncuestas]
-    @FechaInicio DATETIME = NULL,
-    @FechaFin DATETIME = NULL
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    -- Valores por defecto: ultimos 30 dias
-    IF @FechaInicio IS NULL SET @FechaInicio = DATEADD(DAY, -30, GETDATE());
-    IF @FechaFin IS NULL SET @FechaFin = GETDATE();
-
-    -- Resumen general por estado (usando catalogo)
-    SELECT
-        ce.Codigo AS Estado,
-        ce.Nombre AS EstadoNombre,
-        COUNT(e.EncuestaId) AS Total,
-        ce.EsFinal
-    FROM [dbo].[CatEstadoEncuesta] ce
-    LEFT JOIN [dbo].[Encuestas] e ON ce.EstadoEncuestaId = e.EstadoEncuestaId
-        AND e.FechaEnvio BETWEEN @FechaInicio AND @FechaFin
-    WHERE ce.Activo = 1
-    GROUP BY ce.Codigo, ce.Nombre, ce.EsFinal, ce.Orden
-    ORDER BY ce.Orden;
-
-    -- Tasa de completado
-    SELECT
-        COUNT(*) AS TotalEncuestas,
-        SUM(CASE WHEN ce.Codigo = 'COMPLETADA' THEN 1 ELSE 0 END) AS Completadas,
-        CAST(
-            SUM(CASE WHEN ce.Codigo = 'COMPLETADA' THEN 1 ELSE 0 END) * 100.0 /
-            NULLIF(COUNT(*), 0)
-        AS DECIMAL(5,2)) AS TasaCompletado
-    FROM [dbo].[Encuestas] e
-    INNER JOIN [dbo].[CatEstadoEncuesta] ce ON e.EstadoEncuestaId = ce.EstadoEncuestaId
-    WHERE e.FechaEnvio BETWEEN @FechaInicio AND @FechaFin;
-
-    -- Promedios por pregunta (usando catalogo de preguntas)
-    SELECT
-        p.NumeroPregunta,
-        p.TextoCorto AS Pregunta,
-        p.TextoPregunta AS PreguntaCompleta,
-        AVG(CAST(r.Valor AS DECIMAL(5,2))) AS Promedio,
-        COUNT(r.RespuestaId) AS TotalRespuestas
-    FROM [dbo].[PreguntasEncuesta] p
-    LEFT JOIN [dbo].[RespuestasEncuesta] r ON p.PreguntaId = r.PreguntaId
-    LEFT JOIN [dbo].[Encuestas] e ON r.EncuestaId = e.EncuestaId
-        AND e.FechaEnvio BETWEEN @FechaInicio AND @FechaFin
-    INNER JOIN [dbo].[CatEstadoEncuesta] ce ON e.EstadoEncuestaId = ce.EstadoEncuestaId
-        AND ce.Codigo = 'COMPLETADA'
-    WHERE p.Activo = 1
-    GROUP BY p.NumeroPregunta, p.TextoCorto, p.TextoPregunta, p.Orden
-    ORDER BY p.Orden;
-
-    -- Promedio general de satisfaccion
-    SELECT
-        CAST(AVG(CAST(r.Valor AS DECIMAL(5,2))) AS DECIMAL(5,2)) AS PromedioGeneral
-    FROM [dbo].[RespuestasEncuesta] r
-    INNER JOIN [dbo].[Encuestas] e ON r.EncuestaId = e.EncuestaId
-    INNER JOIN [dbo].[CatEstadoEncuesta] ce ON e.EstadoEncuestaId = ce.EstadoEncuestaId
-    WHERE ce.Codigo = 'COMPLETADA'
-      AND e.FechaEnvio BETWEEN @FechaInicio AND @FechaFin;
-END;
-GO
-
-PRINT '   sp_GetEstadisticasEncuestas creado (normalizado)';
-GO
-
--- SP: Expirar encuestas sin respuesta (VERSION NORMALIZADA)
-CREATE OR ALTER PROCEDURE [dbo].[sp_ExpirarEncuestasSinRespuesta]
-    @HorasExpiracion INT = 72  -- Expirar despues de 72 horas sin respuesta
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    DECLARE @EstadoEnviadaId INT, @EstadoExpiradaId INT;
-    SELECT @EstadoEnviadaId = EstadoEncuestaId FROM [dbo].[CatEstadoEncuesta] WHERE Codigo = 'ENVIADA';
-    SELECT @EstadoExpiradaId = EstadoEncuestaId FROM [dbo].[CatEstadoEncuesta] WHERE Codigo = 'EXPIRADA';
-
-    UPDATE [dbo].[Encuestas]
-    SET EstadoEncuestaId = @EstadoExpiradaId,
-        Estado = 'EXPIRADA',  -- Mantener retrocompatibilidad temporal
-        FechaActualizacion = GETDATE()
-    WHERE EstadoEncuestaId = @EstadoEnviadaId
-      AND DATEDIFF(HOUR, FechaEnvio, GETDATE()) >= @HorasExpiracion;
-
-    SELECT @@ROWCOUNT AS EncuestasExpiradas;
-END;
-GO
-
-PRINT '   sp_ExpirarEncuestasSinRespuesta creado (normalizado)';
-GO
-
--- =============================================
--- PASO 14C: CREAR STORED PROCEDURES DE DEAD LETTER
--- =============================================
-
-PRINT '';
-PRINT 'Paso 14C: Creando Stored Procedures de Dead Letter...';
-GO
-
--- SP: Obtener mensajes para reintentar
+-- SP: Dead Letters para reintentar
 CREATE OR ALTER PROCEDURE [dbo].[sp_GetDeadLettersForRetry]
     @MaxMessages INT = 10
 AS
@@ -1265,22 +590,18 @@ GO
 PRINT '   sp_GetDeadLettersForRetry creado';
 GO
 
--- SP: Limpiar mensajes antiguos procesados
+-- SP: Limpiar dead letters antiguos
 CREATE OR ALTER PROCEDURE [dbo].[sp_CleanOldDeadLetters]
     @DaysToKeep INT = 7
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    DECLARE @DeletedCount INT;
-
     DELETE FROM DeadLetterMessages
     WHERE FechaCreacion < DATEADD(DAY, -@DaysToKeep, GETDATE())
       AND Estado IN ('PROCESSED', 'FAILED', 'SKIPPED');
 
-    SET @DeletedCount = @@ROWCOUNT;
-
-    SELECT @DeletedCount AS DeletedCount;
+    SELECT @@ROWCOUNT AS DeletedCount;
 END;
 GO
 
@@ -1288,282 +609,513 @@ PRINT '   sp_CleanOldDeadLetters creado';
 GO
 
 -- =============================================
--- PASO 14D: CREAR STORED PROCEDURES DE CENTROS DE SERVICIO
+-- PASO 13: STORED PROCEDURES DE DOCUMENTOS
 -- =============================================
 
 PRINT '';
-PRINT 'Paso 14D: Creando Stored Procedures de Centros de Servicio...';
+PRINT 'Paso 13: Creando Stored Procedures de Documentos...';
 GO
 
--- SP: Buscar centro de servicio mas cercano
-CREATE OR ALTER PROCEDURE [dbo].[sp_GetCentroServicioMasCercano]
-    @Latitud DECIMAL(10, 8),
-    @Longitud DECIMAL(11, 8)
+-- SP: Crear documento de firma
+CREATE OR ALTER PROCEDURE [dbo].[sp_CrearDocumentoFirma]
+    @SapDocumentId NVARCHAR(100),
+    @SapCallbackUrl NVARCHAR(500) = NULL,
+    @ClienteTelefono NVARCHAR(20),
+    @ClienteNombre NVARCHAR(200),
+    @ClienteEmail NVARCHAR(200) = NULL,
+    @TipoDocumentoId INT,
+    @DocumentoNombre NVARCHAR(500) = NULL,
+    @DocumentoOriginalUrl NVARCHAR(1000) = NULL,
+    @DatosExtra NVARCHAR(MAX) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Formula Haversine simplificada para calcular distancia aproximada
-    -- Devuelve el centro activo mas cercano con distancia en km
-    SELECT TOP 1
-        cs.CentroServicioId,
-        cs.Codigo,
-        cs.Nombre,
-        cs.Direccion,
-        cs.Ciudad,
-        cs.Estado,
-        cs.Latitud,
-        cs.Longitud,
-        cs.Telefono,
-        -- Distancia aproximada usando Haversine (en km)
-        6371 * ACOS(
-            COS(RADIANS(@Latitud)) * COS(RADIANS(cs.Latitud)) *
-            COS(RADIANS(cs.Longitud) - RADIANS(@Longitud)) +
-            SIN(RADIANS(@Latitud)) * SIN(RADIANS(cs.Latitud))
-        ) AS DistanciaKm
-    FROM [dbo].[CentrosServicio] cs
-    WHERE cs.Activo = 1
-    ORDER BY
-        -- Ordenar por distancia (menor primero)
-        6371 * ACOS(
-            COS(RADIANS(@Latitud)) * COS(RADIANS(cs.Latitud)) *
-            COS(RADIANS(cs.Longitud) - RADIANS(@Longitud)) +
-            SIN(RADIANS(@Latitud)) * SIN(RADIANS(cs.Latitud))
-        );
+    DECLARE @EstadoPendienteId INT = 1; -- PENDIENTE_ENVIO
+
+    INSERT INTO DocumentosFirma (
+        SapDocumentId, SapCallbackUrl, ClienteTelefono, ClienteNombre, ClienteEmail,
+        TipoDocumentoId, EstadoDocumentoId, DocumentoNombre, DocumentoOriginalUrl, DatosExtra
+    )
+    VALUES (
+        @SapDocumentId, @SapCallbackUrl, @ClienteTelefono, @ClienteNombre, @ClienteEmail,
+        @TipoDocumentoId, @EstadoPendienteId, @DocumentoNombre, @DocumentoOriginalUrl, @DatosExtra
+    );
+
+    SELECT
+        df.*,
+        ed.Codigo AS EstadoDocumento,
+        td.Codigo AS TipoDocumento
+    FROM DocumentosFirma df
+    INNER JOIN CatEstadoDocumento ed ON df.EstadoDocumentoId = ed.EstadoDocumentoId
+    INNER JOIN CatTipoDocumento td ON df.TipoDocumentoId = td.TipoDocumentoId
+    WHERE df.DocumentoFirmaId = SCOPE_IDENTITY();
 END;
 GO
 
-PRINT '   sp_GetCentroServicioMasCercano creado';
+PRINT '   sp_CrearDocumentoFirma creado';
 GO
 
--- SP: Listar todos los centros activos
-CREATE OR ALTER PROCEDURE [dbo].[sp_GetCentrosServicioActivos]
+-- SP: Actualizar estado de documento (con optimistic locking)
+CREATE OR ALTER PROCEDURE [dbo].[sp_ActualizarEstadoDocumento]
+    @DocumentoFirmaId INT,
+    @NuevoEstadoId INT,
+    @Version INT,
+    @EnvelopeId NVARCHAR(100) = NULL,
+    @SigningUrl NVARCHAR(2000) = NULL,
+    @DocumentoFirmadoUrl NVARCHAR(1000) = NULL,
+    @MotivoRechazo NVARCHAR(1000) = NULL,
+    @WhatsAppMessageId NVARCHAR(100) = NULL,
+    @MensajeError NVARCHAR(1000) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE DocumentosFirma
+    SET EstadoDocumentoId = @NuevoEstadoId,
+        EnvelopeId = COALESCE(@EnvelopeId, EnvelopeId),
+        SigningUrl = COALESCE(@SigningUrl, SigningUrl),
+        DocumentoFirmadoUrl = COALESCE(@DocumentoFirmadoUrl, DocumentoFirmadoUrl),
+        MotivoRechazo = COALESCE(@MotivoRechazo, MotivoRechazo),
+        WhatsAppMessageId = COALESCE(@WhatsAppMessageId, WhatsAppMessageId),
+        MensajeError = @MensajeError,
+        FechaEnvioDocuSign = CASE WHEN @NuevoEstadoId = 2 THEN GETUTCDATE() ELSE FechaEnvioDocuSign END,
+        FechaEnvioWhatsApp = CASE WHEN @NuevoEstadoId IN (2, 3) AND FechaEnvioWhatsApp IS NULL THEN GETUTCDATE() ELSE FechaEnvioWhatsApp END,
+        FechaVisto = CASE WHEN @NuevoEstadoId = 4 THEN GETUTCDATE() ELSE FechaVisto END,
+        FechaFirmado = CASE WHEN @NuevoEstadoId = 5 THEN GETUTCDATE() ELSE FechaFirmado END,
+        FechaRechazo = CASE WHEN @NuevoEstadoId = 6 THEN GETUTCDATE() ELSE FechaRechazo END,
+        Version = Version + 1,
+        UpdatedAt = GETUTCDATE()
+    WHERE DocumentoFirmaId = @DocumentoFirmaId
+      AND Version = @Version;
+
+    IF @@ROWCOUNT = 0
+    BEGIN
+        -- Check if document exists
+        IF NOT EXISTS (SELECT 1 FROM DocumentosFirma WHERE DocumentoFirmaId = @DocumentoFirmaId)
+            RAISERROR('Documento no encontrado: %d', 16, 1, @DocumentoFirmaId);
+        ELSE
+            RAISERROR('Conflicto de concurrencia para documento: %d', 16, 2, @DocumentoFirmaId);
+        RETURN;
+    END
+
+    SELECT
+        df.*,
+        ed.Codigo AS EstadoDocumento,
+        td.Codigo AS TipoDocumento
+    FROM DocumentosFirma df
+    INNER JOIN CatEstadoDocumento ed ON df.EstadoDocumentoId = ed.EstadoDocumentoId
+    INNER JOIN CatTipoDocumento td ON df.TipoDocumentoId = td.TipoDocumentoId
+    WHERE df.DocumentoFirmaId = @DocumentoFirmaId;
+END;
+GO
+
+PRINT '   sp_ActualizarEstadoDocumento creado';
+GO
+
+-- SP: Obtener documento por ID
+CREATE OR ALTER PROCEDURE [dbo].[sp_ObtenerDocumentoPorId]
+    @DocumentoFirmaId INT
 AS
 BEGIN
     SET NOCOUNT ON;
 
     SELECT
-        CentroServicioId,
-        Codigo,
-        Nombre,
-        Direccion,
-        Ciudad,
-        Estado,
-        CodigoPostal,
-        Latitud,
-        Longitud,
-        Telefono,
-        Email,
-        HorarioApertura,
-        HorarioCierre,
-        DiasOperacion
-    FROM [dbo].[CentrosServicio]
-    WHERE Activo = 1
-    ORDER BY Nombre;
+        df.*,
+        ed.Codigo AS EstadoDocumento,
+        ed.Nombre AS EstadoNombre,
+        ed.Emoji AS EstadoEmoji,
+        td.Codigo AS TipoDocumento,
+        td.Nombre AS TipoDocumentoNombre
+    FROM DocumentosFirma df
+    INNER JOIN CatEstadoDocumento ed ON df.EstadoDocumentoId = ed.EstadoDocumentoId
+    INNER JOIN CatTipoDocumento td ON df.TipoDocumentoId = td.TipoDocumentoId
+    WHERE df.DocumentoFirmaId = @DocumentoFirmaId;
 END;
 GO
 
-PRINT '   sp_GetCentrosServicioActivos creado';
+PRINT '   sp_ObtenerDocumentoPorId creado';
+GO
+
+-- SP: Obtener documento por EnvelopeId (para DocuSign webhooks)
+CREATE OR ALTER PROCEDURE [dbo].[sp_ObtenerDocumentoPorEnvelope]
+    @EnvelopeId NVARCHAR(100)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT
+        df.*,
+        ed.Codigo AS EstadoDocumento,
+        ed.Nombre AS EstadoNombre,
+        td.Codigo AS TipoDocumento,
+        td.Nombre AS TipoDocumentoNombre
+    FROM DocumentosFirma df
+    INNER JOIN CatEstadoDocumento ed ON df.EstadoDocumentoId = ed.EstadoDocumentoId
+    INNER JOIN CatTipoDocumento td ON df.TipoDocumentoId = td.TipoDocumentoId
+    WHERE df.EnvelopeId = @EnvelopeId;
+END;
+GO
+
+PRINT '   sp_ObtenerDocumentoPorEnvelope creado';
+GO
+
+-- SP: Obtener documentos por telefono
+CREATE OR ALTER PROCEDURE [dbo].[sp_ObtenerDocumentosPorTelefono]
+    @Telefono NVARCHAR(20),
+    @TopN INT = 20
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT TOP (@TopN)
+        df.DocumentoFirmaId,
+        df.EnvelopeId,
+        df.SapDocumentId,
+        df.ClienteNombre,
+        df.DocumentoNombre,
+        td.Codigo AS TipoDocumento,
+        td.Nombre AS TipoDocumentoNombre,
+        ed.Codigo AS EstadoDocumento,
+        ed.Nombre AS EstadoNombre,
+        ed.Emoji AS EstadoEmoji,
+        ed.EsFinal,
+        df.SigningUrl,
+        df.FechaCreacion,
+        df.FechaFirmado,
+        df.FechaRechazo,
+        df.MotivoRechazo,
+        df.IntentosRecordatorio
+    FROM DocumentosFirma df
+    INNER JOIN CatEstadoDocumento ed ON df.EstadoDocumentoId = ed.EstadoDocumentoId
+    INNER JOIN CatTipoDocumento td ON df.TipoDocumentoId = td.TipoDocumentoId
+    WHERE df.ClienteTelefono = @Telefono
+    ORDER BY df.FechaCreacion DESC;
+END;
+GO
+
+PRINT '   sp_ObtenerDocumentosPorTelefono creado';
+GO
+
+-- SP: Documentos pendientes de recordatorio
+CREATE OR ALTER PROCEDURE [dbo].[sp_ObtenerDocumentosPendientesRecordatorio]
+    @HorasDesdeUltimoRecordatorio INT = 48,
+    @MaxRecordatorios INT = 5
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT
+        df.DocumentoFirmaId,
+        df.EnvelopeId,
+        df.ClienteTelefono,
+        df.ClienteNombre,
+        df.DocumentoNombre,
+        df.SigningUrl,
+        td.Codigo AS TipoDocumento,
+        td.Nombre AS TipoDocumentoNombre,
+        df.IntentosRecordatorio,
+        df.UltimoRecordatorio,
+        df.FechaCreacion,
+        df.Version,
+        DATEDIFF(DAY, df.FechaCreacion, GETUTCDATE()) AS DiasPendientes
+    FROM DocumentosFirma df
+    INNER JOIN CatEstadoDocumento ed ON df.EstadoDocumentoId = ed.EstadoDocumentoId
+    INNER JOIN CatTipoDocumento td ON df.TipoDocumentoId = td.TipoDocumentoId
+    WHERE ed.Codigo IN ('ENVIADO', 'ENTREGADO', 'VISTO', 'RECHAZADO')
+      AND df.IntentosRecordatorio < @MaxRecordatorios
+      AND (
+        df.UltimoRecordatorio IS NULL
+        OR DATEDIFF(HOUR, df.UltimoRecordatorio, GETUTCDATE()) >= @HorasDesdeUltimoRecordatorio
+      )
+    ORDER BY df.FechaCreacion ASC;
+END;
+GO
+
+PRINT '   sp_ObtenerDocumentosPendientesRecordatorio creado';
+GO
+
+-- SP: Documentos pendientes de reporte Teams/SAP
+CREATE OR ALTER PROCEDURE [dbo].[sp_ObtenerDocumentosPendientesReporteTeams]
+    @DiasDesdeUltimoReporte INT = 7
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT
+        df.DocumentoFirmaId,
+        df.EnvelopeId,
+        df.SapDocumentId,
+        df.ClienteTelefono,
+        df.ClienteNombre,
+        df.DocumentoNombre,
+        td.Codigo AS TipoDocumento,
+        ed.Codigo AS EstadoDocumento,
+        df.IntentosRecordatorio,
+        df.UltimoReporteTeams,
+        df.FechaCreacion,
+        df.Version,
+        DATEDIFF(DAY, df.FechaCreacion, GETUTCDATE()) AS DiasPendientes
+    FROM DocumentosFirma df
+    INNER JOIN CatEstadoDocumento ed ON df.EstadoDocumentoId = ed.EstadoDocumentoId
+    INNER JOIN CatTipoDocumento td ON df.TipoDocumentoId = td.TipoDocumentoId
+    WHERE ed.Codigo IN ('ENVIADO', 'ENTREGADO', 'VISTO', 'RECHAZADO')
+      AND (
+        df.UltimoReporteTeams IS NULL
+        OR DATEDIFF(DAY, df.UltimoReporteTeams, GETUTCDATE()) >= @DiasDesdeUltimoReporte
+      )
+    ORDER BY df.FechaCreacion ASC;
+END;
+GO
+
+PRINT '   sp_ObtenerDocumentosPendientesReporteTeams creado';
+GO
+
+-- SP: Documentos para housekeeping (void envelopes inactivos)
+CREATE OR ALTER PROCEDURE [dbo].[sp_ObtenerDocumentosParaHousekeeping]
+    @DiasInactividad INT = 30
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT
+        df.DocumentoFirmaId,
+        df.EnvelopeId,
+        df.ClienteTelefono,
+        df.ClienteNombre,
+        df.DocumentoNombre,
+        ed.Codigo AS EstadoDocumento,
+        df.UpdatedAt,
+        df.Version,
+        DATEDIFF(DAY, df.UpdatedAt, GETUTCDATE()) AS DiasInactivo
+    FROM DocumentosFirma df
+    INNER JOIN CatEstadoDocumento ed ON df.EstadoDocumentoId = ed.EstadoDocumentoId
+    WHERE ed.Codigo IN ('ENVIADO', 'ENTREGADO', 'VISTO', 'RECHAZADO', 'ERROR')
+      AND df.EnvelopeId IS NOT NULL
+      AND DATEDIFF(DAY, df.UpdatedAt, GETUTCDATE()) >= @DiasInactividad
+    ORDER BY df.UpdatedAt ASC;
+END;
+GO
+
+PRINT '   sp_ObtenerDocumentosParaHousekeeping creado';
+GO
+
+-- SP: Incrementar recordatorio
+CREATE OR ALTER PROCEDURE [dbo].[sp_IncrementarRecordatorio]
+    @DocumentoFirmaId INT,
+    @Version INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE DocumentosFirma
+    SET IntentosRecordatorio = IntentosRecordatorio + 1,
+        UltimoRecordatorio = GETUTCDATE(),
+        Version = Version + 1,
+        UpdatedAt = GETUTCDATE()
+    WHERE DocumentoFirmaId = @DocumentoFirmaId
+      AND Version = @Version;
+
+    IF @@ROWCOUNT = 0
+        RAISERROR('Conflicto de concurrencia para documento: %d', 16, 2, @DocumentoFirmaId);
+
+    SELECT Version FROM DocumentosFirma WHERE DocumentoFirmaId = @DocumentoFirmaId;
+END;
+GO
+
+PRINT '   sp_IncrementarRecordatorio creado';
+GO
+
+-- SP: Actualizar reporte Teams
+CREATE OR ALTER PROCEDURE [dbo].[sp_ActualizarReporteTeams]
+    @DocumentoFirmaId INT,
+    @Version INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE DocumentosFirma
+    SET UltimoReporteTeams = GETUTCDATE(),
+        Version = Version + 1,
+        UpdatedAt = GETUTCDATE()
+    WHERE DocumentoFirmaId = @DocumentoFirmaId
+      AND Version = @Version;
+
+    IF @@ROWCOUNT = 0
+        RAISERROR('Conflicto de concurrencia para documento: %d', 16, 2, @DocumentoFirmaId);
+END;
+GO
+
+PRINT '   sp_ActualizarReporteTeams creado';
+GO
+
+-- SP: Estadisticas de documentos (dashboard)
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetEstadisticasDocumentos]
+    @FechaInicio DATETIME = NULL,
+    @FechaFin DATETIME = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF @FechaInicio IS NULL SET @FechaInicio = DATEADD(DAY, -30, GETDATE());
+    IF @FechaFin IS NULL SET @FechaFin = GETDATE();
+
+    -- Resumen por estado
+    SELECT
+        ed.Codigo AS Estado,
+        ed.Nombre AS EstadoNombre,
+        ed.Emoji,
+        COUNT(df.DocumentoFirmaId) AS Total,
+        ed.EsFinal
+    FROM CatEstadoDocumento ed
+    LEFT JOIN DocumentosFirma df ON ed.EstadoDocumentoId = df.EstadoDocumentoId
+        AND df.FechaCreacion BETWEEN @FechaInicio AND @FechaFin
+    WHERE ed.Activo = 1
+    GROUP BY ed.Codigo, ed.Nombre, ed.Emoji, ed.EsFinal, ed.Orden
+    ORDER BY ed.Orden;
+
+    -- Resumen por tipo
+    SELECT
+        td.Codigo AS TipoDocumento,
+        td.Nombre AS TipoDocumentoNombre,
+        COUNT(df.DocumentoFirmaId) AS Total
+    FROM CatTipoDocumento td
+    LEFT JOIN DocumentosFirma df ON td.TipoDocumentoId = df.TipoDocumentoId
+        AND df.FechaCreacion BETWEEN @FechaInicio AND @FechaFin
+    WHERE td.Activo = 1
+    GROUP BY td.Codigo, td.Nombre
+    ORDER BY Total DESC;
+
+    -- Tasa de firma
+    SELECT
+        COUNT(*) AS TotalDocumentos,
+        SUM(CASE WHEN ed.Codigo = 'FIRMADO' THEN 1 ELSE 0 END) AS Firmados,
+        SUM(CASE WHEN ed.Codigo = 'RECHAZADO' THEN 1 ELSE 0 END) AS Rechazados,
+        SUM(CASE WHEN ed.Codigo = 'ANULADO' THEN 1 ELSE 0 END) AS Anulados,
+        CAST(
+            SUM(CASE WHEN ed.Codigo = 'FIRMADO' THEN 1 ELSE 0 END) * 100.0 /
+            NULLIF(COUNT(*), 0)
+        AS DECIMAL(5,2)) AS TasaFirma
+    FROM DocumentosFirma df
+    INNER JOIN CatEstadoDocumento ed ON df.EstadoDocumentoId = ed.EstadoDocumentoId
+    WHERE df.FechaCreacion BETWEEN @FechaInicio AND @FechaFin;
+
+    -- Documentos por dia
+    SELECT
+        CAST(FechaCreacion AS DATE) AS Fecha,
+        COUNT(*) AS TotalRecibidos,
+        SUM(CASE WHEN ed.Codigo = 'FIRMADO' THEN 1 ELSE 0 END) AS TotalFirmados
+    FROM DocumentosFirma df
+    INNER JOIN CatEstadoDocumento ed ON df.EstadoDocumentoId = ed.EstadoDocumentoId
+    WHERE df.FechaCreacion BETWEEN @FechaInicio AND @FechaFin
+    GROUP BY CAST(FechaCreacion AS DATE)
+    ORDER BY Fecha;
+END;
+GO
+
+PRINT '   sp_GetEstadisticasDocumentos creado';
+GO
+
+-- SP: Obtener documento activo por SapDocumentId (para reuso de envelope)
+CREATE OR ALTER PROCEDURE [dbo].[sp_ObtenerDocumentoActivoPorSapId]
+    @SapDocumentId NVARCHAR(100)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT TOP 1
+        df.*,
+        ed.Codigo AS EstadoDocumento,
+        td.Codigo AS TipoDocumento
+    FROM DocumentosFirma df
+    INNER JOIN CatEstadoDocumento ed ON df.EstadoDocumentoId = ed.EstadoDocumentoId
+    INNER JOIN CatTipoDocumento td ON df.TipoDocumentoId = td.TipoDocumentoId
+    WHERE df.SapDocumentId = @SapDocumentId
+      AND ed.EsFinal = 0
+      AND df.EnvelopeId IS NOT NULL
+    ORDER BY df.FechaCreacion DESC;
+END;
+GO
+
+PRINT '   sp_ObtenerDocumentoActivoPorSapId creado';
 GO
 
 -- =============================================
--- PASO 15: CREAR VISTAS
+-- PASO 14: CREAR VISTAS
 -- =============================================
 
 PRINT '';
-PRINT 'Paso 15: Creando vistas...';
+PRINT 'Paso 14: Creando vistas...';
 GO
 
--- Vista de sesiones activas
 CREATE OR ALTER VIEW [dbo].[vw_SesionesActivas]
 AS
 SELECT
     s.SesionId,
     s.Telefono,
-    tr.Codigo AS TipoReporte,
-    tr.Nombre AS TipoReporteNombre,
     es.Codigo AS Estado,
     es.Nombre AS EstadoNombre,
     es.EsTerminal,
     s.DatosTemp,
-    s.EquipoIdTemp,
     s.ContadorMensajes,
     s.AdvertenciaEnviada,
-    s.FechaAdvertencia,
     s.FechaCreacion,
     s.UltimaActividad,
+    s.NombreUsuario,
     DATEDIFF(MINUTE, s.UltimaActividad, GETDATE()) AS MinutosInactivo
 FROM SesionesChat s
-INNER JOIN CatEstadoSesion es ON s.EstadoId = es.EstadoId
-LEFT JOIN CatTipoReporte tr ON s.TipoReporteId = tr.TipoReporteId;
+INNER JOIN CatEstadoSesion es ON s.EstadoId = es.EstadoId;
 GO
 
--- Vista de reportes
-CREATE OR ALTER VIEW [dbo].[vw_Reportes]
+CREATE OR ALTER VIEW [dbo].[vw_DocumentosFirma]
 AS
 SELECT
-    r.ReporteId,
-    r.NumeroTicket,
-    r.TelefonoReportante,
-    r.Descripcion,
-    r.ImagenUrl,
-    tr.Codigo AS TipoReporte,
-    tr.Nombre AS TipoReporteNombre,
-    e.Codigo AS Estado,
-    e.Nombre AS EstadoNombre,
-    e.Emoji AS EstadoEmoji,
-    e.EsFinal AS EstadoEsFinal,
-    r.EquipoId,
-    eq.CodigoSAP,
-    eq.Modelo,
-    r.ClienteId,
-    c.Nombre AS NombreCliente,
-    r.CodigoSAPVehiculo,
-    r.NumeroEmpleado,
-    r.FechaCreacion,
-    r.FechaActualizacion,
-    r.FechaResolucion
-FROM Reportes r
-INNER JOIN CatTipoReporte tr ON r.TipoReporteId = tr.TipoReporteId
-INNER JOIN CatEstadoReporte e ON r.EstadoReporteId = e.EstadoReporteId
-LEFT JOIN Equipos eq ON r.EquipoId = eq.EquipoId
-LEFT JOIN Clientes c ON r.ClienteId = c.ClienteId;
-GO
-
--- Vista de encuestas (VERSION NORMALIZADA)
-CREATE OR ALTER VIEW [dbo].[vw_Encuestas]
-AS
-SELECT
-    e.EncuestaId,
-    e.ReporteId,
-    r.NumeroTicket,
-    e.TelefonoEncuestado,
-    -- Estado normalizado
-    ce.Codigo AS Estado,
-    ce.Nombre AS EstadoNombre,
-    ce.EsFinal AS EstadoEsFinal,
-    -- Tipo de encuesta
-    te.Codigo AS TipoEncuesta,
-    te.Nombre AS TipoEncuestaNombre,
-    te.NumeroPreguntas,
-    -- Fechas
-    e.FechaEnvio,
-    e.FechaInicio,
-    e.FechaFinalizacion,
-    -- Progreso
-    e.PreguntaActual,
-    (SELECT COUNT(*) FROM RespuestasEncuesta re WHERE re.EncuestaId = e.EncuestaId) AS PreguntasRespondidas,
-    -- Promedio de respuestas (de tabla normalizada)
-    (SELECT AVG(CAST(re.Valor AS DECIMAL(5,2))) FROM RespuestasEncuesta re WHERE re.EncuestaId = e.EncuestaId) AS PromedioRespuestas,
-    -- Comentario
-    e.TieneComentario,
-    e.Comentario,
-    -- Datos del reporte
-    tr.Codigo AS TipoReporte,
-    r.Descripcion AS DescripcionReporte,
-    r.FechaCreacion AS FechaReporte,
-    r.FechaResolucion,
-    -- Tiempo de respuesta (en horas)
+    df.DocumentoFirmaId,
+    df.EnvelopeId,
+    df.SapDocumentId,
+    df.ClienteTelefono,
+    df.ClienteNombre,
+    df.ClienteEmail,
+    td.Codigo AS TipoDocumento,
+    td.Nombre AS TipoDocumentoNombre,
+    ed.Codigo AS EstadoDocumento,
+    ed.Nombre AS EstadoNombre,
+    ed.Emoji AS EstadoEmoji,
+    ed.EsFinal,
+    df.DocumentoOriginalUrl,
+    df.DocumentoFirmadoUrl,
+    df.SigningUrl,
+    df.FechaCreacion,
+    df.FechaEnvioDocuSign,
+    df.FechaEnvioWhatsApp,
+    df.FechaVisto,
+    df.FechaFirmado,
+    df.FechaRechazo,
+    df.MotivoRechazo,
+    df.IntentosRecordatorio,
+    df.UltimoRecordatorio,
+    df.EnvelopeReutilizado,
+    df.DocumentoAnteriorId,
+    df.MensajeError,
+    df.Version,
+    df.CreatedAt,
+    df.UpdatedAt,
     CASE
-        WHEN e.FechaFinalizacion IS NOT NULL
-        THEN DATEDIFF(HOUR, e.FechaEnvio, e.FechaFinalizacion)
+        WHEN df.FechaFirmado IS NOT NULL AND df.FechaEnvioWhatsApp IS NOT NULL
+        THEN DATEDIFF(HOUR, df.FechaEnvioWhatsApp, df.FechaFirmado)
         ELSE NULL
-    END AS HorasRespuesta
-FROM [dbo].[Encuestas] e
-INNER JOIN [dbo].[CatEstadoEncuesta] ce ON e.EstadoEncuestaId = ce.EstadoEncuestaId
-INNER JOIN [dbo].[CatTipoEncuesta] te ON e.TipoEncuestaId = te.TipoEncuestaId
-INNER JOIN [dbo].[Reportes] r ON e.ReporteId = r.ReporteId
-INNER JOIN [dbo].[CatTipoReporte] tr ON r.TipoReporteId = tr.TipoReporteId;
+    END AS HorasHastaFirma,
+    CASE
+        WHEN df.FechaEnvioWhatsApp IS NOT NULL AND df.FechaFirmado IS NULL AND ed.EsFinal = 0
+        THEN DATEDIFF(HOUR, df.FechaEnvioWhatsApp, GETUTCDATE())
+        ELSE NULL
+    END AS HorasPendiente
+FROM DocumentosFirma df
+INNER JOIN CatEstadoDocumento ed ON df.EstadoDocumentoId = ed.EstadoDocumentoId
+INNER JOIN CatTipoDocumento td ON df.TipoDocumentoId = td.TipoDocumentoId;
 GO
 
--- Vista de respuestas de encuesta (NUEVA - NORMALIZADA)
-CREATE OR ALTER VIEW [dbo].[vw_RespuestasEncuesta]
-AS
-SELECT
-    r.RespuestaId,
-    r.EncuestaId,
-    e.TelefonoEncuestado,
-    rep.NumeroTicket,
-    -- Pregunta
-    p.NumeroPregunta,
-    p.TextoCorto AS Pregunta,
-    p.TextoPregunta AS PreguntaCompleta,
-    -- Respuesta
-    r.Valor,
-    r.FechaRespuesta,
-    -- Contexto
-    te.Codigo AS TipoEncuesta,
-    ce.Codigo AS EstadoEncuesta
-FROM [dbo].[RespuestasEncuesta] r
-INNER JOIN [dbo].[PreguntasEncuesta] p ON r.PreguntaId = p.PreguntaId
-INNER JOIN [dbo].[Encuestas] e ON r.EncuestaId = e.EncuestaId
-INNER JOIN [dbo].[CatTipoEncuesta] te ON e.TipoEncuestaId = te.TipoEncuestaId
-INNER JOIN [dbo].[CatEstadoEncuesta] ce ON e.EstadoEncuestaId = ce.EstadoEncuestaId
-INNER JOIN [dbo].[Reportes] rep ON e.ReporteId = rep.ReporteId;
-GO
-
-PRINT '   4 Vistas creadas (vw_Encuestas y vw_RespuestasEncuesta normalizadas)';
-GO
-
--- =============================================
--- PASO 16: INDICES DE OPTIMIZACION
--- =============================================
-
-PRINT '';
-PRINT 'Paso 16: Creando indices de optimizacion...';
-GO
-
--- Indice para spam check (query optimizada con CASE)
-CREATE NONCLUSTERED INDEX [IX_MensajesChat_Spam_Check]
-ON [dbo].[MensajesChat] ([Telefono], [Tipo], [FechaCreacion] DESC)
-INCLUDE ([MensajeId]);
-
-PRINT '   IX_MensajesChat_Spam_Check creado';
-GO
-
--- Indice para getSession y queries de estado (covering index)
--- Incluye Version para evitar key lookup en optimistic locking
-CREATE NONCLUSTERED INDEX [IX_SesionesChat_Telefono_Estado_Full]
-ON [dbo].[SesionesChat] ([Telefono], [EstadoId])
-INCLUDE ([SesionId], [UltimaActividad], [DatosTemp], [TipoReporteId], [AdvertenciaEnviada], [Version], [EquipoIdTemp]);
-
-PRINT '   IX_SesionesChat_Telefono_Estado_Full creado';
-GO
-
--- Indice para busqueda de equipos por CodigoSAP (covering index)
-CREATE NONCLUSTERED INDEX [IX_Equipos_CodigoSAP_Activo_Full]
-ON [dbo].[Equipos] ([CodigoSAP], [Activo])
-INCLUDE ([EquipoId], [Modelo], [Marca], [Descripcion], [ClienteId]);
-
-PRINT '   IX_Equipos_CodigoSAP_Activo_Full creado';
-GO
-
--- Indice para getEncuestaByTelefono (covering index)
-CREATE NONCLUSTERED INDEX [IX_Encuestas_Telefono_Estado_Full]
-ON [dbo].[Encuestas] ([TelefonoEncuestado], [EstadoEncuestaId])
-INCLUDE ([EncuestaId], [ReporteId], [PreguntaActual], [TipoEncuestaId], [FechaEnvio]);
-
-PRINT '   IX_Encuestas_Telefono_Estado_Full creado';
-GO
-
--- Indice para historial de sesiones (auditoria)
--- Incluye ReporteId para rastrear reportes creados
-CREATE NONCLUSTERED INDEX [IX_HistorialSesiones_Telefono_Fecha_Full]
-ON [dbo].[HistorialSesiones] ([Telefono], [FechaAccion] DESC)
-INCLUDE ([EstadoAnteriorId], [EstadoNuevoId], [OrigenAccion], [Descripcion], [ReporteId]);
-
-PRINT '   IX_HistorialSesiones_Telefono_Fecha_Full creado';
-GO
-
--- Indice para reportes pendientes de encuesta (filtered index)
-SET QUOTED_IDENTIFIER ON;
-CREATE NONCLUSTERED INDEX [IX_Reportes_Encuestas_Pendientes]
-ON [dbo].[Reportes] ([EstadoReporteId], [FechaResolucion])
-INCLUDE ([ReporteId], [NumeroTicket], [TelefonoReportante], [TipoReporteId], [ClienteId])
-WHERE [FechaResolucion] IS NOT NULL;
-
-PRINT '   IX_Reportes_Encuestas_Pendientes creado';
-PRINT '   6 indices de optimizacion creados (IX_SesionesChat_Telefono redundante eliminado)';
+PRINT '   2 vistas creadas (vw_SesionesActivas, vw_DocumentosFirma)';
 GO
 
 -- =============================================
@@ -1577,88 +1129,30 @@ PRINT '===============================================================';
 PRINT '';
 GO
 
--- Resumen de tablas
-SELECT 'CatTipoReporte' AS Tabla, COUNT(*) AS Registros FROM [dbo].[CatTipoReporte]
-UNION ALL SELECT 'CatEstadoSesion', COUNT(*) FROM [dbo].[CatEstadoSesion]
-UNION ALL SELECT 'CatEstadoReporte', COUNT(*) FROM [dbo].[CatEstadoReporte]
-UNION ALL SELECT 'CatEstadoEncuesta', COUNT(*) FROM [dbo].[CatEstadoEncuesta]
-UNION ALL SELECT 'CatTipoEncuesta', COUNT(*) FROM [dbo].[CatTipoEncuesta]
-UNION ALL SELECT 'PreguntasEncuesta', COUNT(*) FROM [dbo].[PreguntasEncuesta]
-UNION ALL SELECT 'Clientes', COUNT(*) FROM [dbo].[Clientes]
-UNION ALL SELECT 'Equipos', COUNT(*) FROM [dbo].[Equipos]
-UNION ALL SELECT 'Reportes', COUNT(*) FROM [dbo].[Reportes]
+SELECT 'CatEstadoSesion' AS Tabla, COUNT(*) AS Registros FROM [dbo].[CatEstadoSesion]
+UNION ALL SELECT 'CatEstadoDocumento', COUNT(*) FROM [dbo].[CatEstadoDocumento]
+UNION ALL SELECT 'CatTipoDocumento', COUNT(*) FROM [dbo].[CatTipoDocumento]
 UNION ALL SELECT 'SesionesChat', COUNT(*) FROM [dbo].[SesionesChat]
+UNION ALL SELECT 'DocumentosFirma', COUNT(*) FROM [dbo].[DocumentosFirma]
 UNION ALL SELECT 'HistorialSesiones', COUNT(*) FROM [dbo].[HistorialSesiones]
 UNION ALL SELECT 'MensajesChat', COUNT(*) FROM [dbo].[MensajesChat]
 UNION ALL SELECT 'MensajesProcessados', COUNT(*) FROM [dbo].[MensajesProcessados]
 UNION ALL SELECT 'DeadLetterMessages', COUNT(*) FROM [dbo].[DeadLetterMessages]
-UNION ALL SELECT 'Encuestas', COUNT(*) FROM [dbo].[Encuestas]
-UNION ALL SELECT 'RespuestasEncuesta', COUNT(*) FROM [dbo].[RespuestasEncuesta]
-UNION ALL SELECT 'CentrosServicio', COUNT(*) FROM [dbo].[CentrosServicio];
+UNION ALL SELECT 'EventosDocuSignProcessados', COUNT(*) FROM [dbo].[EventosDocuSignProcessados];
 GO
 
 PRINT '';
-PRINT 'Catalogos Base:';
-PRINT '   - CatTipoReporte: REFRIGERADOR, VEHICULO, CONSULTA';
-PRINT '   - CatEstadoSesion: 20 estados (IDs explicitos, sincronizados con codigo)';
-PRINT '   - CatEstadoReporte: PENDIENTE, EN_PROCESO, RESUELTO, CANCELADO';
+PRINT 'Catalogos:';
+PRINT '   - CatEstadoSesion: 8 estados';
+PRINT '   - CatEstadoDocumento: 8 estados';
+PRINT '   - CatTipoDocumento: 4 tipos';
 PRINT '';
-PRINT 'Catalogos de Encuestas (NORMALIZADOS):';
-PRINT '   - CatEstadoEncuesta: 5 estados (ENVIADA, EN_PROCESO, COMPLETADA, RECHAZADA, EXPIRADA)';
-PRINT '   - CatTipoEncuesta: 1 tipo (SATISFACCION_SERVICIO)';
-PRINT '   - PreguntasEncuesta: 6 preguntas dinamicas';
+PRINT 'Tablas: SesionesChat, DocumentosFirma, HistorialSesiones,';
+PRINT '        MensajesChat, MensajesProcessados, DeadLetterMessages,';
+PRINT '        EventosDocuSignProcessados';
 PRINT '';
-PRINT 'Tablas de datos (todas vacias - primer deploy limpio):';
-PRINT '   - Clientes, Equipos, CentrosServicio';
-PRINT '   - Reportes, SesionesChat, HistorialSesiones';
-PRINT '   - MensajesChat, MensajesProcessados, DeadLetterMessages';
-PRINT '   - Encuestas, RespuestasEncuesta';
-PRINT '';
-PRINT 'Stored Procedures:';
-PRINT '   Base:';
-PRINT '   - sp_CheckSpam';
-PRINT '   - sp_GetHistorialTelefono';
-PRINT '   - sp_GetMetricasSesiones';
-PRINT '   - sp_GetSesionesNeedingWarning';
-PRINT '   - sp_GetSesionesToClose';
-PRINT '   - sp_GetEstadisticasReportes';
-PRINT '   Encuestas (normalizados):';
-PRINT '   - sp_GetReportesPendientesEncuesta';
-PRINT '   - sp_GetEstadisticasEncuestas (usa catalogos)';
-PRINT '   - sp_ExpirarEncuestasSinRespuesta (usa catalogos)';
-PRINT '   Dead Letter:';
-PRINT '   - sp_GetDeadLettersForRetry (obtener mensajes para reintento)';
-PRINT '   - sp_CleanOldDeadLetters (limpieza de mensajes antiguos)';
-PRINT '   Centros de Servicio:';
-PRINT '   - sp_GetCentroServicioMasCercano (buscar centro mas cercano por coordenadas)';
-PRINT '   - sp_GetCentrosServicioActivos (listar todos los centros activos)';
-PRINT '';
-PRINT 'Vistas:';
-PRINT '   - vw_SesionesActivas';
-PRINT '   - vw_Reportes';
-PRINT '   - vw_Encuestas (normalizada)';
-PRINT '   - vw_RespuestasEncuesta (nueva)';
-PRINT '';
-PRINT 'Indices de Optimizacion:';
-PRINT '   - IX_MensajesChat_Spam_Check (spam detection)';
-PRINT '   - IX_SesionesChat_Telefono_Estado_Full (covering)';
-PRINT '   - IX_Equipos_CodigoSAP_Activo_Full (covering)';
-PRINT '   - IX_Encuestas_Telefono_Estado_Full (covering)';
-PRINT '   - IX_HistorialSesiones_Telefono_Fecha_Full (auditoria)';
-PRINT '   - IX_Reportes_Encuestas_Pendientes (filtered)';
-PRINT '';
-PRINT 'NOTAS v5.0 - ENCUESTAS NORMALIZADAS:';
-PRINT '   - Encuestas ahora usa TipoEncuestaId (FK) en lugar de preguntas hardcoded';
-PRINT '   - Encuestas ahora usa EstadoEncuestaId (FK) en lugar de CHECK constraint';
-PRINT '   - Columnas Pregunta1-6 se mantienen para retrocompatibilidad';
-PRINT '   - Respuestas se guardan en RespuestasEncuesta (normalizada)';
-PRINT '   - Para agregar nuevos tipos de encuesta, insertar en CatTipoEncuesta y PreguntasEncuesta';
-PRINT '';
-PRINT 'NOTAS v5.4 - CENTROS DE SERVICIO:';
-PRINT '   - CentrosServicio contiene ubicaciones geograficas de centros de atencion';
-PRINT '   - Reportes tiene nuevos campos: CentroServicioId, TiempoEstimadoMinutos, DistanciaCentroKm';
-PRINT '   - sp_GetCentroServicioMasCercano usa formula Haversine para calcular distancias';
-PRINT '   - Para agregar nuevos centros, insertar en CentrosServicio con coordenadas';
+PRINT 'Stored Procedures: 17';
+PRINT 'Vistas: 2 (vw_SesionesActivas, vw_DocumentosFirma)';
 PRINT '';
 PRINT '===============================================================';
 GO
