@@ -42,7 +42,7 @@ resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01
 
 resource blobContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
   parent: blobServices
-  name: 'imagenes-reportes'
+  name: 'documentos-firma'
   properties: {
     publicAccess: 'None'
   }
@@ -64,7 +64,7 @@ resource lifecyclePolicy 'Microsoft.Storage/storageAccounts/managementPolicies@2
                 'blockBlob'
               ]
               prefixMatch: [
-                'imagenes-reportes/'
+                'documentos-firma/'
               ]
             }
             actions: {

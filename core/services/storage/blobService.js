@@ -14,7 +14,7 @@ const { logger } = require('../infrastructure/errorHandler');
 const { getBreaker, SERVICES } = require('../infrastructure/circuitBreaker');
 const config = require('../../config');
 
-const CONTAINER_NAME = config.blob?.containerName || 'imagenes-reportes';
+const CONTAINER_NAME = config.blob?.containerName || 'documentos-firma';
 const connectionString = config.blob?.connectionString || process.env.BLOB_CONNECTION_STRING;
 
 // Tiempo de expiración del SAS token (configurable via BLOB_SAS_EXPIRY_HOURS, default: 72h)
