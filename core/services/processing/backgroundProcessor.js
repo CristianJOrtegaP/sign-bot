@@ -4,18 +4,20 @@
  */
 
 const whatsapp = require('../external/whatsappService');
-const vision = require('../ai/visionService');
-const aiService = require('../ai/aiService');
+// Sign Bot no usa vision/AI services (removidos de AC FixBot)
+const vision = null;
+const aiService = null;
 const teamsService = require('../external/teamsService');
 const db = require('../storage/databaseService');
 const blobService = require('../storage/blobService');
-const imageProcessor = require('./imageProcessor');
+// Sign Bot no usa image processing (removido de AC FixBot)
+const imageProcessor = null;
 const _MSG = require('../../../bot/constants/messages');
 const { ESTADO, ORIGEN_ACCION, TIPO_REPORTE } = require('../../../bot/constants/sessionStates');
 const { safeParseJSON } = require('../../utils/helpers');
-const { OCRError } = vision;
-const fieldExtractor = require('../../../bot/services/fieldExtractor');
-const fieldManager = require('../../../bot/services/fieldManager');
+const OCRError = class extends Error {};
+const fieldExtractor = null;
+const fieldManager = null;
 const appInsights = require('../infrastructure/appInsightsService');
 const correlation = require('../infrastructure/correlationService');
 const config = require('../../config');

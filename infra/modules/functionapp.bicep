@@ -170,6 +170,10 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/WHATSAPP-TOKEN/)'
         }
         {
+          name: 'WHATSAPP_PHONE_ID'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/WHATSAPP-PHONE-ID/)'
+        }
+        {
           name: 'WHATSAPP_VERIFY_TOKEN'
           value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/WHATSAPP-VERIFY-TOKEN/)'
         }
@@ -230,6 +234,11 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         {
           name: 'FIRMA_TIMER_SCHEDULE'
           value: '0 0 9 * * *'
+        }
+        // Session cleanup: cada 5 minutos
+        {
+          name: 'TIMER_SCHEDULE'
+          value: '0 */5 * * * *'
         }
         // ----------------------------------------------------------------
         // Teams Webhook

@@ -3,10 +3,11 @@
 -- Firma digital de documentos via DocuSign + WhatsApp
 -- =============================================
 
-USE [signbot];
+USE [db-signbot];
 GO
 
 SET NOCOUNT ON;
+SET QUOTED_IDENTIFIER ON;
 
 PRINT '===============================================================';
 PRINT '  SIGN BOT - Instalacion de Base de Datos';
@@ -371,9 +372,7 @@ PRINT '';
 PRINT 'Paso 11: Insertando datos en catalogos...';
 GO
 
--- Estados de Sesion
-SET IDENTITY_INSERT [dbo].[CatEstadoSesion] ON;
-
+-- Estados de Sesion (no tiene IDENTITY, insert directo)
 INSERT INTO [dbo].[CatEstadoSesion] ([EstadoId], [Codigo], [Nombre], [Descripcion], [EsTerminal], [Orden], [Activo]) VALUES
 (1,  'INICIO',                  'Inicio',                  'Sesion nueva o idle, sin flujo activo',               1, 0,  1),
 (2,  'CANCELADO',               'Cancelado',               'Sesion cancelada por el usuario',                     1, 100, 1),
@@ -383,8 +382,6 @@ INSERT INTO [dbo].[CatEstadoSesion] ([EstadoId], [Codigo], [Nombre], [Descripcio
 (11, 'CONSULTA_DETALLE',        'Consulta Detalle',        'Usuario viendo detalle de un documento',              0, 11, 1),
 (12, 'ESPERANDO_CONFIRMACION',  'Esperando Confirmacion',  'Bot pregunto algo, esperando respuesta del usuario',  0, 12, 1),
 (20, 'AGENTE_ACTIVO',           'Atencion por Agente',     'Conversacion tomada por agente humano (v2)',          0, 60, 1);
-
-SET IDENTITY_INSERT [dbo].[CatEstadoSesion] OFF;
 
 PRINT '   CatEstadoSesion: 8 registros';
 GO

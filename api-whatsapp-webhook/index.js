@@ -45,7 +45,7 @@ function handleWebhookVerification(context, req, log) {
 
   if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
     log('Webhook verificado exitosamente');
-    return { status: 200, body: parseInt(challenge) };
+    return { status: 200, body: Number(challenge) || challenge };
   }
 
   log('Verificacion fallida - Token no coincide');

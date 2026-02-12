@@ -236,10 +236,8 @@ class FlexibleFlowContext extends BaseContext {
       this.from,
       estadoConfirmacion,
       datos,
-      this.session.EquipoId,
       ORIGEN_ACCION.BOT,
       'Esperando confirmación del usuario',
-      null,
       version
     );
     this._incrementVersion();

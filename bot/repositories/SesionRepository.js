@@ -65,7 +65,6 @@ class SesionRepository extends BaseRepository {
                             es.Codigo AS Estado,
                             s.DatosTemp,
                             s.ContadorMensajes,
-                            s.UltimoResetContador,
                             s.FechaCreacion,
                             s.UltimaActividad,
                             ISNULL(s.Version, 0) AS Version
@@ -94,7 +93,6 @@ class SesionRepository extends BaseRepository {
                                 es.Codigo AS Estado,
                                 s.DatosTemp,
                                 s.ContadorMensajes,
-                                s.UltimoResetContador,
                                 s.FechaCreacion,
                                 s.UltimaActividad,
                                 ISNULL(s.Version, 0) AS Version
@@ -265,17 +263,8 @@ class SesionRepository extends BaseRepository {
    * @param {string} tipo - 'U' para usuario, 'B' para bot
    * @param {string} contenido - Contenido del mensaje
    * @param {string} tipoContenido - 'TEXTO', 'BOTON', 'TEMPLATE'
-   * @param {string} intencionDetectada - Intencion detectada por IA (opcional)
-   * @param {number} confianzaIA - Score de confianza (opcional)
    */
-  async saveMessage(
-    telefono,
-    tipo,
-    contenido,
-    tipoContenido = 'TEXTO',
-    intencionDetectada = null,
-    confianzaIA = null
-  ) {
+  async saveMessage(telefono, tipo, contenido, tipoContenido = 'TEXTO') {
     try {
       // OPTIMIZACION: Un solo roundtrip SQL (SELECT SesionId + INSERT + UPDATE contador)
       await this.executeQuery(async () => {
@@ -288,8 +277,6 @@ class SesionRepository extends BaseRepository {
           .input('tipo', sql.Char, tipo)
           .input('contenido', sql.NVarChar, contenido?.substring(0, 2000))
           .input('tipoContenido', sql.NVarChar, tipoContenido)
-          .input('intencionDetectada', sql.NVarChar, intencionDetectada)
-          .input('confianzaIA', sql.Decimal(5, 4), confianzaIA)
           .input('esUsuario', sql.Bit, esUsuario ? 1 : 0).query(`
             DECLARE @sesionId INT;
             SELECT @sesionId = SesionId FROM SesionesChat WHERE Telefono = @telefono;
@@ -297,9 +284,9 @@ class SesionRepository extends BaseRepository {
             IF @sesionId IS NOT NULL
             BEGIN
               INSERT INTO MensajesChat
-                (SesionId, Telefono, Tipo, Contenido, TipoContenido, IntencionDetectada, ConfianzaIA)
+                (SesionId, Telefono, Tipo, Contenido, TipoContenido)
               VALUES
-                (@sesionId, @telefono, @tipo, @contenido, @tipoContenido, @intencionDetectada, @confianzaIA);
+                (@sesionId, @telefono, @tipo, @contenido, @tipoContenido);
 
               IF @esUsuario = 1
                 UPDATE SesionesChat
@@ -537,8 +524,6 @@ class SesionRepository extends BaseRepository {
                             Tipo,
                             Contenido,
                             TipoContenido,
-                            IntencionDetectada,
-                            ConfianzaIA,
                             FechaCreacion
                         FROM MensajesChat
                         WHERE Telefono = @telefono
@@ -563,7 +548,7 @@ class SesionRepository extends BaseRepository {
         await pool.request().input('telefono', sql.NVarChar, telefono).query(`
                         UPDATE SesionesChat
                         SET ContadorMensajes = 0,
-                            UltimoResetContador = GETDATE()
+                            UltimaActividad = GETDATE()
                         WHERE Telefono = @telefono
                     `);
       });

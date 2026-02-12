@@ -31,7 +31,7 @@ async function checkDatabase(startTime) {
     const tables = await pool.request().query(`
             SELECT TABLE_NAME
             FROM INFORMATION_SCHEMA.TABLES
-            WHERE TABLE_NAME IN ('SesionesChat', 'MensajesProcessados', 'DeadLetterMessages', 'DocumentosFirma', 'EventosDocuSign')
+            WHERE TABLE_NAME IN ('SesionesChat', 'MensajesProcessados', 'DeadLetterMessages', 'DocumentosFirma', 'EventosDocuSignProcessados')
         `);
 
     const expectedTables = [
@@ -39,7 +39,7 @@ async function checkDatabase(startTime) {
       'MensajesProcessados',
       'DeadLetterMessages',
       'DocumentosFirma',
-      'EventosDocuSign',
+      'EventosDocuSignProcessados',
     ];
     const foundTables = tables.recordset.map((t) => t.TABLE_NAME);
     const missingTables = expectedTables.filter((t) => !foundTables.includes(t));

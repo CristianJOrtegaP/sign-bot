@@ -29,24 +29,13 @@ const processedMessageIds = new Map();
 const MESSAGE_ID_TTL = 30 * 60 * 1000; // 30 minutos (aumentado para cubrir reintentos tardíos)
 
 // Configuración de límites desde config centralizado
+// Sign Bot solo maneja texto y botones interactivos (no images/audios)
 const LIMITS = {
   messages: {
     maxPerMinute: config.rateLimiting.messages.maxPerMinute,
     maxPerHour: config.rateLimiting.messages.maxPerHour,
     windowMinute: config.rateLimiting.messages.windowMinuteMs,
     windowHour: config.rateLimiting.messages.windowHourMs,
-  },
-  images: {
-    maxPerMinute: config.rateLimiting.images.maxPerMinute,
-    maxPerHour: config.rateLimiting.images.maxPerHour,
-    windowMinute: config.rateLimiting.images.windowMinuteMs,
-    windowHour: config.rateLimiting.images.windowHourMs,
-  },
-  audios: {
-    maxPerMinute: config.rateLimiting.audios.maxPerMinute,
-    maxPerHour: config.rateLimiting.audios.maxPerHour,
-    windowMinute: config.rateLimiting.audios.windowMinuteMs,
-    windowHour: config.rateLimiting.audios.windowHourMs,
   },
 };
 
@@ -58,17 +47,9 @@ function cleanOldEntries() {
   const oneHourAgo = now - LIMITS.messages.windowHour;
 
   for (const [userId, data] of userRequests.entries()) {
-    // Limpiar mensajes antiguos (más de 1 hora)
     data.messages = data.messages.filter((timestamp) => timestamp > oneHourAgo);
-    data.images = data.images.filter((timestamp) => timestamp > oneHourAgo);
-    data.audios = (data.audios || []).filter((timestamp) => timestamp > oneHourAgo);
 
-    // Si el usuario no tiene actividad reciente, eliminar entrada
-    if (
-      data.messages.length === 0 &&
-      data.images.length === 0 &&
-      (data.audios || []).length === 0
-    ) {
+    if (data.messages.length === 0) {
       userRequests.delete(userId);
     }
   }
@@ -113,17 +94,10 @@ function getUserRecord(userId) {
   if (!userRequests.has(userId)) {
     userRequests.set(userId, {
       messages: [],
-      images: [],
-      audios: [],
       warnings: 0,
     });
   }
-  // Asegurar que audios existe (para registros existentes)
-  const record = userRequests.get(userId);
-  if (!record.audios) {
-    record.audios = [];
-  }
-  return record;
+  return userRequests.get(userId);
 }
 
 /**
@@ -136,21 +110,10 @@ function checkRateLimit(userId, type = 'message') {
   const now = Date.now();
   const record = getUserRecord(userId);
 
-  // Determinar qué límites y array usar según el tipo
-  let requests, limits, typeLabel;
-  if (type === 'image') {
-    requests = record.images;
-    limits = LIMITS.images;
-    typeLabel = 'imágenes';
-  } else if (type === 'audio') {
-    requests = record.audios;
-    limits = LIMITS.audios;
-    typeLabel = 'audios';
-  } else {
-    requests = record.messages;
-    limits = LIMITS.messages;
-    typeLabel = 'mensajes';
-  }
+  // Sign Bot solo maneja mensajes de texto y botones
+  const requests = record.messages;
+  const limits = LIMITS.messages;
+  const typeLabel = 'mensajes';
 
   // Contar solicitudes en la última hora
   const oneHourAgo = now - limits.windowHour;
@@ -195,17 +158,9 @@ function checkRateLimit(userId, type = 'message') {
 /**
  * Registra una solicitud exitosa
  */
-function recordRequest(userId, type = 'message') {
+function recordRequest(userId, _type = 'message') {
   const record = getUserRecord(userId);
-  const now = Date.now();
-
-  if (type === 'image') {
-    record.images.push(now);
-  } else if (type === 'audio') {
-    record.audios.push(now);
-  } else {
-    record.messages.push(now);
-  }
+  record.messages.push(Date.now());
 }
 
 /**
@@ -223,18 +178,6 @@ function getUserStats(userId) {
       lastHour: record.messages.filter((t) => t > oneHourAgo).length,
       maxPerMinute: LIMITS.messages.maxPerMinute,
       maxPerHour: LIMITS.messages.maxPerHour,
-    },
-    images: {
-      lastMinute: record.images.filter((t) => t > oneMinuteAgo).length,
-      lastHour: record.images.filter((t) => t > oneHourAgo).length,
-      maxPerMinute: LIMITS.images.maxPerMinute,
-      maxPerHour: LIMITS.images.maxPerHour,
-    },
-    audios: {
-      lastMinute: record.audios.filter((t) => t > oneMinuteAgo).length,
-      lastHour: record.audios.filter((t) => t > oneHourAgo).length,
-      maxPerMinute: LIMITS.audios.maxPerMinute,
-      maxPerHour: LIMITS.audios.maxPerHour,
     },
   };
 }
@@ -298,9 +241,8 @@ async function checkRateLimitRedis(userId, type) {
   const redis = getRedisService();
   const _now = Date.now();
 
-  const limits =
-    type === 'image' ? LIMITS.images : type === 'audio' ? LIMITS.audios : LIMITS.messages;
-  const typeLabel = type === 'image' ? 'imágenes' : type === 'audio' ? 'audios' : 'mensajes';
+  const limits = LIMITS.messages;
+  const typeLabel = 'mensajes';
 
   const keyMinute = `ratelimit:${type}:${userId}:minute`;
   const keyHour = `ratelimit:${type}:${userId}:hour`;

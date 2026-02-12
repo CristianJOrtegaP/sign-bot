@@ -75,25 +75,9 @@ async function updateSession(
  * @param {string} tipo - 'U' para usuario, 'B' para bot
  * @param {string} contenido - Contenido del mensaje
  * @param {string} tipoContenido - 'TEXTO', 'BOTON', 'TEMPLATE'
- * @param {string} intencionDetectada - Intencion detectada por IA (opcional)
- * @param {number} confianzaIA - Score de confianza (opcional)
  */
-async function saveMessage(
-  telefono,
-  tipo,
-  contenido,
-  tipoContenido = 'TEXTO',
-  intencionDetectada = null,
-  confianzaIA = null
-) {
-  return SesionRepository.saveMessage(
-    telefono,
-    tipo,
-    contenido,
-    tipoContenido,
-    intencionDetectada,
-    confianzaIA
-  );
+async function saveMessage(telefono, tipo, contenido, tipoContenido = 'TEXTO') {
+  return SesionRepository.saveMessage(telefono, tipo, contenido, tipoContenido);
 }
 
 /**
@@ -111,6 +95,19 @@ async function checkSpam(telefono) {
  */
 async function updateLastActivity(telefono) {
   return SesionRepository.updateLastActivity(telefono);
+}
+
+// ============================================================================
+// FUNCIONES DE DOCUMENTOS (delegadas a DocumentoFirmaRepository)
+// ============================================================================
+
+/**
+ * Obtiene documentos de firma por numero de telefono del cliente
+ * @param {string} telefono - Numero de telefono
+ * @returns {Promise<Array>}
+ */
+async function getDocumentosFirmaPorTelefono(telefono) {
+  return DocumentoFirmaRepository.obtenerPorTelefono(telefono);
 }
 
 // ============================================================================
@@ -220,6 +217,9 @@ module.exports = {
   getSessionsNeedingWarning,
   getSessionsToClose,
   updateUserName,
+
+  // Funciones de documentos
+  getDocumentosFirmaPorTelefono,
 
   // Funciones de deduplicacion
   registerMessageAtomic: (messageId, telefono) =>

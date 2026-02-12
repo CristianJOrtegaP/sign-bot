@@ -108,10 +108,8 @@ class BaseContext {
       this.from,
       nuevoEstado,
       datos,
-      null,
       ORIGEN_ACCION.BOT,
       motivo || `Cambio a ${nuevoEstado}`,
-      null,
       version
     );
     this._incrementVersion();
@@ -129,10 +127,8 @@ class BaseContext {
       this.from,
       this.session.Estado,
       datos,
-      this.session.EquipoId,
       ORIGEN_ACCION.BOT,
       motivo || 'Actualización de datos',
-      null,
       version
     );
     this._incrementVersion();
@@ -145,16 +141,7 @@ class BaseContext {
    */
   async finalizar(motivo = 'Flujo completado') {
     const version = this._getVersion();
-    await db.updateSession(
-      this.from,
-      'INICIO',
-      null,
-      null,
-      ORIGEN_ACCION.BOT,
-      motivo,
-      null,
-      version
-    );
+    await db.updateSession(this.from, 'INICIO', null, ORIGEN_ACCION.BOT, motivo, version);
     this._incrementVersion();
     this._logAccion('finalizar', { motivo });
   }
@@ -165,16 +152,7 @@ class BaseContext {
    */
   async cancelar(motivo = 'Flujo cancelado por usuario') {
     const version = this._getVersion();
-    await db.updateSession(
-      this.from,
-      'CANCELADO',
-      null,
-      null,
-      ORIGEN_ACCION.USUARIO,
-      motivo,
-      null,
-      version
-    );
+    await db.updateSession(this.from, 'CANCELADO', null, ORIGEN_ACCION.USUARIO, motivo, version);
     this._incrementVersion();
     this._logAccion('cancelar', { motivo });
   }

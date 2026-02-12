@@ -14,8 +14,7 @@
 *.swp
 *.swo
 
-# Node
-node_modules/
+# Node (node_modules se incluye en el zip para WEBSITE_RUN_FROM_PACKAGE)
 node_modules.nosync/
 npm-debug.log
 
