@@ -157,6 +157,7 @@ async function createConnection() {
       encrypt: parsed.encrypt !== false, // Default true para Azure
       trustServerCertificate: parsed.trustServerCertificate || false,
       enableArithAbort: true,
+      enableQuotedIdentifier: true, // Requerido por SPs creados con SET QUOTED_IDENTIFIER ON
       connectTimeout: connectionTimeout,
       requestTimeout: requestTimeout,
     },

@@ -62,7 +62,7 @@ class DocumentoFirmaRepository extends BaseRepository {
       });
 
       this.logOperation('crear', true, {
-        documentoId: result?.Id,
+        documentoId: result?.DocumentoFirmaId,
         sapDocumentId: documentoData.SapDocumentId,
         telefono: documentoData.ClienteTelefono,
       });
@@ -104,15 +104,15 @@ class DocumentoFirmaRepository extends BaseRepository {
 
         const res = await pool
           .request()
-          .input('DocumentoId', sql.Int, documentoId)
+          .input('DocumentoFirmaId', sql.Int, documentoId)
           .input('NuevoEstadoId', sql.Int, nuevoEstadoId)
-          .input('ExpectedVersion', sql.Int, version)
+          .input('Version', sql.Int, version)
           .input('EnvelopeId', sql.NVarChar, datosExtra.EnvelopeId || null)
           .input('SigningUrl', sql.NVarChar, datosExtra.SigningUrl || null)
           .input('DocumentoFirmadoUrl', sql.NVarChar, datosExtra.DocumentoFirmadoUrl || null)
           .input('MotivoRechazo', sql.NVarChar, datosExtra.MotivoRechazo || null)
           .input('WhatsAppMessageId', sql.NVarChar, datosExtra.WhatsAppMessageId || null)
-          .input('DatosExtra', sql.NVarChar, datosExtra.DatosExtraJson || null)
+          .input('MensajeError', sql.NVarChar, datosExtra.MensajeError || null)
           .execute('sp_ActualizarEstadoDocumento');
 
         const record = res.recordset[0];
@@ -199,7 +199,7 @@ class DocumentoFirmaRepository extends BaseRepository {
 
         const res = await pool
           .request()
-          .input('DocumentoId', sql.Int, documentoId)
+          .input('DocumentoFirmaId', sql.Int, documentoId)
           .execute('sp_ObtenerDocumentoPorId');
 
         return res.recordset[0] || null;
@@ -218,6 +218,47 @@ class DocumentoFirmaRepository extends BaseRepository {
         operation: 'obtenerPorId',
       });
       metrics.recordError('db_obtenerDocumentoPorId_error', error.message);
+      timer.end({ error: true });
+      return null;
+    }
+  }
+
+  /**
+   * Obtiene un documento activo por SapDocumentId
+   * Usado para verificar si ya existe un envelope antes de crear uno nuevo
+   * @param {string} sapDocumentId - ID del documento en SAP
+   * @returns {Promise<Object|null>} - Documento activo o null
+   */
+  async obtenerActivoPorSapDocumentId(sapDocumentId) {
+    const timer = metrics.startTimer('db_obtenerActivoPorSapDocumentId');
+
+    try {
+      const result = await this.executeQuery(async () => {
+        const pool = await this.getPool();
+
+        const res = await pool.request().input('SapDocumentId', sql.NVarChar, sapDocumentId).query(`
+            SELECT TOP 1
+              df.DocumentoFirmaId, df.SapDocumentId, df.EnvelopeId,
+              df.ClienteTelefono, df.ClienteNombre,
+              df.EstadoDocumentoId, df.SigningUrl,
+              ISNULL(df.Version, 0) AS Version
+            FROM DocumentosFirma df
+            WHERE df.SapDocumentId = @SapDocumentId
+              AND df.EstadoDocumentoId NOT IN (${ESTADO_DOCUMENTO_ID.FIRMADO}, ${ESTADO_DOCUMENTO_ID.ANULADO})
+            ORDER BY df.FechaCreacion DESC
+          `);
+
+        return res.recordset[0] || null;
+      });
+
+      timer.end({ source: 'database', sapDocumentId, found: Boolean(result) });
+      return result;
+    } catch (error) {
+      logger.error('Error obteniendo documento activo por SapDocumentId', error, {
+        sapDocumentId,
+        operation: 'obtenerActivoPorSapDocumentId',
+      });
+      metrics.recordError('db_obtenerActivoPorSapDocumentId_error', error.message);
       timer.end({ error: true });
       return null;
     }
@@ -358,9 +399,10 @@ class DocumentoFirmaRepository extends BaseRepository {
           .input('ExpectedVersion', sql.Int, version).query(`
             UPDATE DocumentosFirma
             SET IntentosRecordatorio = IntentosRecordatorio + 1,
-                UltimoRecordatorio = GETDATE(),
-                Version = ISNULL(Version, 0) + 1
-            WHERE Id = @DocumentoId
+                UltimoRecordatorio = GETUTCDATE(),
+                Version = ISNULL(Version, 0) + 1,
+                UpdatedAt = GETUTCDATE()
+            WHERE DocumentoFirmaId = @DocumentoId
               AND ISNULL(Version, 0) = @ExpectedVersion;
 
             SELECT @@ROWCOUNT AS RowsAffected;
@@ -419,19 +461,19 @@ class DocumentoFirmaRepository extends BaseRepository {
           .request()
           .input('DiasDesdeUltimoReporte', sql.Int, diasDesdeUltimoReporte).query(`
             SELECT
-              df.Id, df.SapDocumentId, df.SapCallbackUrl,
+              df.DocumentoFirmaId, df.SapDocumentId, df.SapCallbackUrl,
               df.ClienteTelefono, df.ClienteNombre,
-              df.EnvelopeId, df.EstadoId,
+              df.EnvelopeId, df.EstadoDocumentoId,
               ed.Codigo AS Estado,
               df.DocumentoFirmadoUrl, df.DatosExtra,
-              df.FechaCreacion, df.FechaActualizacion,
+              df.FechaCreacion, df.UpdatedAt,
               ISNULL(df.Version, 0) AS Version
             FROM DocumentosFirma df
-            INNER JOIN CatEstadoDocumento ed ON df.EstadoId = ed.EstadoId
+            INNER JOIN CatEstadoDocumento ed ON df.EstadoDocumentoId = ed.EstadoDocumentoId
             WHERE df.SapCallbackUrl IS NOT NULL
-              AND df.EstadoId IN (${ESTADO_DOCUMENTO_ID.FIRMADO}, ${ESTADO_DOCUMENTO_ID.RECHAZADO}, ${ESTADO_DOCUMENTO_ID.ANULADO})
-              AND (df.UltimoReporteSap IS NULL
-                   OR DATEDIFF(DAY, df.UltimoReporteSap, GETDATE()) >= @DiasDesdeUltimoReporte)
+              AND df.EstadoDocumentoId IN (${ESTADO_DOCUMENTO_ID.FIRMADO}, ${ESTADO_DOCUMENTO_ID.RECHAZADO}, ${ESTADO_DOCUMENTO_ID.ANULADO})
+              AND (df.UltimoReporteTeams IS NULL
+                   OR DATEDIFF(DAY, df.UltimoReporteTeams, GETDATE()) >= @DiasDesdeUltimoReporte)
           `);
 
         return res.recordset;
@@ -464,17 +506,17 @@ class DocumentoFirmaRepository extends BaseRepository {
 
         const res = await pool.request().input('DiasInactividad', sql.Int, diasInactividad).query(`
             SELECT
-              df.Id, df.SapDocumentId, df.EnvelopeId,
+              df.DocumentoFirmaId, df.SapDocumentId, df.EnvelopeId,
               df.ClienteTelefono, df.ClienteNombre,
-              df.EstadoId,
+              df.EstadoDocumentoId,
               ed.Codigo AS Estado,
-              df.FechaCreacion, df.FechaActualizacion,
+              df.FechaCreacion, df.UpdatedAt,
               ISNULL(df.Version, 0) AS Version
             FROM DocumentosFirma df
-            INNER JOIN CatEstadoDocumento ed ON df.EstadoId = ed.EstadoId
+            INNER JOIN CatEstadoDocumento ed ON df.EstadoDocumentoId = ed.EstadoDocumentoId
             WHERE df.EnvelopeId IS NOT NULL
-              AND df.EstadoId NOT IN (${ESTADO_DOCUMENTO_ID.FIRMADO}, ${ESTADO_DOCUMENTO_ID.ANULADO})
-              AND DATEDIFF(DAY, df.FechaActualizacion, GETDATE()) >= @DiasInactividad
+              AND df.EstadoDocumentoId NOT IN (${ESTADO_DOCUMENTO_ID.FIRMADO}, ${ESTADO_DOCUMENTO_ID.ANULADO})
+              AND DATEDIFF(DAY, df.UpdatedAt, GETDATE()) >= @DiasInactividad
           `);
 
         return res.recordset;
@@ -597,7 +639,7 @@ class DocumentoFirmaRepository extends BaseRepository {
             ed.Codigo AS Estado,
             COUNT(*) AS Total
           FROM DocumentosFirma df
-          INNER JOIN CatEstadoDocumento ed ON df.EstadoId = ed.EstadoId
+          INNER JOIN CatEstadoDocumento ed ON df.EstadoDocumentoId = ed.EstadoDocumentoId
           GROUP BY ed.Codigo;
 
           -- Conteos por tipo
@@ -611,9 +653,9 @@ class DocumentoFirmaRepository extends BaseRepository {
           -- Totales generales
           SELECT
             COUNT(*) AS TotalDocumentos,
-            SUM(CASE WHEN df.EstadoId = ${ESTADO_DOCUMENTO_ID.FIRMADO} THEN 1 ELSE 0 END) AS TotalFirmados,
-            SUM(CASE WHEN df.EstadoId = ${ESTADO_DOCUMENTO_ID.RECHAZADO} THEN 1 ELSE 0 END) AS TotalRechazados,
-            SUM(CASE WHEN df.EstadoId IN (${ESTADO_DOCUMENTO_ID.PENDIENTE_ENVIO}, ${ESTADO_DOCUMENTO_ID.ENVIADO}, ${ESTADO_DOCUMENTO_ID.ENTREGADO}, ${ESTADO_DOCUMENTO_ID.VISTO}) THEN 1 ELSE 0 END) AS TotalPendientes
+            SUM(CASE WHEN df.EstadoDocumentoId = ${ESTADO_DOCUMENTO_ID.FIRMADO} THEN 1 ELSE 0 END) AS TotalFirmados,
+            SUM(CASE WHEN df.EstadoDocumentoId = ${ESTADO_DOCUMENTO_ID.RECHAZADO} THEN 1 ELSE 0 END) AS TotalRechazados,
+            SUM(CASE WHEN df.EstadoDocumentoId IN (${ESTADO_DOCUMENTO_ID.PENDIENTE_ENVIO}, ${ESTADO_DOCUMENTO_ID.ENVIADO}, ${ESTADO_DOCUMENTO_ID.ENTREGADO}, ${ESTADO_DOCUMENTO_ID.VISTO}) THEN 1 ELSE 0 END) AS TotalPendientes
           FROM DocumentosFirma df;
         `);
 

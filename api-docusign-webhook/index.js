@@ -340,20 +340,16 @@ module.exports = async function (context, req) {
   log('POST /api/docusign-webhook recibido');
 
   try {
-    // 1. Validate HMAC signature
+    // 1. Validate HMAC signature (mandatory — no skip in any environment)
     const hmacHeader = req.headers['x-docusign-signature-1'];
     const rawBody = req.rawBody || JSON.stringify(req.body);
 
-    // HMAC validation: skip only if explicitly disabled (development environments)
-    const isDevelopment =
-      process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development' ||
-      process.env.NODE_ENV === 'development';
-    const skipValidation = isDevelopment && process.env.SKIP_DOCUSIGN_HMAC_VALIDATION === 'true';
-
-    if (skipValidation) {
-      logWarn('DEV: Validacion HMAC de DocuSign omitida');
-    } else if (!docusignService.validateWebhookHmac(rawBody, hmacHeader)) {
-      logWarn('HMAC de DocuSign invalido - request rechazado');
+    if (!docusignService.validateWebhookHmac(rawBody, hmacHeader)) {
+      logWarn('HMAC de DocuSign invalido - request rechazado', {
+        hasHmacHeader: Boolean(hmacHeader),
+        hasWebhookSecret: Boolean(process.env.DOCUSIGN_WEBHOOK_SECRET),
+        rawBodyLength: rawBody ? rawBody.length : 0,
+      });
       context.res = {
         status: 401,
         headers: applySecurityHeaders({ 'Content-Type': 'application/json' }),

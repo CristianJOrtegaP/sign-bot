@@ -44,6 +44,7 @@ const whatsappService = require('../core/services/external/whatsappService');
 const docusignService = require('../core/services/external/docusignService');
 const teamsService = require('../core/services/external/teamsService');
 const appInsights = require('../core/services/infrastructure/appInsightsService');
+const { TEMPLATE_NAMES, buildTemplatePayload } = require('../bot/constants/whatsappTemplates');
 
 // ==============================================================
 // CONSTANTS
@@ -81,17 +82,20 @@ async function getDocumentsForReminder() {
       .input('maxRecordatorios', sql.Int, maxRecordatoriosCliente)
       .input('reminderHours', sql.Int, reminderHoursCliente).query(`
         SELECT
-          d.DocumentoId,
+          d.DocumentoFirmaId,
           d.EnvelopeId,
-          d.Telefono,
-          d.NombreCliente,
-          d.NombreDocumento,
-          d.Estado,
+          d.ClienteTelefono,
+          d.ClienteNombre,
+          d.DocumentoNombre,
+          td.Codigo AS TipoDocumento,
           d.IntentosRecordatorio,
           d.UltimoRecordatorio,
-          d.FechaCreacion
+          d.FechaCreacion,
+          DATEDIFF(DAY, d.FechaCreacion, GETDATE()) AS DiasDesdeCreacion
         FROM DocumentosFirma d
-        WHERE d.Estado IN ('ENVIADO', 'ENTREGADO', 'VISTO', 'RECHAZADO')
+        INNER JOIN CatEstadoDocumento ed ON d.EstadoDocumentoId = ed.EstadoDocumentoId
+        INNER JOIN CatTipoDocumento td ON d.TipoDocumentoId = td.TipoDocumentoId
+        WHERE ed.Codigo IN ('ENVIADO', 'ENTREGADO', 'VISTO', 'RECHAZADO')
           AND (d.IntentosRecordatorio IS NULL OR d.IntentosRecordatorio < @maxRecordatorios)
           AND (
             d.UltimoRecordatorio IS NULL
@@ -115,42 +119,38 @@ async function getDocumentsForReminder() {
  */
 async function sendClientReminder(doc) {
   try {
-    // Send WhatsApp template reminder
-    await whatsappService.sendTemplate(doc.Telefono, {
-      name: 'firma_recordatorio',
-      language: { code: 'es_MX' },
-      components: [
-        {
-          type: 'body',
-          parameters: [
-            { type: 'text', text: doc.NombreCliente || 'Cliente' },
-            { type: 'text', text: doc.NombreDocumento || 'documento pendiente' },
-          ],
-        },
-      ],
+    // Send WhatsApp template reminder with all params + URL button
+    const templatePayload = buildTemplatePayload(TEMPLATE_NAMES.FIRMA_RECORDATORIO, {
+      clienteNombre: doc.ClienteNombre || 'Cliente',
+      tipoDocumento: doc.TipoDocumento || 'Documento',
+      documentoNombre: doc.DocumentoNombre || 'documento pendiente',
+      diasPendientes: String(doc.DiasDesdeCreacion || 0),
+      signingUrl: String(doc.DocumentoFirmaId),
     });
+
+    await whatsappService.sendTemplate(doc.ClienteTelefono, templatePayload);
 
     // Update reminder count and timestamp in database
     const pool = await getPool();
-    await pool.request().input('documentoId', sql.Int, doc.DocumentoId).query(`
+    await pool.request().input('documentoId', sql.Int, doc.DocumentoFirmaId).query(`
         UPDATE DocumentosFirma
         SET
           IntentosRecordatorio = ISNULL(IntentosRecordatorio, 0) + 1,
           UltimoRecordatorio = GETDATE()
-        WHERE DocumentoId = @documentoId
+        WHERE DocumentoFirmaId = @documentoId
       `);
 
     logger.info('[FIRMA-REMINDER] Recordatorio enviado a cliente', {
-      documentoId: doc.DocumentoId,
-      telefono: doc.Telefono,
+      documentoId: doc.DocumentoFirmaId,
+      telefono: doc.ClienteTelefono,
       intento: (doc.IntentosRecordatorio || 0) + 1,
     });
 
     return true;
   } catch (error) {
     logger.error('[FIRMA-REMINDER] Error enviando recordatorio a cliente', error, {
-      documentoId: doc.DocumentoId,
-      telefono: doc.Telefono,
+      documentoId: doc.DocumentoFirmaId,
+      telefono: doc.ClienteTelefono,
       operation: 'sendClientReminder',
     });
     return false;
@@ -208,17 +208,18 @@ async function getDocumentsForTeamsReport() {
 
     const result = await pool.request().input('reminderDays', sql.Int, reminderDaysSap).query(`
         SELECT
-          d.DocumentoId,
+          d.DocumentoFirmaId,
           d.EnvelopeId,
-          d.Telefono,
-          d.NombreCliente,
-          d.NombreDocumento,
-          d.Estado,
+          d.ClienteTelefono,
+          d.ClienteNombre,
+          d.DocumentoNombre,
+          ed.Codigo AS Estado,
           d.UltimoReporteTeams,
           d.FechaCreacion,
           DATEDIFF(DAY, d.FechaCreacion, GETDATE()) AS DiasDesdeCreacion
         FROM DocumentosFirma d
-        WHERE d.Estado IN ('ENVIADO', 'ENTREGADO', 'VISTO', 'RECHAZADO')
+        INNER JOIN CatEstadoDocumento ed ON d.EstadoDocumentoId = ed.EstadoDocumentoId
+        WHERE ed.Codigo IN ('ENVIADO', 'ENTREGADO', 'VISTO', 'RECHAZADO')
           AND (
             d.UltimoReporteTeams IS NULL
             OR DATEDIFF(DAY, d.UltimoReporteTeams, GETDATE()) >= @reminderDays
@@ -245,14 +246,14 @@ async function sendTeamsReport(doc) {
       '@type': 'MessageCard',
       '@context': 'http://schema.org/extensions',
       themeColor: 'FFA500',
-      summary: `Documento pendiente de firma: ${doc.NombreDocumento || doc.EnvelopeId}`,
+      summary: `Documento pendiente de firma: ${doc.DocumentoNombre || doc.EnvelopeId}`,
       sections: [
         {
           activityTitle: 'Documento Pendiente de Firma',
           activitySubtitle: new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' }),
           facts: [
-            { name: 'Documento', value: doc.NombreDocumento || 'N/A' },
-            { name: 'Cliente', value: doc.NombreCliente || 'N/A' },
+            { name: 'Documento', value: doc.DocumentoNombre || 'N/A' },
+            { name: 'Cliente', value: doc.ClienteNombre || 'N/A' },
             { name: 'Estado', value: doc.Estado },
             { name: 'Envelope ID', value: doc.EnvelopeId || 'N/A' },
             { name: 'Dias pendiente', value: String(doc.DiasDesdeCreacion || 0) },
@@ -266,14 +267,14 @@ async function sendTeamsReport(doc) {
 
     // Update last Teams report timestamp
     const pool = await getPool();
-    await pool.request().input('documentoId', sql.Int, doc.DocumentoId).query(`
+    await pool.request().input('documentoId', sql.Int, doc.DocumentoFirmaId).query(`
         UPDATE DocumentosFirma
         SET UltimoReporteTeams = GETDATE()
-        WHERE DocumentoId = @documentoId
+        WHERE DocumentoFirmaId = @documentoId
       `);
 
     logger.info('[FIRMA-REMINDER] Reporte Teams enviado', {
-      documentoId: doc.DocumentoId,
+      documentoId: doc.DocumentoFirmaId,
       envelopeId: doc.EnvelopeId,
       diasPendiente: doc.DiasDesdeCreacion,
     });
@@ -281,7 +282,7 @@ async function sendTeamsReport(doc) {
     return true;
   } catch (error) {
     logger.error('[FIRMA-REMINDER] Error enviando reporte Teams', error, {
-      documentoId: doc.DocumentoId,
+      documentoId: doc.DocumentoFirmaId,
       operation: 'sendTeamsReport',
     });
     return false;
@@ -339,18 +340,21 @@ async function getDocumentsForHousekeeping() {
 
     const result = await pool.request().input('housekeepingDays', sql.Int, housekeepingDays).query(`
         SELECT
-          d.DocumentoId,
+          d.DocumentoFirmaId,
           d.EnvelopeId,
-          d.Telefono,
-          d.NombreCliente,
-          d.NombreDocumento,
-          d.Estado,
+          d.ClienteTelefono,
+          d.ClienteNombre,
+          d.DocumentoNombre,
+          td.Codigo AS TipoDocumento,
+          ed.Codigo AS Estado,
           d.FechaCreacion,
-          d.FechaActualizacion,
-          DATEDIFF(DAY, ISNULL(d.FechaActualizacion, d.FechaCreacion), GETDATE()) AS DiasInactivo
+          d.UpdatedAt,
+          DATEDIFF(DAY, ISNULL(d.UpdatedAt, d.FechaCreacion), GETDATE()) AS DiasInactivo
         FROM DocumentosFirma d
-        WHERE d.Estado IN ('ENVIADO', 'ENTREGADO', 'VISTO', 'RECHAZADO', 'ERROR')
-          AND DATEDIFF(DAY, ISNULL(d.FechaActualizacion, d.FechaCreacion), GETDATE()) >= @housekeepingDays
+        INNER JOIN CatEstadoDocumento ed ON d.EstadoDocumentoId = ed.EstadoDocumentoId
+        INNER JOIN CatTipoDocumento td ON d.TipoDocumentoId = td.TipoDocumentoId
+        WHERE ed.Codigo IN ('ENVIADO', 'ENTREGADO', 'VISTO', 'RECHAZADO', 'ERROR')
+          AND DATEDIFF(DAY, ISNULL(d.UpdatedAt, d.FechaCreacion), GETDATE()) >= @housekeepingDays
       `);
 
     return result.recordset;
@@ -377,35 +381,28 @@ async function voidStaleDocument(doc) {
       );
     }
 
-    // 2. Update document estado to ANULADO in database
+    // 2. Update document estado to ANULADO in database (EstadoDocumentoId = 7)
     const pool = await getPool();
-    await pool.request().input('documentoId', sql.Int, doc.DocumentoId).query(`
+    await pool.request().input('documentoId', sql.Int, doc.DocumentoFirmaId).query(`
         UPDATE DocumentosFirma
         SET
-          Estado = 'ANULADO',
-          FechaActualizacion = GETDATE(),
-          MotivoAnulacion = 'Housekeeping: inactividad por ${doc.DiasInactivo} dias'
-        WHERE DocumentoId = @documentoId
+          EstadoDocumentoId = 7,
+          UpdatedAt = GETDATE(),
+          MensajeError = 'Housekeeping: inactividad por ${doc.DiasInactivo} dias'
+        WHERE DocumentoFirmaId = @documentoId
       `);
 
     // 3. Send WhatsApp anulacion template (fire-and-forget)
     try {
-      await whatsappService.sendTemplate(doc.Telefono, {
-        name: 'firma_anulacion',
-        language: { code: 'es_MX' },
-        components: [
-          {
-            type: 'body',
-            parameters: [
-              { type: 'text', text: doc.NombreCliente || 'Cliente' },
-              { type: 'text', text: doc.NombreDocumento || 'documento' },
-            ],
-          },
-        ],
+      const anulacionPayload = buildTemplatePayload(TEMPLATE_NAMES.FIRMA_ANULACION, {
+        clienteNombre: doc.ClienteNombre || 'Cliente',
+        tipoDocumento: doc.TipoDocumento || 'Documento',
+        documentoNombre: doc.DocumentoNombre || 'documento',
       });
+      await whatsappService.sendTemplate(doc.ClienteTelefono, anulacionPayload);
     } catch (waError) {
       logger.warn('[FIRMA-REMINDER] Error enviando template de anulacion por WhatsApp', {
-        documentoId: doc.DocumentoId,
+        documentoId: doc.DocumentoFirmaId,
         error: waError.message,
       });
     }
@@ -416,7 +413,7 @@ async function voidStaleDocument(doc) {
         '@type': 'MessageCard',
         '@context': 'http://schema.org/extensions',
         themeColor: 'D13438',
-        summary: `Documento anulado por housekeeping: ${doc.NombreDocumento || doc.EnvelopeId}`,
+        summary: `Documento anulado por housekeeping: ${doc.DocumentoNombre || doc.EnvelopeId}`,
         sections: [
           {
             activityTitle: 'Documento Anulado (Housekeeping)',
@@ -424,8 +421,8 @@ async function voidStaleDocument(doc) {
               timeZone: 'America/Mexico_City',
             }),
             facts: [
-              { name: 'Documento', value: doc.NombreDocumento || 'N/A' },
-              { name: 'Cliente', value: doc.NombreCliente || 'N/A' },
+              { name: 'Documento', value: doc.DocumentoNombre || 'N/A' },
+              { name: 'Cliente', value: doc.ClienteNombre || 'N/A' },
               { name: 'Estado anterior', value: doc.Estado },
               { name: 'Envelope ID', value: doc.EnvelopeId || 'N/A' },
               { name: 'Dias inactivo', value: String(doc.DiasInactivo || 0) },
@@ -437,13 +434,13 @@ async function voidStaleDocument(doc) {
       await teamsService.sendToTeams(card);
     } catch (teamsError) {
       logger.warn('[FIRMA-REMINDER] Error enviando notificacion Teams de anulacion', {
-        documentoId: doc.DocumentoId,
+        documentoId: doc.DocumentoFirmaId,
         error: teamsError.message,
       });
     }
 
     logger.info('[FIRMA-REMINDER] Documento anulado por housekeeping', {
-      documentoId: doc.DocumentoId,
+      documentoId: doc.DocumentoFirmaId,
       envelopeId: doc.EnvelopeId,
       diasInactivo: doc.DiasInactivo,
       estadoAnterior: doc.Estado,
@@ -452,7 +449,7 @@ async function voidStaleDocument(doc) {
     return true;
   } catch (error) {
     logger.error('[FIRMA-REMINDER] Error anulando documento por housekeeping', error, {
-      documentoId: doc.DocumentoId,
+      documentoId: doc.DocumentoFirmaId,
       envelopeId: doc.EnvelopeId,
       operation: 'voidStaleDocument',
     });

@@ -20,6 +20,23 @@ let tokenExpiresAt = 0;
 // Buffer de seguridad para renovacion de token (5 minutos antes de expirar)
 const TOKEN_BUFFER_MS = 5 * 60 * 1000;
 
+/**
+ * Cuenta las paginas de un PDF analizando su estructura interna
+ * Busca entradas /Type /Page (excluyendo /Type /Pages que es el nodo padre)
+ * @param {Buffer} pdfBuffer - Buffer del PDF
+ * @returns {number} - Numero de paginas (minimo 1)
+ */
+function _countPdfPages(pdfBuffer) {
+  try {
+    const pdfText = pdfBuffer.toString('binary');
+    // Contar /Type /Page (sin 's' al final para excluir /Type /Pages)
+    const matches = pdfText.match(/\/Type\s*\/Page(?!s)/g);
+    return matches ? matches.length : 1;
+  } catch (_e) {
+    return 1;
+  }
+}
+
 // Reintentos
 const MAX_RETRIES = config.docusign.retry.maxRetries;
 
@@ -173,15 +190,27 @@ async function createEnvelope(pdfBuffer, signerEmail, signerName, documentName, 
     // clientUserId habilita embedded signing (necesario para recipientView)
     signer.clientUserId = options.clienteTelefono || signerEmail;
 
-    // Firma en la ultima pagina (el firmante la posiciona al abrir)
+    // Tabs con anchor strings — el PDF debe contener estos textos donde se quiera la firma
+    // Se recomienda colocarlos en texto blanco o fuente 1pt para que sean invisibles
     const signHere = new docusign.SignHere();
-    signHere.anchorString = '/sn1/';
+    signHere.documentId = '1';
+    signHere.anchorString = '/firma_cliente/';
     signHere.anchorUnits = 'pixels';
     signHere.anchorXOffset = '0';
     signHere.anchorYOffset = '0';
+    signHere.scaleValue = '1.5'; // Tamaño de firma (1.0 = normal, 1.5 = 150%, 2.0 = 200%)
+
+    const dateSigned = new docusign.DateSigned();
+    dateSigned.documentId = '1';
+    dateSigned.anchorString = '/fecha_firma/';
+    dateSigned.anchorUnits = 'pixels';
+    dateSigned.anchorXOffset = '0';
+    dateSigned.anchorYOffset = '0';
+    dateSigned.fontSize = 'size12';
 
     const tabs = new docusign.Tabs();
     tabs.signHereTabs = [signHere];
+    tabs.dateSignedTabs = [dateSigned];
     signer.tabs = tabs;
 
     // Construir recipients
@@ -482,8 +511,13 @@ async function createRecipientView(envelopeId, signerEmail, signerName, returnUr
  * @returns {boolean} - true si la firma es valida
  */
 function validateWebhookHmac(payload, hmacHeader) {
-  if (!config.docusign.webhookSecret || !hmacHeader) {
-    logger.warn('[DocuSign] Webhook secret o header HMAC no configurado');
+  if (!config.docusign.webhookSecret) {
+    logger.warn('[DocuSign] DOCUSIGN_WEBHOOK_SECRET no configurado — HMAC no puede validarse');
+    return false;
+  }
+
+  if (!hmacHeader) {
+    logger.warn('[DocuSign] Header X-DocuSign-Signature-1 ausente — DocuSign no envio firma HMAC');
     return false;
   }
 
@@ -493,13 +527,27 @@ function validateWebhookHmac(payload, hmacHeader) {
       .update(payload)
       .digest('base64');
 
-    const isValid = crypto.timingSafeEqual(
-      Buffer.from(computedHmac, 'base64'),
-      Buffer.from(hmacHeader, 'base64')
-    );
+    const computedBuf = Buffer.from(computedHmac, 'base64');
+    const receivedBuf = Buffer.from(hmacHeader, 'base64');
+
+    if (computedBuf.length !== receivedBuf.length) {
+      logger.warn('[DocuSign] Webhook HMAC invalido — longitud diferente', {
+        computedLength: computedBuf.length,
+        receivedLength: receivedBuf.length,
+      });
+      return false;
+    }
+
+    const isValid = crypto.timingSafeEqual(computedBuf, receivedBuf);
 
     if (!isValid) {
-      logger.warn('[DocuSign] Webhook HMAC invalido');
+      logger.warn('[DocuSign] Webhook HMAC invalido — firma no coincide', {
+        computedPrefix: `${computedHmac.substring(0, 8)}...`,
+        receivedPrefix: `${hmacHeader.substring(0, 8)}...`,
+        secretConfigured: `${config.docusign.webhookSecret.length} chars`,
+      });
+    } else {
+      logger.info('[DocuSign] Webhook HMAC validado correctamente');
     }
 
     return isValid;
@@ -507,6 +555,8 @@ function validateWebhookHmac(payload, hmacHeader) {
     logger.error('Error validando webhook HMAC de DocuSign', error, {
       service: 'DocuSign',
       operation: 'validateWebhookHmac',
+      hmacHeaderPresent: Boolean(hmacHeader),
+      payloadLength: payload ? payload.length : 0,
     });
     return false;
   }
