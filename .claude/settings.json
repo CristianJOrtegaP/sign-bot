@@ -1,17 +1,5 @@
 {
   "permissions": {
-    "allow": [
-      "Bash(cd:*)",
-      "Edit(*)",
-      "Write(*)",
-      "Read(*)",
-      "Execute(*)",
-      "Create(*)",
-      "Delete(*)",
-      "Move(*)",
-      "Copy(*)",
-      "Rename(*)",
-      "Search"
-    ]
+    "allow": ["Bash(**)", "Read(**)", "Write(**)", "Edit(**)", "mcp__pencil"]
   }
 }
