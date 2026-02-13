@@ -12,11 +12,6 @@ async function apiFetch(endpoint, options = {}) {
     ...options.headers,
   };
 
-  // Include Azure Function Key if configured (required for authLevel: function)
-  if (window.CONFIG.FUNCTIONS_KEY) {
-    headers['x-functions-key'] = window.CONFIG.FUNCTIONS_KEY;
-  }
-
   try {
     const response = await fetch(url, {
       ...options,
