@@ -207,7 +207,7 @@ async function loadChat(phone) {
       }
     }, window.CONFIG.REFRESH_INTERVAL_CHAT);
   } catch (err) {
-    chatArea.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
+    chatArea.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${window.Utils.escapeHtml(err.message)}</p></div>`;
   }
 }
 

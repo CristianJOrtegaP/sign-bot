@@ -59,7 +59,7 @@ async function initializeUser() {
     console.log('Easy Auth not available, using default user');
   }
 
-  console.log('User initialized:', agentName, agentEmail);
+  // No loguear email en consola (seguridad: evita exposicion de PII)
   updateUserUI();
 }
 

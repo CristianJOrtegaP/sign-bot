@@ -4,6 +4,9 @@
  * FASE 3: Persistencia en SQL para compliance y análisis
  */
 
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const { logger } = require('./errorHandler');
 const correlation = require('./correlationService');
 
@@ -23,6 +26,63 @@ function getDbService() {
 // In-memory buffer for audit events that fail to persist
 const MAX_BUFFER_SIZE = 500;
 const auditBuffer = [];
+
+// Ruta del archivo de respaldo para buffer ante reciclaje de proceso
+const BUFFER_BACKUP_PATH = path.join(os.tmpdir(), 'signbot-audit-buffer.json');
+
+/**
+ * Respalda el buffer de auditoria a disco (ante shutdown)
+ * Evita perder eventos cuando el proceso se recicla
+ */
+function flushBufferToDisk() {
+  if (auditBuffer.length === 0) {
+    return;
+  }
+  try {
+    // Leer eventos previos del archivo (si existen)
+    let existing = [];
+    try {
+      const data = fs.readFileSync(BUFFER_BACKUP_PATH, 'utf8');
+      existing = JSON.parse(data);
+    } catch {
+      // No file or invalid JSON, start fresh
+    }
+
+    const combined = [...existing, ...auditBuffer].slice(-MAX_BUFFER_SIZE);
+    fs.writeFileSync(BUFFER_BACKUP_PATH, JSON.stringify(combined), 'utf8');
+    logger.debug(`[Audit] Buffer respaldado a disco: ${auditBuffer.length} eventos`);
+  } catch (err) {
+    logger.warn('[Audit] Error respaldando buffer a disco', { error: err.message });
+  }
+}
+
+/**
+ * Restaura el buffer de auditoria desde disco (al iniciar)
+ */
+function restoreBufferFromDisk() {
+  try {
+    if (!fs.existsSync(BUFFER_BACKUP_PATH)) {
+      return;
+    }
+    const data = fs.readFileSync(BUFFER_BACKUP_PATH, 'utf8');
+    const events = JSON.parse(data);
+    if (Array.isArray(events) && events.length > 0) {
+      auditBuffer.push(...events.slice(0, MAX_BUFFER_SIZE - auditBuffer.length));
+      // Limpiar archivo despues de restaurar
+      fs.unlinkSync(BUFFER_BACKUP_PATH);
+      logger.info(`[Audit] Buffer restaurado desde disco: ${events.length} eventos`);
+    }
+  } catch (err) {
+    logger.debug('[Audit] No se pudo restaurar buffer desde disco', { error: err.message });
+  }
+}
+
+// Restaurar buffer al cargar el modulo
+restoreBufferFromDisk();
+
+// Respaldar buffer ante senales de terminacion
+process.on('SIGTERM', flushBufferToDisk);
+process.on('SIGINT', flushBufferToDisk);
 
 /**
  * Drains buffered audit events to SQL (called on next successful persist)

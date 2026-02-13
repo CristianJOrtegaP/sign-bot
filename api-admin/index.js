@@ -46,11 +46,24 @@ module.exports = async function (context, req) {
 
   // ============================================
   // AUTENTICACION: Azure Function Key (nativa)
-  // Azure ya valido la key antes de llegar aqui
-  // Si el request llego, la key es valida
+  // Azure ya valido la key antes de llegar aqui.
+  // FALLBACK: Si authLevel es 'anonymous' (ej. SWA Free tier),
+  // validamos manualmente via header o query param.
   // ============================================
+  if (process.env.ADMIN_API_KEY) {
+    const providedKey =
+      req.headers['x-api-key'] || req.headers['x-functions-key'] || req.query.code;
+    if (!providedKey || providedKey !== process.env.ADMIN_API_KEY) {
+      context.res = {
+        status: 401,
+        headers: applySecurityHeaders({ 'Content-Type': 'application/json' }),
+        body: { success: false, error: 'Unauthorized' },
+      };
+      return;
+    }
+  }
 
-  // Rate limiting por IP (la key ya fue validada por Azure)
+  // Rate limiting por IP (la key ya fue validada)
   const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || 'unknown';
   const rateLimit = checkIpRateLimit(clientIp);
 

@@ -2,6 +2,21 @@
 -- SIGN BOT - Base de Datos Completa
 -- Firma digital de documentos via DocuSign + WhatsApp
 -- =============================================
+--
+-- SEGURIDAD - Cifrado de datos en reposo:
+-- Azure SQL Database habilita TDE (Transparent Data Encryption)
+-- por defecto. Verificar con:
+--   SELECT db.name, dm.encryption_state
+--   FROM sys.databases db
+--   LEFT JOIN sys.dm_database_encryption_keys dm
+--     ON db.database_id = dm.database_id
+--   WHERE db.name = 'db-signbot';
+-- (encryption_state = 3 indica cifrado activo)
+--
+-- Las columnas con PII (Telefono, NombreUsuario, ClienteEmail)
+-- estan protegidas por TDE en reposo y TLS 1.2 en transito.
+-- sp_PurgeOldPersonalData anonimiza PII expirada (LFPDPPP).
+-- =============================================
 
 USE [db-signbot];
 GO
@@ -652,6 +667,69 @@ GO
 PRINT '   sp_CleanOldAuditEvents creado';
 GO
 
+-- SP: Purga de datos personales (LFPDPPP compliance)
+-- Anonimiza PII en sesiones y documentos finalizados que exceden
+-- el periodo de retencion. Azure SQL TDE cifra datos en reposo
+-- automaticamente; este SP complementa con minimizacion de datos.
+CREATE OR ALTER PROCEDURE [dbo].[sp_PurgeOldPersonalData]
+    @MonthsToKeep INT = 24 -- 2 anos por defecto
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @CutoffDate DATETIME = DATEADD(MONTH, -@MonthsToKeep, GETUTCDATE());
+    DECLARE @AnonSessions INT = 0;
+    DECLARE @AnonDocuments INT = 0;
+    DECLARE @DeletedMessages INT = 0;
+
+    -- 1. Anonimizar sesiones terminales antiguas
+    UPDATE SesionesChat
+    SET Telefono = CONCAT('PURGED_', SesionId),
+        NombreUsuario = NULL,
+        DatosTemp = NULL
+    WHERE UltimaActividad < @CutoffDate
+      AND EstadoId IN (SELECT EstadoId FROM CatEstadoSesion WHERE EsTerminal = 1)
+      AND Telefono NOT LIKE 'PURGED_%';
+
+    SET @AnonSessions = @@ROWCOUNT;
+
+    -- 2. Anonimizar documentos finalizados antiguos
+    UPDATE DocumentosFirma
+    SET ClienteTelefono = 'PURGED',
+        ClienteNombre = 'PURGED',
+        ClienteEmail = NULL
+    WHERE FechaCreacion < @CutoffDate
+      AND EstadoDocumentoId IN (SELECT EstadoDocumentoId FROM CatEstadoDocumento WHERE EsFinal = 1)
+      AND ClienteTelefono <> 'PURGED';
+
+    SET @AnonDocuments = @@ROWCOUNT;
+
+    -- 3. Eliminar mensajes de chat de sesiones purgadas
+    DELETE mc FROM MensajesChat mc
+    INNER JOIN SesionesChat s ON mc.SesionId = s.SesionId
+    WHERE s.Telefono LIKE 'PURGED_%'
+      AND mc.FechaCreacion < @CutoffDate;
+
+    SET @DeletedMessages = @@ROWCOUNT;
+
+    -- Registrar en audit
+    INSERT INTO AuditEvents (EventType, Severity, Details, [Timestamp])
+    VALUES ('DATA_PURGE', 'INFO',
+            CONCAT('{"sessions":', @AnonSessions,
+                   ',"documents":', @AnonDocuments,
+                   ',"messages":', @DeletedMessages,
+                   ',"monthsToKeep":', @MonthsToKeep, '}'),
+            GETUTCDATE());
+
+    SELECT @AnonSessions AS SessionsPurged,
+           @AnonDocuments AS DocumentsPurged,
+           @DeletedMessages AS MessagesDeleted;
+END;
+GO
+
+PRINT '   sp_PurgeOldPersonalData creado (LFPDPPP compliance)';
+GO
+
 -- =============================================
 -- PASO 13: STORED PROCEDURES DE DOCUMENTOS
 -- =============================================
@@ -1196,7 +1274,7 @@ PRINT 'Tablas: SesionesChat, DocumentosFirma, HistorialSesiones,';
 PRINT '        MensajesChat, MensajesProcessados, DeadLetterMessages,';
 PRINT '        EventosDocuSignProcessados, AuditEvents';
 PRINT '';
-PRINT 'Stored Procedures: 18';
+PRINT 'Stored Procedures: 19 (incluye sp_PurgeOldPersonalData para LFPDPPP)';
 PRINT 'Vistas: 2 (vw_SesionesActivas, vw_DocumentosFirma)';
 PRINT '';
 PRINT '===============================================================';

@@ -63,12 +63,24 @@ async function reprocessMessage(dlMessage, context) {
         message = { type: 'text', text: { body: Contenido } };
         break;
       case 'image': {
-        const imageData = JSON.parse(Contenido);
+        let imageData;
+        try {
+          imageData = JSON.parse(Contenido);
+        } catch (_parseErr) {
+          throw new Error(`JSON malformado en contenido de imagen: ${Contenido?.substring(0, 50)}`);
+        }
         message = { type: 'image', image: imageData };
         break;
       }
       case 'interactive': {
-        const payload = JSON.parse(Contenido);
+        let payload;
+        try {
+          payload = JSON.parse(Contenido);
+        } catch (_parseErr) {
+          throw new Error(
+            `JSON malformado en contenido interactivo: ${Contenido?.substring(0, 50)}`
+          );
+        }
         message = { type: 'interactive', interactive: { button_reply: payload } };
         break;
       }

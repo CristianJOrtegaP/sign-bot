@@ -25,6 +25,9 @@ const {
   TIPO_CONTENIDO: _TIPO_CONTENIDO,
 } = require('../bot/constants/sessionStates');
 
+// Regex para validar formato de telefono (10-15 digitos, opcionalmente con +)
+const PHONE_REGEX = /^\+?\d{10,15}$/;
+
 // CORS: allow only the configured frontend origin (default: none)
 const ALLOWED_ORIGIN = process.env.FRONTEND_ORIGIN || '';
 
@@ -524,8 +527,8 @@ module.exports = async function (context, req) {
 
       switch (action) {
         case 'takeover':
-          if (!param) {
-            response = { success: false, error: 'Telefono requerido' };
+          if (!param || !PHONE_REGEX.test(param)) {
+            response = { success: false, error: 'Telefono requerido o formato invalido' };
             break;
           }
           response = await takeoverConversation(
@@ -536,16 +539,16 @@ module.exports = async function (context, req) {
           break;
 
         case 'release':
-          if (!param) {
-            response = { success: false, error: 'Telefono requerido' };
+          if (!param || !PHONE_REGEX.test(param)) {
+            response = { success: false, error: 'Telefono requerido o formato invalido' };
             break;
           }
           response = await releaseConversation(param);
           break;
 
         case 'send':
-          if (!param) {
-            response = { success: false, error: 'Telefono requerido' };
+          if (!param || !PHONE_REGEX.test(param)) {
+            response = { success: false, error: 'Telefono requerido o formato invalido' };
             break;
           }
           if (!body.mensaje) {
@@ -589,6 +592,10 @@ module.exports = async function (context, req) {
       case 'chat': {
         if (!param) {
           response = { success: false, error: 'Telefono requerido' };
+          break;
+        }
+        if (!PHONE_REGEX.test(param)) {
+          response = { success: false, error: 'Formato de telefono invalido' };
           break;
         }
         const chatData = await getChatHistory(param, parseInt(req.query.limit) || 500);

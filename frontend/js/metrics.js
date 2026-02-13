@@ -52,7 +52,7 @@ async function loadAll() {
     container.innerHTML = renderMetricsGrid();
     initMetricsCharts(charts, stats);
   } catch (err) {
-    container.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
+    container.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${window.Utils.escapeHtml(err.message)}</p></div>`;
   }
 }
 

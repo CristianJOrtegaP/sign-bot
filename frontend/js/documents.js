@@ -48,7 +48,7 @@ async function loadDocuments() {
     // Restore filter values
     restoreFilterValues();
   } catch (err) {
-    container.innerHTML = `${renderFilterBar()}<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
+    container.innerHTML = `${renderFilterBar()}<div class="empty-state"><h2>Error</h2><p>${window.Utils.escapeHtml(err.message)}</p></div>`;
     restoreFilterValues();
   }
 }

@@ -8,6 +8,7 @@
 const appInsights = require('../core/services/infrastructure/appInsightsService');
 appInsights.initialize();
 
+const crypto = require('crypto');
 const { processMessageByType } = require('../core/services/processing/messageRouter');
 const serviceBus = require('../core/services/messaging/serviceBusService');
 const config = require('../core/config');
@@ -41,14 +42,15 @@ function handleWebhookVerification(context, req, log) {
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  log(
-    'Verificacion webhook - Mode:',
-    mode,
-    'Token valido:',
-    token === process.env.WHATSAPP_VERIFY_TOKEN
-  );
+  // Timing-safe token comparison (previene timing attacks)
+  const expected = Buffer.from(process.env.WHATSAPP_VERIFY_TOKEN || '');
+  const received = Buffer.from(token || '');
+  const tokensMatch =
+    expected.length === received.length && crypto.timingSafeEqual(expected, received);
 
-  if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
+  log('Verificacion webhook - Mode:', mode, 'Token valido:', tokensMatch);
+
+  if (mode === 'subscribe' && tokensMatch) {
     log('Webhook verificado exitosamente');
     return { status: 200, body: Number(challenge) || challenge };
   }

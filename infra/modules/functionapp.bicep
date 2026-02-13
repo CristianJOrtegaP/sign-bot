@@ -38,12 +38,12 @@ var tags = {
   environment: environment
 }
 
-// dev: B1 (Basic) — funciona en suscripciones gratuitas (~$13/mo)
-// tst/prod: Y1 (Consumption/Dynamic) — requiere Pay-As-You-Go (~$0/mo para <1M ejecuciones)
+// dev/prod: B1 (Basic) — Always On elimina cold starts (~$13/mo)
+// tst: Y1 (Consumption/Dynamic) — requiere Pay-As-You-Go (~$0/mo para <1M ejecuciones)
 var skuMap = {
   dev: { name: 'B1', tier: 'Basic' }
   tst: { name: 'Y1', tier: 'Dynamic' }
-  prod: { name: 'Y1', tier: 'Dynamic' }
+  prod: { name: 'B1', tier: 'Basic' }
 }
 var skuName = skuMap[environment].name
 var skuTier = skuMap[environment].tier
