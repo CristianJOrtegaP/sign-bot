@@ -20,6 +20,32 @@ function getDbService() {
   return dbService;
 }
 
+// In-memory buffer for audit events that fail to persist
+const MAX_BUFFER_SIZE = 500;
+const auditBuffer = [];
+
+/**
+ * Drains buffered audit events to SQL (called on next successful persist)
+ */
+async function drainAuditBuffer() {
+  if (auditBuffer.length === 0) {
+    return;
+  }
+
+  const batch = auditBuffer.splice(0, 50); // Process 50 at a time
+  for (const entry of batch) {
+    try {
+      await persistAuditEventDirect(entry);
+    } catch (_e) {
+      // If still failing, re-buffer (at the end)
+      if (auditBuffer.length < MAX_BUFFER_SIZE) {
+        auditBuffer.push(entry);
+      }
+      break; // Stop trying if DB is still down
+    }
+  }
+}
+
 /**
  * Tipos de eventos de auditoria
  */
@@ -100,12 +126,46 @@ function logAuditEvent(eventType, details = {}, severity = SEVERITY.INFO, req = 
       logger.info(logMessage, auditEntry);
   }
 
-  // FASE 3: Persistir en SQL (async, no bloqueante)
+  // FASE 3: Persistir en SQL (async, no bloqueante) with buffer fallback
   persistAuditEvent(auditEntry).catch((err) => {
-    logger.debug('Error persistiendo audit event', { error: err.message });
+    // Buffer failed events for retry
+    if (auditBuffer.length < MAX_BUFFER_SIZE) {
+      auditBuffer.push(auditEntry);
+    }
+    logger.debug('Error persistiendo audit event (buffered)', { error: err.message });
   });
 
   return auditEntry;
+}
+
+/**
+ * Persiste evento de auditoría en tabla SQL directamente (sin buffer)
+ * @param {Object} auditEntry - Entrada de auditoría
+ */
+async function persistAuditEventDirect(auditEntry) {
+  const db = getDbService();
+  if (!db) {
+    return;
+  }
+
+  const pool = await db.getPool();
+  if (!pool) {
+    return;
+  }
+
+  await pool
+    .request()
+    .input('EventType', auditEntry.eventType)
+    .input('Severity', auditEntry.severity)
+    .input('CorrelationId', auditEntry.correlationId || null)
+    .input('Details', JSON.stringify(auditEntry.details || {}))
+    .input('RequestInfo', auditEntry.request ? JSON.stringify(auditEntry.request) : null)
+    .input('Timestamp', auditEntry.timestamp).query(`
+      INSERT INTO AuditEvents
+      (EventType, Severity, CorrelationId, Details, RequestInfo, Timestamp)
+      VALUES
+      (@EventType, @Severity, @CorrelationId, @Details, @RequestInfo, @Timestamp)
+    `);
 }
 
 /**
@@ -114,36 +174,20 @@ function logAuditEvent(eventType, details = {}, severity = SEVERITY.INFO, req = 
  * @param {Object} auditEntry - Entrada de auditoría
  */
 async function persistAuditEvent(auditEntry) {
-  const db = getDbService();
-  if (!db) {
-    return;
-  }
-
   try {
-    const pool = await db.getPool();
-    if (!pool) {
-      return;
-    }
+    await persistAuditEventDirect(auditEntry);
 
-    await pool
-      .request()
-      .input('EventType', auditEntry.eventType)
-      .input('Severity', auditEntry.severity)
-      .input('CorrelationId', auditEntry.correlationId || null)
-      .input('Details', JSON.stringify(auditEntry.details || {}))
-      .input('RequestInfo', auditEntry.request ? JSON.stringify(auditEntry.request) : null)
-      .input('Timestamp', auditEntry.timestamp).query(`
-                INSERT INTO AuditEvents
-                (EventType, Severity, CorrelationId, Details, RequestInfo, Timestamp)
-                VALUES
-                (@EventType, @Severity, @CorrelationId, @Details, @RequestInfo, @Timestamp)
-            `);
+    // On success, try to drain any buffered events
+    if (auditBuffer.length > 0) {
+      drainAuditBuffer().catch(() => {});
+    }
   } catch (error) {
     // No propagar errores de auditoría para no afectar flujo principal
     // Si la tabla no existe, ignorar silenciosamente
     if (!error.message?.includes('Invalid object name')) {
       logger.debug('Error persistiendo audit event en SQL', { error: error.message });
     }
+    throw error; // Re-throw so caller can buffer
   }
 }
 

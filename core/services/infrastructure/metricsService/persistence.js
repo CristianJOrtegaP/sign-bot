@@ -111,11 +111,14 @@ async function getHistoricalMetrics(date = null, operationType = null) {
   }
 
   try {
-    const partitionKey = date || getPartitionKey();
+    // Sanitize OData filter values to prevent injection
+    const safeDate = date ? date.replace(/'/g, "''") : null;
+    const partitionKey = safeDate || getPartitionKey();
     let filter = `PartitionKey eq '${partitionKey}'`;
 
     if (operationType) {
-      filter += ` and operation eq '${operationType}'`;
+      const safeOp = operationType.replace(/'/g, "''");
+      filter += ` and operation eq '${safeOp}'`;
     }
 
     const entities = [];
@@ -161,7 +164,8 @@ async function getHistoricalErrors(date = null) {
   }
 
   try {
-    const partitionKey = date || getPartitionKey();
+    const safeDate = date ? date.replace(/'/g, "''") : null;
+    const partitionKey = safeDate || getPartitionKey();
     const entities = [];
     const iterator = getErrorsTableClient().listEntities({
       queryOptions: { filter: `PartitionKey eq '${partitionKey}'` },

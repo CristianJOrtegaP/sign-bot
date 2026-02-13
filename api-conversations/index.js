@@ -25,6 +25,20 @@ const {
   TIPO_CONTENIDO: _TIPO_CONTENIDO,
 } = require('../bot/constants/sessionStates');
 
+// CORS: allow only the configured frontend origin (default: none)
+const ALLOWED_ORIGIN = process.env.FRONTEND_ORIGIN || '';
+
+/**
+ * Returns the CORS origin header value based on the request origin
+ */
+function getCorsOrigin(req) {
+  if (!ALLOWED_ORIGIN) {
+    return '';
+  }
+  const origin = req.headers?.origin || '';
+  return origin === ALLOWED_ORIGIN ? origin : '';
+}
+
 /**
  * Obtiene lista de conversaciones activas (agrupadas por telefono)
  */
@@ -453,9 +467,9 @@ module.exports = async function (context, req) {
     context.res = {
       status: 204,
       headers: {
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': getCorsOrigin(req),
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-functions-key',
         'Access-Control-Max-Age': '86400',
       },
     };
@@ -467,6 +481,45 @@ module.exports = async function (context, req) {
 
     // POST actions (agente)
     if (method === 'POST') {
+      // Rate limit: max 30 POST requests per minute per IP
+      const ip =
+        req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+        req.headers['x-real-ip'] ||
+        'unknown';
+      const now = Date.now();
+      const windowMs = 60000;
+      const maxRequests = 30;
+      if (!module.exports._postRateMap) {
+        module.exports._postRateMap = new Map();
+      }
+      const rateMap = module.exports._postRateMap;
+      const entry = rateMap.get(ip);
+      if (entry && now - entry.windowStart < windowMs) {
+        entry.count++;
+        if (entry.count > maxRequests) {
+          context.res = {
+            status: 429,
+            headers: applySecurityHeaders({
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': getCorsOrigin(req),
+              'Retry-After': '60',
+            }),
+            body: { success: false, error: 'Rate limit excedido. Intenta en 1 minuto.' },
+          };
+          return;
+        }
+      } else {
+        rateMap.set(ip, { windowStart: now, count: 1 });
+        // Evict old entries periodically
+        if (rateMap.size > 1000) {
+          for (const [k, v] of rateMap) {
+            if (now - v.windowStart > windowMs) {
+              rateMap.delete(k);
+            }
+          }
+        }
+      }
+
       const body = req.body || {};
 
       switch (action) {
@@ -499,6 +552,10 @@ module.exports = async function (context, req) {
             response = { success: false, error: 'Mensaje requerido' };
             break;
           }
+          if (typeof body.mensaje !== 'string' || body.mensaje.length > 4096) {
+            response = { success: false, error: 'Mensaje debe ser texto de max 4096 caracteres' };
+            break;
+          }
           response = await sendAgentMessage(param, body.mensaje, body.agenteId || 'unknown');
           break;
 
@@ -510,7 +567,7 @@ module.exports = async function (context, req) {
         status: 200,
         headers: applySecurityHeaders({
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Origin': getCorsOrigin(req),
         }),
         body: response,
       };
@@ -544,6 +601,10 @@ module.exports = async function (context, req) {
           response = { success: false, error: 'Query muy corto (min 3 caracteres)' };
           break;
         }
+        if (param.length > 100) {
+          response = { success: false, error: 'Query muy largo (max 100 caracteres)' };
+          break;
+        }
         const searchResults = await searchConversations(param);
         response = { success: true, results: searchResults };
         break;
@@ -561,7 +622,7 @@ module.exports = async function (context, req) {
       status: 200,
       headers: applySecurityHeaders({
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': getCorsOrigin(req),
       }),
       body: response,
     };
@@ -571,9 +632,9 @@ module.exports = async function (context, req) {
       status: 500,
       headers: applySecurityHeaders({
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': getCorsOrigin(req),
       }),
-      body: { success: false, error: error.message },
+      body: { success: false, error: 'Error interno del servidor' },
     };
   }
 };

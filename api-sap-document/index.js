@@ -121,6 +121,27 @@ function validatePayload(body) {
     }
   }
 
+  // Optional callback URL validation (SSRF protection)
+  if (body.sapCallbackUrl) {
+    if (typeof body.sapCallbackUrl !== 'string') {
+      return { valid: false, error: 'sapCallbackUrl debe ser un string' };
+    }
+    try {
+      // eslint-disable-next-line no-undef
+      const parsed = new URL(body.sapCallbackUrl);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return { valid: false, error: 'sapCallbackUrl: protocolo no permitido (solo http/https)' };
+      }
+      const blockedHostPatterns =
+        /^(localhost|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|169\.254\.\d+\.\d+|0\.0\.0\.0|\[::1?\])$/i;
+      if (blockedHostPatterns.test(parsed.hostname)) {
+        return { valid: false, error: 'sapCallbackUrl: host no permitido' };
+      }
+    } catch (_e) {
+      return { valid: false, error: 'sapCallbackUrl no es una URL valida' };
+    }
+  }
+
   return { valid: true };
 }
 

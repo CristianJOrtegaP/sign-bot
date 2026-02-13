@@ -42,10 +42,20 @@ const REFRESH_INTERVAL_HEALTH = 60000; // 60 seconds
 // Pagination
 const DOCUMENTS_PAGE_SIZE = 20;
 
+// Function keys per environment (conversations API requires authLevel: function)
+const FUNCTIONS_KEYS = {
+  local: '', // No key needed for local development
+  dev: '', // Set via SWA app settings or env
+  tst: '',
+  prod: '',
+};
+const FUNCTIONS_KEY = FUNCTIONS_KEYS[ENVIRONMENT] || '';
+
 // Export for use in other modules
 window.CONFIG = {
   ENVIRONMENT,
   API_BASE,
+  FUNCTIONS_KEY,
   REFRESH_INTERVAL_KPIS,
   REFRESH_INTERVAL_DOCUMENTS,
   REFRESH_INTERVAL_CONVERSATIONS,

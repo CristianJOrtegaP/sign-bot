@@ -66,13 +66,13 @@ function initialize() {
       gracefulShutdown.setupSignalHandlers();
       gracefulShutdown.registerCommonHandlers();
       console.log('[AppInsights] Graceful shutdown configurado');
-    } catch (shutdownError) {
-      console.warn('[AppInsights] No se pudo configurar graceful shutdown:', shutdownError.message);
+    } catch (_shutdownError) {
+      console.warn('[AppInsights] No se pudo configurar graceful shutdown');
     }
 
     return true;
-  } catch (error) {
-    console.error('[AppInsights] Error inicializando:', error.message);
+  } catch (_error) {
+    console.error('[AppInsights] Error inicializando telemetria');
     return false;
   }
 }

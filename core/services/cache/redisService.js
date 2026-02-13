@@ -102,8 +102,9 @@ async function connect() {
             usingFallback = true;
             return false; // Detener reconexión
           }
-          const delay = Math.min(retries * config.redis.reconnect.retryDelayMs, 5000);
-          return delay;
+          const baseDelay = Math.min(retries * config.redis.reconnect.retryDelayMs, 5000);
+          const jitter = Math.random() * 0.25 * baseDelay; // 0-25% jitter
+          return Math.floor(baseDelay + jitter);
         },
       },
       password: config.redis.password,

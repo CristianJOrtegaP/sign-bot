@@ -41,7 +41,12 @@ function handleWebhookVerification(context, req, log) {
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  log('Verificacion webhook - Mode:', mode, 'Token:', token);
+  log(
+    'Verificacion webhook - Mode:',
+    mode,
+    'Token valido:',
+    token === process.env.WHATSAPP_VERIFY_TOKEN
+  );
 
   if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
     log('Webhook verificado exitosamente');
