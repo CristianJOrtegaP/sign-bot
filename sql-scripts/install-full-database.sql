@@ -365,6 +365,35 @@ PRINT '   EventosDocuSignProcessados creada';
 GO
 
 -- =============================================
+-- PASO 10b: CREAR TABLA AUDIT EVENTS
+-- =============================================
+
+PRINT '';
+PRINT 'Paso 10b: Creando AuditEvents...';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'AuditEvents')
+CREATE TABLE [dbo].[AuditEvents] (
+    [AuditEventId] BIGINT IDENTITY(1,1) PRIMARY KEY,
+    [EventType] NVARCHAR(100) NOT NULL,
+    [Severity] NVARCHAR(20) NOT NULL DEFAULT 'INFO',
+    [CorrelationId] NVARCHAR(50) NULL,
+    [Details] NVARCHAR(MAX) NULL,
+    [RequestInfo] NVARCHAR(MAX) NULL,
+    [Timestamp] DATETIME NOT NULL DEFAULT GETUTCDATE(),
+    [FechaCreacion] DATETIME NOT NULL DEFAULT GETUTCDATE()
+);
+
+CREATE NONCLUSTERED INDEX [IX_AuditEvents_EventType] ON [dbo].[AuditEvents] ([EventType], [Timestamp] DESC);
+CREATE NONCLUSTERED INDEX [IX_AuditEvents_Severity] ON [dbo].[AuditEvents] ([Severity]) WHERE [Severity] IN ('ERROR', 'CRITICAL');
+CREATE NONCLUSTERED INDEX [IX_AuditEvents_CorrelationId] ON [dbo].[AuditEvents] ([CorrelationId]) WHERE [CorrelationId] IS NOT NULL;
+CREATE NONCLUSTERED INDEX [IX_AuditEvents_Timestamp] ON [dbo].[AuditEvents] ([Timestamp] DESC);
+GO
+
+PRINT '   AuditEvents creada';
+GO
+
+-- =============================================
 -- PASO 11: INSERTAR DATOS EN CATALOGOS
 -- =============================================
 
@@ -603,6 +632,24 @@ END;
 GO
 
 PRINT '   sp_CleanOldDeadLetters creado';
+GO
+
+-- SP: Limpiar audit events antiguos
+CREATE OR ALTER PROCEDURE [dbo].[sp_CleanOldAuditEvents]
+    @DaysToKeep INT = 90
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM AuditEvents
+    WHERE [Timestamp] < DATEADD(DAY, -@DaysToKeep, GETUTCDATE())
+      AND Severity IN ('INFO', 'WARNING');
+
+    SELECT @@ROWCOUNT AS DeletedCount;
+END;
+GO
+
+PRINT '   sp_CleanOldAuditEvents creado';
 GO
 
 -- =============================================
@@ -1135,7 +1182,8 @@ UNION ALL SELECT 'HistorialSesiones', COUNT(*) FROM [dbo].[HistorialSesiones]
 UNION ALL SELECT 'MensajesChat', COUNT(*) FROM [dbo].[MensajesChat]
 UNION ALL SELECT 'MensajesProcessados', COUNT(*) FROM [dbo].[MensajesProcessados]
 UNION ALL SELECT 'DeadLetterMessages', COUNT(*) FROM [dbo].[DeadLetterMessages]
-UNION ALL SELECT 'EventosDocuSignProcessados', COUNT(*) FROM [dbo].[EventosDocuSignProcessados];
+UNION ALL SELECT 'EventosDocuSignProcessados', COUNT(*) FROM [dbo].[EventosDocuSignProcessados]
+UNION ALL SELECT 'AuditEvents', COUNT(*) FROM [dbo].[AuditEvents];
 GO
 
 PRINT '';
@@ -1146,9 +1194,9 @@ PRINT '   - CatTipoDocumento: 4 tipos';
 PRINT '';
 PRINT 'Tablas: SesionesChat, DocumentosFirma, HistorialSesiones,';
 PRINT '        MensajesChat, MensajesProcessados, DeadLetterMessages,';
-PRINT '        EventosDocuSignProcessados';
+PRINT '        EventosDocuSignProcessados, AuditEvents';
 PRINT '';
-PRINT 'Stored Procedures: 17';
+PRINT 'Stored Procedures: 18';
 PRINT 'Vistas: 2 (vw_SesionesActivas, vw_DocumentosFirma)';
 PRINT '';
 PRINT '===============================================================';
