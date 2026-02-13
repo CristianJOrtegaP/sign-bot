@@ -45,7 +45,12 @@ const whatsappService = require('../core/services/external/whatsappService');
 const blobService = require('../core/services/storage/blobService');
 const teamsService = require('../core/services/external/teamsService');
 const { buildTemplatePayload, TEMPLATE_NAMES } = require('../bot/constants/whatsappTemplates');
-const { ESTADO_DOCUMENTO, TIPO_DOCUMENTO } = require('../bot/constants/documentStates');
+const {
+  ESTADO_DOCUMENTO,
+  ESTADO_DOCUMENTO_ID,
+  TIPO_DOCUMENTO,
+  getTipoDocumentoId,
+} = require('../bot/constants/documentStates');
 
 // PDF magic bytes: %PDF (hex: 25504446)
 const PDF_MAGIC_BYTES = Buffer.from([0x25, 0x50, 0x44, 0x46]);
@@ -327,22 +332,21 @@ module.exports = async function (context, req) {
 
     // 6. Save document record in DB
     let documentoId;
+    let documentoVersion = 0;
     try {
       const record = await documentoRepo.crear({
-        sapDocumentId,
-        sapCallbackUrl: sapCallbackUrl || null,
-        envelopeId,
-        clienteTelefono,
-        clienteNombre,
-        clienteEmail: clienteEmail || null,
-        tipoDocumento,
-        documentoNombre,
-        blobUrlOriginal: blobUrl,
-        signingUrl,
-        estado: ESTADO_DOCUMENTO.PENDIENTE_ENVIO,
-        datosExtra: datosExtra ? JSON.stringify(datosExtra) : null,
+        SapDocumentId: sapDocumentId,
+        SapCallbackUrl: sapCallbackUrl || null,
+        ClienteTelefono: clienteTelefono,
+        ClienteNombre: clienteNombre,
+        ClienteEmail: clienteEmail || null,
+        TipoDocumentoId: getTipoDocumentoId(tipoDocumento),
+        DocumentoNombre: documentoNombre,
+        DocumentoOriginalUrl: blobUrl,
+        DatosExtra: datosExtra ? JSON.stringify(datosExtra) : null,
       });
       documentoId = record.DocumentoFirmaId;
+      documentoVersion = record.Version || 0;
       log(`Documento registrado en BD: ${documentoId}`);
     } catch (dbError) {
       logError('Error guardando documento en BD:', dbError);
@@ -351,12 +355,13 @@ module.exports = async function (context, req) {
     }
 
     // 7. Send WhatsApp template notification
+    // signingUrl param = documentoId (el template URL en Meta redirige via /api/firma/{id})
     try {
       const templatePayload = buildTemplatePayload(TEMPLATE_NAMES.FIRMA_ENVIO, {
         clienteNombre,
         tipoDocumento,
         documentoNombre,
-        signingUrl: signingUrl || '',
+        signingUrl: String(documentoId),
       });
 
       await whatsappService.sendTemplate(clienteTelefono, templatePayload);
@@ -375,7 +380,12 @@ module.exports = async function (context, req) {
 
     // 8. Update document state to ENVIADO
     try {
-      await documentoRepo.actualizarEstado(documentoId, ESTADO_DOCUMENTO.ENVIADO);
+      await documentoRepo.actualizarEstado(
+        documentoId,
+        ESTADO_DOCUMENTO_ID.ENVIADO,
+        documentoVersion,
+        { EnvelopeId: envelopeId, SigningUrl: signingUrl }
+      );
       log('Estado actualizado a ENVIADO');
     } catch (stateError) {
       logError('Error actualizando estado a ENVIADO:', stateError);

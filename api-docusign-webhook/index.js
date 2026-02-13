@@ -36,7 +36,7 @@ const whatsappService = require('../core/services/external/whatsappService');
 const blobService = require('../core/services/storage/blobService');
 const teamsService = require('../core/services/external/teamsService');
 const { buildTemplatePayload, TEMPLATE_NAMES } = require('../bot/constants/whatsappTemplates');
-const { ESTADO_DOCUMENTO } = require('../bot/constants/documentStates');
+const { ESTADO_DOCUMENTO_ID } = require('../bot/constants/documentStates');
 
 // ==============================================================
 // LAZY-LOADED REPOSITORIES
@@ -54,9 +54,6 @@ function getDocumentoRepo() {
           return null;
         },
         async actualizarEstado() {
-          return true;
-        },
-        async actualizarBlobFirmado() {
           return true;
         },
       };
@@ -176,11 +173,15 @@ async function uploadSignedPdf(pdfBuffer, sapDocumentId) {
  * Handles envelope-sent event
  */
 async function handleEnvelopeSent(documento, log) {
-  if (documento.EstadoDocumento === ESTADO_DOCUMENTO.ENVIADO) {
+  if (documento.EstadoDocumentoId === ESTADO_DOCUMENTO_ID.ENVIADO) {
     log('Documento ya marcado como ENVIADO, omitiendo');
     return;
   }
-  await getDocumentoRepo().actualizarEstado(documento.DocumentoFirmaId, ESTADO_DOCUMENTO.ENVIADO);
+  await getDocumentoRepo().actualizarEstado(
+    documento.DocumentoFirmaId,
+    ESTADO_DOCUMENTO_ID.ENVIADO,
+    documento.Version
+  );
   log('Estado actualizado a ENVIADO');
 }
 
@@ -188,7 +189,11 @@ async function handleEnvelopeSent(documento, log) {
  * Handles envelope-delivered event
  */
 async function handleEnvelopeDelivered(documento, log) {
-  await getDocumentoRepo().actualizarEstado(documento.DocumentoFirmaId, ESTADO_DOCUMENTO.ENTREGADO);
+  await getDocumentoRepo().actualizarEstado(
+    documento.DocumentoFirmaId,
+    ESTADO_DOCUMENTO_ID.ENTREGADO,
+    documento.Version
+  );
   log('Estado actualizado a ENTREGADO');
 }
 
@@ -196,7 +201,11 @@ async function handleEnvelopeDelivered(documento, log) {
  * Handles recipient-viewed event
  */
 async function handleRecipientViewed(documento, log) {
-  await getDocumentoRepo().actualizarEstado(documento.DocumentoFirmaId, ESTADO_DOCUMENTO.VISTO);
+  await getDocumentoRepo().actualizarEstado(
+    documento.DocumentoFirmaId,
+    ESTADO_DOCUMENTO_ID.VISTO,
+    documento.Version
+  );
   log('Estado actualizado a VISTO');
 }
 
@@ -206,30 +215,34 @@ async function handleRecipientViewed(documento, log) {
 async function handleEnvelopeCompleted(documento, envelopeId, log, logError) {
   const repo = getDocumentoRepo();
 
-  // a. Update to FIRMADO
-  await repo.actualizarEstado(documento.DocumentoFirmaId, ESTADO_DOCUMENTO.FIRMADO);
-  log('Estado actualizado a FIRMADO');
-
-  // b. Download signed PDF from DocuSign
-  let signedPdfBuffer;
+  // a. Download signed PDF from DocuSign (antes de actualizar estado)
+  let documentoFirmadoUrl = null;
   try {
-    signedPdfBuffer = await docusignService.downloadSignedDocument(envelopeId);
+    const signedPdfBuffer = await docusignService.downloadSignedDocument(envelopeId);
     log(`PDF firmado descargado: ${(signedPdfBuffer.length / 1024).toFixed(1)}KB`);
-  } catch (downloadError) {
-    logError('Error descargando PDF firmado:', downloadError);
-    // Continue - the document is still marked as signed
+
+    // b. Upload signed PDF to Blob Storage
+    documentoFirmadoUrl = await uploadSignedPdf(signedPdfBuffer, documento.SapDocumentId);
+    log('PDF firmado subido a Blob Storage');
+  } catch (downloadOrUploadError) {
+    logError('Error descargando/subiendo PDF firmado:', downloadOrUploadError);
+    // Continue - actualizamos a FIRMADO aunque no se haya podido guardar el PDF
   }
 
-  // c. Upload signed PDF to Blob Storage
-  if (signedPdfBuffer) {
-    try {
-      const blobUrl = await uploadSignedPdf(signedPdfBuffer, documento.SapDocumentId);
-      await repo.actualizarBlobFirmado(documento.DocumentoFirmaId, blobUrl);
-      log('PDF firmado subido a Blob Storage');
-    } catch (uploadError) {
-      logError('Error subiendo PDF firmado a Blob:', uploadError);
-    }
+  // c. Update to FIRMADO con URL del documento firmado en una sola operacion
+  const datosExtra = {};
+  if (documentoFirmadoUrl) {
+    datosExtra.DocumentoFirmadoUrl = documentoFirmadoUrl;
   }
+  await repo.actualizarEstado(
+    documento.DocumentoFirmaId,
+    ESTADO_DOCUMENTO_ID.FIRMADO,
+    documento.Version,
+    datosExtra
+  );
+  log(
+    `Estado actualizado a FIRMADO${documentoFirmadoUrl ? ' con URL de PDF firmado' : ' (sin PDF)'}`
+  );
 
   // d. Send WhatsApp confirmation template
   try {
@@ -246,12 +259,12 @@ async function handleEnvelopeCompleted(documento, envelopeId, log, logError) {
 
   // e. Notify Teams
   teamsService
-    .notifyTicketCreated(
-      documento.ClienteTelefono,
-      documento.TipoDocumento,
-      documento.SapDocumentId,
-      { codigoSAP: documento.SapDocumentId, problema: 'Documento firmado exitosamente' }
-    )
+    .notifyDocumentSigned({
+      nombreDocumento: documento.DocumentoNombre,
+      clienteTelefono: documento.ClienteTelefono,
+      clienteNombre: documento.ClienteNombre,
+      envelopeId: documento.EnvelopeId || envelopeId,
+    })
     .catch((teamsError) => {
       logError('Error notificando a Teams:', teamsError);
     });
@@ -266,8 +279,9 @@ async function handleEnvelopeDeclined(documento, declineReason, log, logError) {
   // a. Update to RECHAZADO with reason
   await repo.actualizarEstado(
     documento.DocumentoFirmaId,
-    ESTADO_DOCUMENTO.RECHAZADO,
-    declineReason || 'Sin motivo especificado'
+    ESTADO_DOCUMENTO_ID.RECHAZADO,
+    documento.Version,
+    { MotivoRechazo: declineReason || 'Sin motivo especificado' }
   );
   log(`Estado actualizado a RECHAZADO. Motivo: ${declineReason || 'N/A'}`);
 
@@ -293,7 +307,11 @@ async function handleEnvelopeVoided(documento, log, logError) {
   const repo = getDocumentoRepo();
 
   // a. Update to ANULADO
-  await repo.actualizarEstado(documento.DocumentoFirmaId, ESTADO_DOCUMENTO.ANULADO);
+  await repo.actualizarEstado(
+    documento.DocumentoFirmaId,
+    ESTADO_DOCUMENTO_ID.ANULADO,
+    documento.Version
+  );
   log('Estado actualizado a ANULADO');
 
   // b. Send WhatsApp anulacion template
@@ -326,12 +344,11 @@ module.exports = async function (context, req) {
     const hmacHeader = req.headers['x-docusign-signature-1'];
     const rawBody = req.rawBody || JSON.stringify(req.body);
 
-    // In production, HMAC validation is mandatory
-    const isProduction =
-      process.env.AZURE_FUNCTIONS_ENVIRONMENT ||
-      process.env.WEBSITE_SITE_NAME ||
-      process.env.NODE_ENV === 'production';
-    const skipValidation = !isProduction && process.env.SKIP_DOCUSIGN_HMAC_VALIDATION === 'true';
+    // HMAC validation: skip only if explicitly disabled (development environments)
+    const isDevelopment =
+      process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development' ||
+      process.env.NODE_ENV === 'development';
+    const skipValidation = isDevelopment && process.env.SKIP_DOCUSIGN_HMAC_VALIDATION === 'true';
 
     if (skipValidation) {
       logWarn('DEV: Validacion HMAC de DocuSign omitida');

@@ -41,9 +41,9 @@ class EventoDocuSignRepository extends BaseRepository {
             .request()
             .input('EventId', sql.NVarChar, eventId)
             .input('EnvelopeId', sql.NVarChar, envelopeId)
-            .input('EventoTipo', sql.NVarChar, eventoTipo).query(`
-              INSERT INTO EventosDocuSignProcessados (EventId, EnvelopeId, EventoTipo, FechaCreacion)
-              VALUES (@EventId, @EnvelopeId, @EventoTipo, GETDATE())
+            .input('EventType', sql.NVarChar, eventoTipo).query(`
+              INSERT INTO EventosDocuSignProcessados (EventId, EnvelopeId, EventType, FechaCreacion)
+              VALUES (@EventId, @EnvelopeId, @EventType, GETDATE())
             `);
 
           // Si llegamos aqui, INSERT fue exitoso = evento nuevo
